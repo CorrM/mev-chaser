@@ -23,8 +23,8 @@ async fn main() -> Result<()> {
 
     // Start async websocket streams
     let ws: Ws = Ws::connect(env.wss_url).await?;
-    let provider = Arc::new(Provider::new(ws));
-    let mut ns: NetworkStreamManager = NetworkStreamManagerBuilder::new(&provider)
+    let ws_provider = Arc::new(Provider::new(ws));
+    let mut ns: NetworkStreamManager = NetworkStreamManagerBuilder::new(&ws_provider)
         .watch_new_blocks()
         //.watch_pending_transactions()
         //.watch_log("Sync(uint112,uint112)")

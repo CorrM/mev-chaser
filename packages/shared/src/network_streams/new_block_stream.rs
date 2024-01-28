@@ -21,19 +21,18 @@ pub async fn stream_new_blocks(provider: Arc<Provider<Ws>>, event_sender: Sender
         Some(number) => Some(NewBlock {
             block_number: number,
             base_fee: block.base_fee_per_gas.unwrap_or_default(),
-            next_base_fee: U256::from(calculate_next_block_base_fee(
+            next_base_fee: calculate_next_block_base_fee(
                 block.gas_used,
                 block.gas_limit,
                 block.base_fee_per_gas.unwrap_or_default(),
-            )),
+            ),
         }),
         None => None,
     });
 
     while let Some(block) = stream.next().await {
-        match event_sender.send(Event::Block(block)) {
-            Ok(_) => {}
-            Err(_) => {}
+        if event_sender.send(Event::Block(block)).is_err() {
+            continue;
         }
     }
 }

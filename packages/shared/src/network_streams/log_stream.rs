@@ -17,9 +17,8 @@ pub async fn stream_log_event(
     let mut stream: SubscriptionStream<Ws, Log> = provider.subscribe_logs(&filter).await.unwrap();
 
     while let Some(result) = stream.next().await {
-        match event_sender.send(Event::Log(result)) {
-            Ok(_) => {}
-            Err(_) => {}
+        if event_sender.send(Event::Log(result)).is_err() {
+            continue;
         };
     }
 }
