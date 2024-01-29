@@ -9,8 +9,8 @@ use super::NodeProviderNetworkInfo;
 pub struct NodeProvider {
     name: String,
     network: NetworkKind,
-    http_provider: Provider<Http>,
-    ws_provider: Provider<Ws>,
+    http_provider: Arc<Provider<Http>>,
+    ws_provider: Arc<Provider<Ws>>,
 }
 
 impl NodeProvider {
@@ -21,32 +21,24 @@ impl NodeProvider {
         Ok(Self {
             name: name.into(),
             network: network_info.network,
-            ws_provider: Provider::new(ws),
-            http_provider: Provider::new(http),
+            ws_provider: Arc::new(Provider::new(ws)),
+            http_provider: Arc::new(Provider::new(http)),
         })
     }
 
     pub fn name(&self) -> &str {
         self.name.as_ref()
     }
-    
+
     pub fn network(&self) -> &NetworkKind {
         &self.network
     }
 
-    pub fn http_provider(&self) -> &Provider<Http> {
+    pub fn http_provider(&self) -> &Arc<Provider<Http>> {
         &self.http_provider
     }
 
-    pub fn ws_provider(&self) -> &Provider<Ws> {
+    pub fn ws_provider(&self) -> &Arc<Provider<Ws>> {
         &self.ws_provider
-    }
-
-    pub fn http_provider_arc(&self) -> Arc<Provider<Http>> {
-        Arc::new(self.http_provider.clone())
-    }
-
-    pub fn ws_provider_arc(&self) -> Arc<Provider<Ws>> {
-        Arc::new(self.ws_provider.clone())
     }
 }
