@@ -9,5 +9,9 @@ protocol_uniswap_v2 = { path = "../../packages/protocol_uniswap_v2" }
 
 anyhow = { workspace = true }
 tokio = { workspace = true }
+ethers-providers = { workspace = true }
+ethers-core = { workspace = true }
+ethers-contract = { workspace = true }
+ethers = { workspace = true }
 
 dotenv = "0.15.0"

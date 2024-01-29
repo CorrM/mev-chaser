@@ -1,15 +1,78 @@
 mod utils;
 
 use anyhow::{anyhow, Result};
-use std::{env::VarError, sync::Arc};
+use ethers_core::types::{Address, H160};
+use std::{env::VarError, ops::Deref, str::FromStr, sync::Arc};
 use tokio::sync::broadcast::Receiver;
 
 use crate::utils::env::Env;
 use shared::{
     network::NetworkKind,
     network_streams::{NetworkEvent, NetworkStreamManagerBuilder, NetworkStreamsManager},
-    provider::{NodeProvider, NodeProviderManager, NodeProviderNetworkInfo},
+    provider::{
+        DebugTraceCallNodeProvider, NodeProviderKind, NodeProviderManager, NodeProviderNetworkInfo, NormalNodeProvider,
+    },
 };
+
+async fn get_node_providers(env: &Env, target_network: &NetworkKind) -> Result<Vec<NormalNodeProvider>> {
+    let providers: Vec<NormalNodeProvider> = vec![
+        NormalNodeProvider::new(
+            "Infura",
+            NodeProviderNetworkInfo {
+                network: target_network.clone(),
+                http_url: env.https_url.clone(),
+                wss_url: env.wss_url.clone(),
+            },
+        )
+        .await?,
+        NormalNodeProvider::new(
+            "Alchemy",
+            NodeProviderNetworkInfo {
+                network: target_network.clone(),
+                http_url: env.https_url.clone(),
+                wss_url: env.wss_url.clone(),
+            },
+        )
+        .await?,
+    ];
+
+    Ok(providers)
+}
+
+async fn get_debug_trace_call_node_providers(
+    env: &Env,
+    target_network: &NetworkKind,
+) -> Result<Vec<DebugTraceCallNodeProvider>> {
+    let blockpi_network_subdomain: String = match target_network {
+        NetworkKind::Ethereum => "ethereum".to_string(),
+        NetworkKind::Polygon => "polygon".to_string(),
+    };
+
+    let blockpi_net_info: NodeProviderNetworkInfo = NodeProviderNetworkInfo {
+        network: target_network.clone(),
+        http_url: format!(
+            "https://{}.blockpi.network/v1/rpc/{}",
+            blockpi_network_subdomain, env.blockpi_api_key
+        )
+        .to_string(),
+        wss_url: format!(
+            "wss://{}.blockpi.network/v1/ws/{}",
+            blockpi_network_subdomain, env.blockpi_api_key
+        )
+        .to_string(),
+    };
+
+    Ok(vec![
+        DebugTraceCallNodeProvider::new("blockpi", blockpi_net_info).await?,
+    ])
+}
+
+async fn create_node_provider_manager(env: &Env, target_network: &NetworkKind) -> Result<NodeProviderManager> {
+    let providers: Vec<NormalNodeProvider> = get_node_providers(env, target_network).await?;
+    let debug_trace_call_providers: Vec<DebugTraceCallNodeProvider> =
+        get_debug_trace_call_node_providers(env, target_network).await?;
+    NodeProviderManager::new(providers, debug_trace_call_providers)
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -24,41 +87,32 @@ async fn main() -> Result<()> {
     }
 
     let env: Env = var_parse.unwrap();
-
-    // Node provider
     let target_network: NetworkKind = unsafe { ::std::mem::transmute(env.chain_id) };
-    let providers: Vec<NodeProvider> = vec![
-        NodeProvider::new(
-            "Infura",
-            NodeProviderNetworkInfo {
-                network: target_network.clone(),
-                http_url: env.https_url.clone(),
-                wss_url: env.wss_url.clone(),
-            },
-        ).await?,
-        NodeProvider::new(
-            "Alchemy",
-            NodeProviderNetworkInfo {
-                network: target_network.clone(),
-                http_url: env.https_url.clone(),
-                wss_url: env.wss_url.clone(),
-            },
-        ).await?,
-    ];
-    let provider_manager = NodeProviderManager::new(providers)?;
+    let provider_manager: NodeProviderManager = create_node_provider_manager(&env, &target_network).await?;
 
-    let provider: &Arc<NodeProvider> = provider_manager.get_next();
+    let provider: &Arc<NodeProviderKind> =
+        &Arc::new(NodeProviderKind::Normal(provider_manager.get_next().deref().clone()));
+    let debug_provider: &Arc<DebugTraceCallNodeProvider> = provider_manager.get_next_debug_trace_call();
+
     let ns: NetworkStreamsManager = NetworkStreamManagerBuilder::new(provider)
         //.watch_new_blocks()
         .watch_pending_transactions()
         //.watch_log("Sync(uint112,uint112)")
         .build();
-
-    //let dex = Arc::new(UniswapV2Protocol::new("UniswapV2"));
-
     let mut event_receiver: Receiver<NetworkEvent> = ns.subscribe();
     while let Ok(event) = event_receiver.recv().await {
-        println!("{:?}", event);
+        if let NetworkEvent::PendingTx(tx) = &event {
+            if let Some(to) = tx.to {
+                if to != H160::from_str("0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506").unwrap() {
+                    continue;
+                }
+                
+                println!("{:#?}", event);
+                println!("-------------");
+                println!("{:#?}", debug_provider.debug_trace_call(tx.to_owned(), None).await);
+                println!("=============");
+            }
+        }
     }
     //sb.0.spawn(event_handler(provider.clone(), sb.1.clone()));
 

@@ -2,17 +2,17 @@ use ethers::types::{Filter, Log, Transaction};
 use std::sync::Arc;
 use tokio::sync::{broadcast, broadcast::Sender};
 
-use crate::provider::NodeProvider;
+use crate::provider::NodeProviderKind;
 
 use super::{network_event::NetworkEvent, network_streams_manager::NetworkStreamsManager, new_block_stream::NewBlock};
 
 pub struct NetworkStreamManagerBuilder {
-    provider: Arc<NodeProvider>,
+    provider: Arc<NodeProviderKind>,
     events: Vec<(NetworkEvent, Option<Filter>)>,
 }
 
 impl NetworkStreamManagerBuilder {
-    pub fn new(provider: &Arc<NodeProvider>) -> Self {
+    pub fn new(provider: &Arc<NodeProviderKind>) -> Self {
         Self {
             provider: provider.clone(),
             events: Vec::new(),
@@ -37,8 +37,11 @@ impl NetworkStreamManagerBuilder {
         self
     }
 
-    pub fn build(&mut self) -> NetworkStreamsManager {
+    pub fn build(&self) -> NetworkStreamsManager {
         let (event_sender, _): (Sender<NetworkEvent>, _) = broadcast::channel(512);
-        NetworkStreamsManager::new(&self.provider, &self.events, event_sender)
+        match (*self.provider).clone() {
+            NodeProviderKind::Normal(p) => NetworkStreamsManager::new(p.clone(), &self.events, event_sender),
+            NodeProviderKind::DebugTraceCall(p) => NetworkStreamsManager::new(p.clone(), &self.events, event_sender),
+        }
     }
 }

@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use ethers::types::Filter;
 use tokio::sync::broadcast::Receiver;
 use tokio::{
@@ -7,7 +5,7 @@ use tokio::{
     task::{JoinError, JoinSet},
 };
 
-use crate::provider::NodeProvider;
+use crate::provider::NodeProviderRaw;
 
 use super::network_event::NetworkEvent;
 use super::log_stream::stream_log_event;
@@ -20,8 +18,8 @@ pub struct NetworkStreamsManager {
 }
 
 impl NetworkStreamsManager {
-    pub(super) fn new(
-        provider: &Arc<NodeProvider>,
+    pub(super) fn new<T: 'static + NodeProviderRaw>(
+        provider: T,
         events: &Vec<(NetworkEvent, Option<Filter>)>,
         event_sender: Sender<NetworkEvent>,
     ) -> Self {
@@ -36,11 +34,7 @@ impl NetworkStreamsManager {
                     set.spawn(stream_pending_transactions(provider.clone(), event_sender.clone()));
                 }
                 NetworkEvent::Log(_) => {
-                    set.spawn(stream_log_event(
-                        provider.clone(),
-                        event_sender.clone(),
-                        opt.clone().unwrap(),
-                    ));
+                    set.spawn(stream_log_event(provider.clone(), event_sender.clone(), opt.clone().unwrap()));
                 }
             }
         }
