@@ -1,9 +1,9 @@
 [workspace]
 resolver = "2"
-members = [ # Dont use * for paths in the workspace (amm_protocol are not a crate)
+members = [ # Dont use * for paths in the workspace
     "apps/cli",
     "packages/shared",
-    "packages/amm_protocol/protocol_uniswap_v2",
+    "packages/protocol_uniswap_v2",
 ]
 
 [workspace.dependencies]

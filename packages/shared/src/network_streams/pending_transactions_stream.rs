@@ -1,18 +1,20 @@
-use ethers::providers::{Provider, Ws};
-use ethers_providers::Middleware;
 use std::sync::Arc;
+
+use ethers_providers::Middleware;
 use tokio::sync::broadcast::Sender;
 use tokio_stream::StreamExt;
 
-use super::Event;
+use crate::provider::NodeProvider;
 
-pub async fn stream_pending_transactions(provider: Arc<Provider<Ws>>, event_sender: Sender<Event>) {
-    let stream = provider.subscribe_pending_txs().await.unwrap();
+use super::NetworkEvent;
+
+pub async fn stream_pending_transactions(provider: Arc<NodeProvider>, event_sender: Sender<NetworkEvent>) {
+    let stream = provider.ws_provider().subscribe_pending_txs().await.unwrap();
     let mut stream = stream.transactions_unordered(256).fuse();
 
     while let Some(result) = stream.next().await {
         if let Ok(tx) = result {
-            if event_sender.send(Event::PendingTx(tx)).is_err() {
+            if event_sender.send(NetworkEvent::PendingTx(tx)).is_err() {
                 continue;
             }
         };

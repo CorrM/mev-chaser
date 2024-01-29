@@ -1,15 +1,13 @@
-use ethers::{
-    providers::{Provider, Ws},
-    types::{Block, H256, U256, U64},
-};
-use ethers_providers::Middleware;
 use std::sync::Arc;
+
+use ethers::types::{Block, H256, U256, U64};
+use ethers_providers::Middleware;
 use tokio::sync::broadcast::Sender;
 use tokio_stream::StreamExt;
 
-use crate::utils::calculate_next_block_base_fee;
+use crate::{provider::NodeProvider, utils::calculate_next_block_base_fee};
 
-use super::event::Event;
+use super::network_event::NetworkEvent;
 
 #[derive(Default, Debug, Clone)]
 pub struct NewBlock {
@@ -18,8 +16,8 @@ pub struct NewBlock {
     pub next_base_fee: U256,
 }
 
-pub async fn stream_new_blocks(provider: Arc<Provider<Ws>>, event_sender: Sender<Event>) {
-    let stream = provider.subscribe_blocks().await.unwrap();
+pub async fn stream_new_blocks(provider: Arc<NodeProvider>, event_sender: Sender<NetworkEvent>) {
+    let stream = provider.ws_provider().subscribe_blocks().await.unwrap();
     let mut stream = stream.filter_map(|block: Block<H256>| match block.number {
         Some(number) => Some(NewBlock {
             block_number: number,
@@ -34,7 +32,7 @@ pub async fn stream_new_blocks(provider: Arc<Provider<Ws>>, event_sender: Sender
     });
 
     while let Some(block) = stream.next().await {
-        if event_sender.send(Event::Block(block)).is_err() {
+        if event_sender.send(NetworkEvent::Block(block)).is_err() {
             continue;
         }
     }

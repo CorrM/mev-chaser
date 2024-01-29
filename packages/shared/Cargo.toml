@@ -14,3 +14,4 @@ ethers-contract = { workspace = true }
 ethers = { workspace = true }
 
 rand = "0.8.5"
+rusqlite = { version = "0.30.0", features = ["bundled"] }

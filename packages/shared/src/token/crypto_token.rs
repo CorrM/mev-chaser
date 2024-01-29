@@ -17,6 +17,22 @@ impl CryptoToken {
         }
     }
 
+    pub fn address(&self) -> &str {
+        self.address.as_ref()
+    }
+
+    pub fn name(&self) -> &str {
+        self.name.as_ref()
+    }
+
+    pub fn symbol(&self) -> &str {
+        self.symbol.as_ref()
+    }
+
+    pub fn decimals(&self) -> u8 {
+        self.decimals
+    }
+
     fn convert_to_decimal(&self, value: i128) -> f64 {
         value as f64 / self.decimals_pow
     }

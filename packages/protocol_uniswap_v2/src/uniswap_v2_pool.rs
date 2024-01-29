@@ -9,7 +9,7 @@ use std::sync::Arc;
 pub struct UniswapV2Pool {
     address: String,
     dex: Arc<UniswapV2Protocol>,
-    network: NetworkKind,
+    //network: NetworkKind,
 }
 
 impl UniswapV2Pool {
@@ -17,7 +17,7 @@ impl UniswapV2Pool {
         Self {
             address: address.into(),
             dex: dex.clone(),
-            network: dex.network(),
+            //network: dex.network(),
         }
     }
 }
@@ -32,21 +32,26 @@ impl AmmPool for UniswapV2Pool {
     }
 
     fn network(&self) -> NetworkKind {
-        
+        panic!()
     }
 
     fn token0(&self) -> &CryptoToken {
+        panic!()
     }
 
     fn token1(&self) -> &CryptoToken {
+        panic!()
     }
 
     fn reserve0(&self) -> i128 {
+        panic!()
     }
 
     fn reserve1(&self) -> i128 {
+        panic!()
     }
 
     fn update_reserve(&mut self) {
+        panic!()
     }
 }

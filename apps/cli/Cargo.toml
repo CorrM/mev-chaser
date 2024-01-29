@@ -5,9 +5,9 @@ edition = "2021"
 
 [dependencies]
 shared = { path = "../../packages/shared" }
-protocol_uniswap_v2 = { path = "../../packages/amm_protocol/protocol_uniswap_v2" }
-tokio = { workspace = true }
+protocol_uniswap_v2 = { path = "../../packages/protocol_uniswap_v2" }
+
 anyhow = { workspace = true }
-ethers = { workspace = true }
+tokio = { workspace = true }
 
 dotenv = "0.15.0"

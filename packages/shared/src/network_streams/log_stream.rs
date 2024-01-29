@@ -1,23 +1,26 @@
+use std::sync::Arc;
+
 use ethers::{
-    providers::{Provider, Ws},
+    providers::Ws,
     types::{Filter, Log},
 };
 use ethers_providers::{Middleware, SubscriptionStream};
-use std::sync::Arc;
 use tokio::sync::broadcast::Sender;
 use tokio_stream::StreamExt;
 
-use super::Event;
+use crate::provider::NodeProvider;
+
+use super::NetworkEvent;
 
 pub async fn stream_log_event(
-    provider: Arc<Provider<Ws>>,
-    event_sender: Sender<Event>,
+    provider: Arc<NodeProvider>,
+    event_sender: Sender<NetworkEvent>,
     filter: Filter,
 ) {
-    let mut stream: SubscriptionStream<Ws, Log> = provider.subscribe_logs(&filter).await.unwrap();
+    let mut stream: SubscriptionStream<Ws, Log> = provider.ws_provider().subscribe_logs(&filter).await.unwrap();
 
     while let Some(result) = stream.next().await {
-        if event_sender.send(Event::Log(result)).is_err() {
+        if event_sender.send(NetworkEvent::Log(result)).is_err() {
             continue;
         };
     }
