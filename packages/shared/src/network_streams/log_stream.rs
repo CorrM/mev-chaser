@@ -1,4 +1,3 @@
-use crate::network_streams::Event;
 use ethers::{
     providers::{Provider, Ws},
     types::{Filter, Log},
@@ -8,12 +7,13 @@ use std::sync::Arc;
 use tokio::sync::broadcast::Sender;
 use tokio_stream::StreamExt;
 
+use super::Event;
+
 pub async fn stream_log_event(
     provider: Arc<Provider<Ws>>,
-    event_signature: impl Into<String>,
     event_sender: Sender<Event>,
+    filter: Filter,
 ) {
-    let filter: Filter = Filter::new().event(&event_signature.into());
     let mut stream: SubscriptionStream<Ws, Log> = provider.subscribe_logs(&filter).await.unwrap();
 
     while let Some(result) = stream.next().await {

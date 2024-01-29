@@ -6,7 +6,10 @@ use ethers_providers::Middleware;
 use std::sync::Arc;
 use tokio::sync::broadcast::Sender;
 use tokio_stream::StreamExt;
-use crate::{network_streams::Event, utils::calculate_next_block_base_fee};
+
+use crate::utils::calculate_next_block_base_fee;
+
+use super::event::Event;
 
 #[derive(Default, Debug, Clone)]
 pub struct NewBlock {
