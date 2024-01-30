@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = [ # Dont use * for paths in the workspace
+members = [# Dont use * for paths in the workspace
     "apps/cli",
     "packages/shared",
     "packages/protocol_uniswap_v2",
@@ -13,7 +13,7 @@ tokio = { version = "1.35", features = ["full"] }
 tokio-stream = { version = "0.1", features = ['sync'] }
 
 # EVM
-ethers-providers = "2.0"
 ethers-core = "2.0"
+ethers-providers = { version = "2.0", features = ["ws", "ipc"] }
 ethers-contract = { version = "2.0", default-features = false }
 ethers = { version = "2.0", features = ["abigen", "ws", "rustls"] }

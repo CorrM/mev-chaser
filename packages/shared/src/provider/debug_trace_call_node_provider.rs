@@ -2,9 +2,9 @@ use anyhow::{Ok, Result};
 use ethers::{
     providers::{Http, Provider, Ws},
     types::{
-        transaction::eip2718::TypedTransaction, BlockId, BlockNumber, CallConfig, Eip1559TransactionRequest,
-        GethDebugBuiltInTracerConfig, GethDebugBuiltInTracerType, GethDebugTracerConfig, GethDebugTracerType,
-        GethDebugTracingCallOptions, GethDebugTracingOptions, GethTrace, Transaction, TransactionRequest, U256, U64,
+        BlockId, BlockNumber, CallConfig, Eip1559TransactionRequest, GethDebugBuiltInTracerConfig,
+        GethDebugBuiltInTracerType, GethDebugTracerConfig, GethDebugTracerType, GethDebugTracingCallOptions,
+        GethDebugTracingOptions, GethTrace, Transaction, transaction::eip2718::TypedTransaction, TransactionRequest, U256, U64,
     },
 };
 use ethers_core::utils::parse_units;
@@ -57,8 +57,6 @@ impl DebugTraceCallNodeProvider {
         // TODO: test if passing BlockId::Hash is faster
         let legacy: bool = tx.max_fee_per_gas.is_none() && tx.max_fee_per_gas.is_none();
         let chain_id: U64 = U64::from(tx.chain_id.unwrap_or(U256::from(1)).as_u64());
-
-        println!("legacy: {legacy}");
 
         let tx: TypedTransaction = match legacy {
             true => TransactionRequest::new()

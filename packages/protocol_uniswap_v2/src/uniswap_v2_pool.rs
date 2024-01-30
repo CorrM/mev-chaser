@@ -1,12 +1,15 @@
-use crate::uniswap_v2_protocol::UniswapV2Protocol;
+use std::{str::FromStr, sync::Arc};
+
 use anyhow::Result;
 use ethers_core::types::{H160, U256};
+
 use shared::{
     amm::{AmmPool, AmmProtocol},
     network::NetworkKind,
     token::CryptoToken,
 };
-use std::{str::FromStr, sync::Arc};
+
+use crate::uniswap_v2_protocol::UniswapV2Protocol;
 
 #[derive(Clone)]
 pub struct UniswapV2Pool {

@@ -1,3 +1,5 @@
+use std::{collections::HashMap, sync::Arc};
+
 use anyhow::Result;
 use ethers::{
     abi::Token,
@@ -5,8 +7,8 @@ use ethers::{
     types::{Bytes, H160, H256, U256},
 };
 use ethers_contract::{Contract, Multicall};
+
 use shared::{abi::ABI, amm::AmmPool, provider::NodeProvider};
-use std::{collections::HashMap, sync::Arc};
 
 use crate::UniswapV2Pool;
 

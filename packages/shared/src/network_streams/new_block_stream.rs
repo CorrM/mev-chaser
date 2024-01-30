@@ -1,6 +1,6 @@
 use ethers::{
     providers::Middleware,
-    types::{Block, H256, U256, U64}
+    types::{Block, H256, U256, U64},
 };
 use ethers_providers::{Provider, Ws};
 use tokio::sync::broadcast::Sender;
@@ -38,4 +38,6 @@ pub async fn stream_new_blocks<T: NodeProvider>(provider: T, event_sender: Sende
             continue;
         }
     }
+
+    panic!("New blocks stream stopped");
 }

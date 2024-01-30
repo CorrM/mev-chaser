@@ -19,4 +19,6 @@ pub async fn stream_log_event<T: NodeProvider>(provider: T, event_sender: Sender
             continue;
         };
     }
+
+    panic!("Log stream stopped");
 }

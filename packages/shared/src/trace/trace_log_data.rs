@@ -15,7 +15,7 @@ impl TraceLogData {
     pub fn data(&self) -> Bytes {
         self.data.clone()
     }
-    
+
     pub fn address(&self) -> H160 {
         self.address
     }

@@ -1,14 +1,14 @@
 use ethers::types::Filter;
-use tokio::sync::broadcast::Receiver;
 use tokio::{
     sync::broadcast::Sender,
     task::{JoinError, JoinSet},
 };
+use tokio::sync::broadcast::Receiver;
 
 use crate::provider::NodeProvider;
 
-use super::network_event::NetworkEvent;
 use super::log_stream::stream_log_event;
+use super::network_event::NetworkEvent;
 use super::new_block_stream::stream_new_blocks;
 use super::pending_transactions_stream::stream_pending_transactions;
 
@@ -20,22 +20,24 @@ pub struct NetworkStreamsManager {
 impl NetworkStreamsManager {
     pub(super) fn new<T: 'static + NodeProvider>(
         provider: T,
-        events: &Vec<(NetworkEvent, Option<Filter>)>,
         event_sender: Sender<NetworkEvent>,
+        new_blocks: bool,
+        pending_transactions: Option<Vec<String>>,
+        events: Option<Vec<Option<Filter>>>,
     ) -> Self {
         let mut set: JoinSet<()> = JoinSet::new();
 
-        for (event, opt) in events {
-            match event {
-                NetworkEvent::Block(_) => {
-                    set.spawn(stream_new_blocks(provider.clone(), event_sender.clone()));
-                }
-                NetworkEvent::PendingTx(_) => {
-                    set.spawn(stream_pending_transactions(provider.clone(), event_sender.clone()));
-                }
-                NetworkEvent::Log(_) => {
-                    set.spawn(stream_log_event(provider.clone(), event_sender.clone(), opt.clone().unwrap()));
-                }
+        if new_blocks {
+            set.spawn(stream_new_blocks(provider.clone(), event_sender.clone()));
+        }
+
+        if let Some(pending_transactions) = pending_transactions {
+            set.spawn(stream_pending_transactions(provider.clone(), event_sender.clone(), Some(pending_transactions)));
+        }
+
+        if let Some(events) = events {
+            for event in events {
+                set.spawn(stream_log_event(provider.clone(), event_sender.clone(), event.unwrap()));
             }
         }
 

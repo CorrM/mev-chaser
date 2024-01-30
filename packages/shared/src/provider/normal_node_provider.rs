@@ -1,6 +1,7 @@
+use std::str::FromStr;
+
 use anyhow::Result;
 use ethers::providers::{Http, Provider, Ws};
-use std::str::FromStr;
 
 use crate::network::NetworkKind;
 
