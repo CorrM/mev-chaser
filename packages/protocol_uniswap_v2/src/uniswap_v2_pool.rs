@@ -1,29 +1,32 @@
 use crate::uniswap_v2_protocol::UniswapV2Protocol;
+use anyhow::Result;
+use ethers_core::types::{H160, U256};
 use shared::{
     amm::{AmmPool, AmmProtocol},
     network::NetworkKind,
     token::CryptoToken,
 };
-use std::sync::Arc;
+use std::{str::FromStr, sync::Arc};
 
+#[derive(Clone)]
 pub struct UniswapV2Pool {
-    address: String,
+    address: H160,
     dex: Arc<UniswapV2Protocol>,
     //network: NetworkKind,
 }
 
 impl UniswapV2Pool {
-    pub fn new(address: impl Into<String>, dex: Arc<UniswapV2Protocol>) -> Self {
-        Self {
-            address: address.into(),
+    pub fn new(address: impl Into<String>, dex: Arc<UniswapV2Protocol>) -> Result<Self> {
+        Ok(Self {
+            address: H160::from_str(&address.into())?,
             dex: dex.clone(),
             //network: dex.network(),
-        }
+        })
     }
 }
 
 impl AmmPool for UniswapV2Pool {
-    fn address(&self) -> &str {
+    fn address(&self) -> &H160 {
         &self.address
     }
 
@@ -31,7 +34,7 @@ impl AmmPool for UniswapV2Pool {
         self.dex.as_ref()
     }
 
-    fn network(&self) -> NetworkKind {
+    fn network(&self) -> &NetworkKind {
         panic!()
     }
 
@@ -43,11 +46,11 @@ impl AmmPool for UniswapV2Pool {
         panic!()
     }
 
-    fn reserve0(&self) -> i128 {
+    fn reserve0(&self) -> U256 {
         panic!()
     }
 
-    fn reserve1(&self) -> i128 {
+    fn reserve1(&self) -> U256 {
         panic!()
     }
 

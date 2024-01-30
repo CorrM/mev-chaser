@@ -5,9 +5,6 @@ use crate::network::NetworkKind;
 pub trait NodeProvider : Sync + Send + Clone {
     fn name(&self) -> &str;
     fn network(&self) -> &NetworkKind;
-}
-
-pub trait NodeProviderRaw : NodeProvider {
     fn raw_http_provider(&self) -> &Provider<Http>;
     fn raw_ws_provider(&self) -> &Provider<Ws>;
 }

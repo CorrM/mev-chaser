@@ -2,11 +2,11 @@ use ethers_providers::{Middleware, Provider, Ws};
 use tokio::sync::broadcast::Sender;
 use tokio_stream::StreamExt;
 
-use crate::provider::NodeProviderRaw;
+use crate::provider::NodeProvider;
 
 use super::NetworkEvent;
 
-pub async fn stream_pending_transactions<T: NodeProviderRaw>(provider: T, event_sender: Sender<NetworkEvent>) {
+pub async fn stream_pending_transactions<T: NodeProvider>(provider: T, event_sender: Sender<NetworkEvent>) {
     let ws: &Provider<Ws> = provider.raw_ws_provider();
     let stream = ws.subscribe_pending_txs().await.unwrap();
     let mut stream = stream.transactions_unordered(256).fuse();

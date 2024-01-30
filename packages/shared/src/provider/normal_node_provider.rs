@@ -4,7 +4,7 @@ use std::str::FromStr;
 
 use crate::network::NetworkKind;
 
-use super::{NodeProvider, NodeProviderNetworkInfo, NodeProviderRaw};
+use super::{NodeProvider, NodeProviderNetworkInfo};
 
 #[derive(Clone)]
 pub struct NormalNodeProvider {
@@ -36,9 +36,7 @@ impl NodeProvider for NormalNodeProvider {
     fn network(&self) -> &NetworkKind {
         &self.network
     }
-}
 
-impl NodeProviderRaw for NormalNodeProvider {
     fn raw_http_provider(&self) -> &Provider<Http> {
         &self.http_provider
     }

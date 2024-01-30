@@ -1,5 +1,7 @@
+use ethers_core::types::H160;
+
 pub struct CryptoToken {
-    address: String,
+    address: H160,
     name: String,
     symbol: String,
     decimals: u8,
@@ -7,7 +9,7 @@ pub struct CryptoToken {
 }
 
 impl CryptoToken {
-    fn new(address: String, name: String, symbol: String, decimals: u8) -> Self {
+    fn new(address: H160, name: String, symbol: String, decimals: u8) -> Self {
         Self {
             address,
             name,
@@ -17,16 +19,16 @@ impl CryptoToken {
         }
     }
 
-    pub fn address(&self) -> &str {
-        self.address.as_ref()
+    pub fn address(&self) -> &H160 {
+        &self.address
     }
 
     pub fn name(&self) -> &str {
-        self.name.as_ref()
+        &self.name
     }
 
     pub fn symbol(&self) -> &str {
-        self.symbol.as_ref()
+        &self.symbol
     }
 
     pub fn decimals(&self) -> u8 {

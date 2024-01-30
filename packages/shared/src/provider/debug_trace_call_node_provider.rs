@@ -7,11 +7,12 @@ use ethers::{
         GethDebugTracingCallOptions, GethDebugTracingOptions, GethTrace, Transaction, TransactionRequest, U256, U64,
     },
 };
+use ethers_core::utils::parse_units;
 use ethers_providers::Middleware;
 
 use crate::network::NetworkKind;
 
-use super::{NodeProvider, NodeProviderNetworkInfo, NodeProviderRaw, NormalNodeProvider};
+use super::{NodeProvider, NodeProviderNetworkInfo, NormalNodeProvider};
 
 fn get_trace_options() -> GethDebugTracingCallOptions {
     let tracer: Option<GethDebugTracerType> = Some(GethDebugTracerType::BuiltInTracer(
@@ -56,6 +57,9 @@ impl DebugTraceCallNodeProvider {
         // TODO: test if passing BlockId::Hash is faster
         let legacy: bool = tx.max_fee_per_gas.is_none() && tx.max_fee_per_gas.is_none();
         let chain_id: U64 = U64::from(tx.chain_id.unwrap_or(U256::from(1)).as_u64());
+
+        println!("legacy: {legacy}");
+
         let tx: TypedTransaction = match legacy {
             true => TransactionRequest::new()
                 .from(tx.from)
@@ -64,6 +68,8 @@ impl DebugTraceCallNodeProvider {
                 .data(tx.input)
                 .chain_id(chain_id)
                 .nonce(tx.nonce)
+                .gas(tx.gas)
+                .gas_price(tx.gas_price.unwrap_or(parse_units(40, "gwei").unwrap().into()))
                 .into(),
             false => Eip1559TransactionRequest::new()
                 .from(tx.from)
@@ -72,6 +78,12 @@ impl DebugTraceCallNodeProvider {
                 .data(tx.input)
                 .chain_id(chain_id)
                 .nonce(tx.nonce)
+                .gas(tx.gas)
+                .max_fee_per_gas(tx.max_fee_per_gas.unwrap_or(parse_units(40, "gwei").unwrap().into()))
+                .max_priority_fee_per_gas(
+                    tx.max_priority_fee_per_gas
+                        .unwrap_or(parse_units(40, "gwei").unwrap().into()),
+                )
                 .into(),
         };
         let block_number: Option<BlockId> = block_number.map(|b_number| BlockId::Number(BlockNumber::Number(b_number)));
@@ -94,9 +106,7 @@ impl NodeProvider for DebugTraceCallNodeProvider {
     fn network(&self) -> &NetworkKind {
         self.data.network()
     }
-}
 
-impl NodeProviderRaw for DebugTraceCallNodeProvider {
     fn raw_http_provider(&self) -> &Provider<Http> {
         self.data.raw_http_provider()
     }

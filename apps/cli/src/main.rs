@@ -1,17 +1,21 @@
 mod utils;
 
+use amm_protocol::{AmmProtocolKind, UniswapV2Protocol};
 use anyhow::{anyhow, Result};
-use ethers_core::types::{Address, H160};
-use std::{env::VarError, ops::Deref, str::FromStr, sync::Arc};
+use ethers_core::{abi::{Event, EventExt, RawLog}, types::H160};
+use std::{env::VarError, ops::Deref, path::Path, str::FromStr, sync::Arc};
 use tokio::sync::broadcast::Receiver;
 
 use crate::utils::env::Env;
 use shared::{
+    abi::ABI,
     network::NetworkKind,
     network_streams::{NetworkEvent, NetworkStreamManagerBuilder, NetworkStreamsManager},
     provider::{
-        DebugTraceCallNodeProvider, NodeProviderKind, NodeProviderManager, NodeProviderNetworkInfo, NormalNodeProvider,
+        DebugTraceCallNodeProvider, NodeProviderKind, NodeProviderManager, NodeProviderNetworkInfo,
+        NormalNodeProvider,
     },
+    trace::{get_trace_all_logs, TraceLogData},
 };
 
 async fn get_node_providers(env: &Env, target_network: &NetworkKind) -> Result<Vec<NormalNodeProvider>> {
@@ -67,6 +71,10 @@ async fn get_debug_trace_call_node_providers(
     ])
 }
 
+fn get_amms() -> Vec<AmmProtocolKind> {
+    vec![AmmProtocolKind::UniswapV2(UniswapV2Protocol::new("SushiSwap", 300))]
+}
+
 async fn create_node_provider_manager(env: &Env, target_network: &NetworkKind) -> Result<NodeProviderManager> {
     let providers: Vec<NormalNodeProvider> = get_node_providers(env, target_network).await?;
     let debug_trace_call_providers: Vec<DebugTraceCallNodeProvider> =
@@ -90,6 +98,8 @@ async fn main() -> Result<()> {
     let target_network: NetworkKind = unsafe { ::std::mem::transmute(env.chain_id) };
     let provider_manager: NodeProviderManager = create_node_provider_manager(&env, &target_network).await?;
 
+    let abi = ABI::new(Path::new("./abi"));
+
     let provider: &Arc<NodeProviderKind> =
         &Arc::new(NodeProviderKind::Normal(provider_manager.get_next().deref().clone()));
     let debug_provider: &Arc<DebugTraceCallNodeProvider> = provider_manager.get_next_debug_trace_call();
@@ -99,18 +109,31 @@ async fn main() -> Result<()> {
         .watch_pending_transactions()
         //.watch_log("Sync(uint112,uint112)")
         .build();
+
+    let filters: Vec<H160> = vec![
+        H160::from_str("0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506").unwrap(),
+        H160::from_str("0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D").unwrap(),
+    ];
+
     let mut event_receiver: Receiver<NetworkEvent> = ns.subscribe();
     while let Ok(event) = event_receiver.recv().await {
         if let NetworkEvent::PendingTx(tx) = &event {
             if let Some(to) = tx.to {
-                if to != H160::from_str("0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506").unwrap() {
+                if !filters.clone().into_iter().any(|f| f == to) {
                     continue;
                 }
-                
-                println!("{:#?}", event);
+
+                println!("{:#?}", tx);
                 println!("-------------");
-                println!("{:#?}", debug_provider.debug_trace_call(tx.to_owned(), None).await);
+
+                let logs: Vec<TraceLogData> =
+                    get_trace_all_logs(debug_provider.debug_trace_call(tx.clone(), None).await?);
+                println!("{:#?}", logs);
                 println!("=============");
+
+                for log in logs {
+                    UniswapV2Protocol::decode_trace(&abi.uniswap_v2_pair, log);
+                }
             }
         }
     }

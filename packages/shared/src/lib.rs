@@ -1,6 +1,7 @@
 pub mod database_manager;
 pub mod network_streams;
 pub mod trace;
+pub mod abi;
 pub mod amm;
 pub mod network;
 pub mod provider;

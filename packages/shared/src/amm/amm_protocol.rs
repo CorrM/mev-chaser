@@ -1,7 +1,6 @@
-use super::{AmmPool, AmmProtocolKind};
+use super::AmmPool;
 
 pub trait AmmProtocol {
     fn name(&self) -> &str;
-    fn kind(&self) -> AmmProtocolKind;
     fn pools(&self) -> &Vec<impl AmmPool>;
 }

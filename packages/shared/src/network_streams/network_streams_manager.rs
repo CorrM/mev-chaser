@@ -5,7 +5,7 @@ use tokio::{
     task::{JoinError, JoinSet},
 };
 
-use crate::provider::NodeProviderRaw;
+use crate::provider::NodeProvider;
 
 use super::network_event::NetworkEvent;
 use super::log_stream::stream_log_event;
@@ -18,7 +18,7 @@ pub struct NetworkStreamsManager {
 }
 
 impl NetworkStreamsManager {
-    pub(super) fn new<T: 'static + NodeProviderRaw>(
+    pub(super) fn new<T: 'static + NodeProvider>(
         provider: T,
         events: &Vec<(NetworkEvent, Option<Filter>)>,
         event_sender: Sender<NetworkEvent>,
