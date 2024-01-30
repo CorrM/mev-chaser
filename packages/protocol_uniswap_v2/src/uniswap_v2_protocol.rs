@@ -26,6 +26,7 @@ impl UniswapV2Protocol {
                 })
                 .unwrap();
 
+            // Logs works YAAAYY
             println!("Sig: {}", ev.abi_signature());
             println!("Log: {:#?}", log);
         }
