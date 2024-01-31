@@ -1,22 +1,26 @@
-use ethers_core::types::H160;
+use anyhow::Result;
+use std::str::FromStr;
+use ethers_core::types::{H160, U256};
 
 pub struct CryptoToken {
     address: H160,
     name: String,
     symbol: String,
     decimals: u8,
-    decimals_pow: f64,
+    decimals_pow: U256,
 }
 
 impl CryptoToken {
-    fn new(address: H160, name: String, symbol: String, decimals: u8) -> Self {
-        Self {
-            address,
-            name,
-            symbol,
+    pub fn new(address: impl Into<String>, name: impl Into<String>, symbol: impl Into<String>, decimals: u8) -> Result<Self> {
+        //ethers_core::utils::;
+
+        Ok(Self {
+            address: H160::from_str(&address.into())?,
+            name: name.into(),
+            symbol: symbol.into(),
             decimals,
-            decimals_pow: 10_i32.pow(decimals as u32) as f64,
-        }
+            decimals_pow: U256::exp10(decimals as usize),
+        })
     }
 
     pub fn address(&self) -> &H160 {
@@ -35,11 +39,13 @@ impl CryptoToken {
         self.decimals
     }
 
-    fn convert_to_decimal(&self, value: i128) -> f64 {
-        value as f64 / self.decimals_pow
+    fn convert_to_decimal(&self, value: U256) -> String {
+        let integer = value / self.decimals_pow;
+        (value % self.decimals_pow).to_string()
     }
 
-    fn convert_to_amount(&self, value: f64) -> i128 {
-        (value * self.decimals_pow) as i128
+    fn convert_to_amount(&self, value: f64) -> U256 {
+        panic!("Not implemented");
+        //(value * self.decimals_pow)
     }
 }

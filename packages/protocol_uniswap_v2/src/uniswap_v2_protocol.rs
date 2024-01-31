@@ -2,7 +2,7 @@ use anyhow::Result;
 use std::str::FromStr;
 use ethers_core::abi::{Abi, Log, RawLog};
 use std::sync::Arc;
-use ethers_core::types::H256;
+use ethers_core::types::H160;
 
 use shared::{
     amm::{AmmPool, AmmProtocol},
@@ -15,8 +15,8 @@ pub struct UniswapV2Protocol {
     name: String,
     fees: u32,
     pools: Vec<Arc<UniswapV2Pool>>,
-    factory: H256,
-    router: H256,
+    factory: H160,
+    router: H160,
 }
 
 impl UniswapV2Protocol {
@@ -30,8 +30,8 @@ impl UniswapV2Protocol {
             name: name.into(),
             fees,
             pools: Vec::new(),
-            factory: H256::from_str(&factory.into())?,
-            router: H256::from_str(&router.into())?,
+            factory: H160::from_str(&factory.into())?,
+            router: H160::from_str(&router.into())?,
         })
     }
 
@@ -54,6 +54,14 @@ impl UniswapV2Protocol {
         }
 
         ret
+    }
+
+    pub fn factory(&self) -> H160 {
+        self.factory
+    }
+
+    pub fn router(&self) -> H160 {
+        self.router
     }
 }
 

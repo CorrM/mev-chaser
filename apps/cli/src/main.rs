@@ -1,13 +1,20 @@
 use std::{env::VarError, ops::Deref, path::Path, str::FromStr, sync::Arc};
 
 use anyhow::{anyhow, Result};
+use ethers::prelude::H256;
+use ethers_contract::{Contract, Multicall};
+use ethers_core::abi::{Abi, Token};
+use ethers_core::types::Bytes;
 use ethers_core::{
     abi::{AbiEncode, Log},
     types::H160,
 };
+use ethers_providers::{Http, Provider};
 use tokio::sync::broadcast::Receiver;
 
 use amm_protocol::{AmmProtocolKind, UniswapV2Protocol};
+use shared::provider::NodeProvider;
+use shared::token::CryptoToken;
 use shared::{
     abi::ABI,
     network::NetworkKind,
@@ -107,6 +114,60 @@ async fn create_node_provider_manager(
     )
 }
 
+async fn get_tokens(provider: &impl NodeProvider, erc20_abi: &Abi) -> Result<Vec<CryptoToken>> {
+    panic!("Not implemented");
+    /*
+    // TODO: depend on network
+    let tokens = vec![
+        "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270",
+        "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270",
+    ];
+
+    let client: Provider<Http> = provider.raw_http_provider().clone();
+    let client: Arc<Provider<Http>> = Arc::new(client);
+
+    let mut multicall: Multicall<Provider<Http>> = Multicall::new(client.clone(), None).await?;
+    for pool in tokens {
+        let contract = Contract::<Provider<Http>>::new(
+            *pool.address(),
+            erc20_abi.clone(),
+            client.clone(),
+        );
+
+        let call = contract.method::<_, H256>("getReserves", ())?;
+        multicall.add_call(call, false);
+    }
+
+    let result: Vec<Result<Token, Bytes>> = multicall.call_raw().await?;
+
+    let contract = Contract::<Provider<Http>>::new(
+        H160::from_str(tokens[0]).unwrap(),
+        erc20_abi.clone(),
+        client.clone(),
+    );
+
+    let call = contract.method::<_, String>("name", ())?;
+    let name = call.call_raw().await?;
+
+    println!("TokenName: {}", name);
+
+    Ok(vec![
+        CryptoToken::new(
+            "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270",
+            "Wrapped Matic",
+            "WMATIC",
+            18
+        )?,
+        CryptoToken::new(
+            "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270",
+            "Wrapped Ether",
+            "WETH",
+            18
+        )?,
+    ])
+    */
+}
+
 fn get_amms(network: &NetworkKind) -> Result<Vec<AmmProtocolKind>> {
     // TODO: depend on network
     Ok(vec![
@@ -144,21 +205,28 @@ async fn main() -> Result<()> {
     let abi = ABI::new(Path::new("./abi"));
 
     let target_network: NetworkKind = unsafe { std::mem::transmute(env.chain_id) };
-    let amms: Vec<AmmProtocolKind> = get_amms(&target_network)?;
 
     let provider_manager: NodeProviderManager =
         create_node_provider_manager(&env, &target_network).await?;
 
-    let provider: &Arc<NodeProviderKind> = &Arc::new(NodeProviderKind::Normal(
-        provider_manager.get_next().deref().clone(),
-    ));
+    let provider: &Arc<NormalNodeProvider> = provider_manager.get_next();
+    let provider_kind: &Arc<NodeProviderKind> =
+        &Arc::new(NodeProviderKind::Normal(provider.deref().clone()));
 
-    let router_addresses: Vec<String> = vec![
-        "0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506".to_string(),
-        "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D".to_string(),
-    ];
+    //let tokens: Vec<CryptoToken> = get_tokens(provider.deref(), &abi.erc20).await?;
+    let amms: Vec<AmmProtocolKind> = get_amms(&target_network)?;
 
-    let ns: NetworkStreamsManager = NetworkStreamManagerBuilder::new(provider.clone())
+    let router_addresses: Vec<String> = amms
+        .iter()
+        .map(|a| match a {
+            AmmProtocolKind::UniswapV2(v2) => v2.router().encode_hex(),
+            _ => {
+                panic!("UniswapV2 not found");
+            }
+        })
+        .collect();
+
+    let ns: NetworkStreamsManager = NetworkStreamManagerBuilder::new(provider_kind.clone())
         //.watch_new_blocks()
         .watch_pending_transactions(Some(router_addresses.clone()))
         //.watch_log("Sync(uint112,uint112)")
@@ -166,7 +234,7 @@ async fn main() -> Result<()> {
 
     let filters: Vec<H160> = router_addresses
         .iter()
-        .map(|a| H160::from_str(a).unwrap())
+        .map(|s| H160::from_str(s).unwrap())
         .collect();
 
     let debug_provider: &Arc<DebugTraceCallNodeProvider> =

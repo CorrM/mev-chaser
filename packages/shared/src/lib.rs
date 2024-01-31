@@ -1,6 +1,6 @@
 pub mod abi;
 pub mod amm;
-pub mod database_manager;
+pub mod database;
 pub mod network;
 pub mod network_streams;
 pub mod provider;

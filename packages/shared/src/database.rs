@@ -1,9 +1,10 @@
-/* use std::{
+/*use std::{
     io::{Error, ErrorKind},
     path::Path,
 };
 
-use rusqlite::{params, Connection, Result, Statement};
+use anyhow::{anyhow, Result};
+use rusqlite::{params, Connection, Statement};
 
 use crate::{amm::AmmPool, network::NetworkKind, token::CryptoToken};
 
@@ -83,17 +84,17 @@ pub struct DbTokenNetwork {
     pub address: String,
 }
 
-pub struct DatabaseManager {
+pub struct Database {
     db: Connection,
 }
 
-impl DatabaseManager {
-    pub fn new(db_path: Path) -> Result<Self> {
+impl Database {
+    pub fn new<P: AsRef<Path>>(db_path: P) -> Result<Self> {
         let db: Connection = Connection::open(db_path)?;
-        Ok(DatabaseManager { db })
+        Ok(Database { db })
     }
 
-    pub fn close(&self) -> Result<()> {
+    pub fn close_db(&self) -> Result<(), (Connection, rusqlite::Error)> {
         self.db.close()
     }
 
@@ -126,10 +127,10 @@ impl DatabaseManager {
         token1: &CryptoToken,
     ) -> Result<()> {
         let token0_result: Option<(DbCryptoToken, DbTokenNetwork)> =
-            self.get_token_by_address(token0.address().clone(), network)?;
+            self.get_token_by_address(&token0.address(), network)?;
         let (db_token0, db_token_network0) = match token0_result {
             Some((token, token_network)) => (token, token_network),
-            None => return Err(Error::new(ErrorKind::Other, "Failed to add pool, token0 not found")),
+            None => return Err(anyhow!("Failed to add pool, token0 not found")),
         };
 
         let token1_result: Option<(DbCryptoToken, DbTokenNetwork)> =
@@ -631,13 +632,4 @@ impl DatabaseManager {
         Ok(providers)
     }
 }
-
-fn main() {
-    if let Ok(manager) = DatabaseManager::new("your_database_name") {
-        println!("Connected to the database!");
-        // Now you can use methods of DatabaseManager
-    } else {
-        println!("Failed to connect to the database");
-    }
-}
- */
+*/
