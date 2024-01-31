@@ -15,9 +15,12 @@ impl ABI {
     pub fn new(abi_folder_path: &Path) -> Self {
         let erc20_json: String = fs::read_to_string(abi_folder_path.join("ERC20.json")).unwrap();
         let weth_json: String = fs::read_to_string(abi_folder_path.join("WETH.json")).unwrap();
-        let uniswap_v2_factory_json: String = fs::read_to_string(abi_folder_path.join("UniswapV2Factory.json")).unwrap();
-        let uniswap_v2_router_json: String = fs::read_to_string(abi_folder_path.join("UniswapV2Router.json")).unwrap();
-        let uniswap_v2_pair_json: String = fs::read_to_string(abi_folder_path.join("UniswapV2Pair.json")).unwrap();
+        let uniswap_v2_factory_json: String =
+            fs::read_to_string(abi_folder_path.join("UniswapV2Factory.json")).unwrap();
+        let uniswap_v2_router_json: String =
+            fs::read_to_string(abi_folder_path.join("UniswapV2Router.json")).unwrap();
+        let uniswap_v2_pair_json: String =
+            fs::read_to_string(abi_folder_path.join("UniswapV2Pair.json")).unwrap();
 
         Self {
             erc20: serde_json::from_str(&erc20_json).unwrap(),

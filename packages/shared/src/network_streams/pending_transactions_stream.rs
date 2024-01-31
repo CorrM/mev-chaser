@@ -18,8 +18,6 @@ pub async fn stream_pending_transactions<T: NodeProvider>(
     //let mut stream = ws.subscribe_pending_txs().await.unwrap();
     //let mut stream = stream.transactions_unordered(256).fuse();
 
-    //let mut stream = ws.subscribe_full_pending_txs().await.unwrap();
-
     let mut stream = match provider.name() {
         "Alchemy" => {
             let alchemy_event: Value = utils::serialize(&"alchemy_pendingTransactions");
@@ -31,9 +29,7 @@ pub async fn stream_pending_transactions<T: NodeProvider>(
 
             ws.subscribe(sub_params).await.unwrap()
         }
-        _ => {
-            ws.subscribe_full_pending_txs().await.unwrap()
-        }
+        _ => ws.subscribe_full_pending_txs().await.unwrap(),
     };
 
     while let Some(tx) = stream.next().await {

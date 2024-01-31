@@ -4,10 +4,11 @@ use anyhow::Result;
 use ethers_core::types::{H160, U256};
 
 use shared::{
-    amm::{AmmPool, AmmProtocol},
+    amm::AmmPool,
     network::NetworkKind,
     token::CryptoToken,
 };
+use shared::amm::AmmProtocol;
 
 use crate::uniswap_v2_protocol::UniswapV2Protocol;
 
@@ -33,19 +34,19 @@ impl AmmPool for UniswapV2Pool {
         &self.address
     }
 
-    fn dex(&self) -> &impl AmmProtocol {
-        self.dex.as_ref()
+    fn dex(&self) -> Arc<dyn AmmProtocol> {
+        self.dex.clone()
     }
 
     fn network(&self) -> &NetworkKind {
         panic!()
     }
 
-    fn token0(&self) -> &CryptoToken {
+    fn token0(&self) -> &Arc<CryptoToken> {
         panic!()
     }
 
-    fn token1(&self) -> &CryptoToken {
+    fn token1(&self) -> &Arc<CryptoToken> {
         panic!()
     }
 

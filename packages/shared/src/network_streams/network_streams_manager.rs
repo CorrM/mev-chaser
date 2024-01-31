@@ -1,9 +1,9 @@
 use ethers::types::Filter;
+use tokio::sync::broadcast::Receiver;
 use tokio::{
     sync::broadcast::Sender,
     task::{JoinError, JoinSet},
 };
-use tokio::sync::broadcast::Receiver;
 
 use crate::provider::NodeProvider;
 
@@ -32,12 +32,20 @@ impl NetworkStreamsManager {
         }
 
         if let Some(pending_transactions) = pending_transactions {
-            set.spawn(stream_pending_transactions(provider.clone(), event_sender.clone(), Some(pending_transactions)));
+            set.spawn(stream_pending_transactions(
+                provider.clone(),
+                event_sender.clone(),
+                Some(pending_transactions),
+            ));
         }
 
         if let Some(events) = events {
             for event in events {
-                set.spawn(stream_log_event(provider.clone(), event_sender.clone(), event.unwrap()));
+                set.spawn(stream_log_event(
+                    provider.clone(),
+                    event_sender.clone(),
+                    event.unwrap(),
+                ));
             }
         }
 

@@ -2,9 +2,10 @@ use anyhow::{Ok, Result};
 use ethers::{
     providers::{Http, Provider, Ws},
     types::{
-        BlockId, BlockNumber, CallConfig, Eip1559TransactionRequest, GethDebugBuiltInTracerConfig,
-        GethDebugBuiltInTracerType, GethDebugTracerConfig, GethDebugTracerType, GethDebugTracingCallOptions,
-        GethDebugTracingOptions, GethTrace, Transaction, transaction::eip2718::TypedTransaction, TransactionRequest, U256, U64,
+        transaction::eip2718::TypedTransaction, BlockId, BlockNumber, CallConfig,
+        Eip1559TransactionRequest, GethDebugBuiltInTracerConfig, GethDebugBuiltInTracerType,
+        GethDebugTracerConfig, GethDebugTracerType, GethDebugTracingCallOptions,
+        GethDebugTracingOptions, GethTrace, Transaction, TransactionRequest, U256, U64,
     },
 };
 use ethers_core::utils::parse_units;
@@ -47,13 +48,20 @@ pub struct DebugTraceCallNodeProvider {
 }
 
 impl DebugTraceCallNodeProvider {
-    pub async fn new(name: impl Into<String>, network_info: NodeProviderNetworkInfo) -> Result<Self> {
+    pub async fn new(
+        name: impl Into<String>,
+        network_info: NodeProviderNetworkInfo,
+    ) -> Result<Self> {
         Ok(Self {
             data: NormalNodeProvider::new(name, network_info).await?,
         })
     }
 
-    pub async fn debug_trace_call(&self, tx: Transaction, block_number: Option<U64>) -> Result<GethTrace> {
+    pub async fn debug_trace_call(
+        &self,
+        tx: Transaction,
+        block_number: Option<U64>,
+    ) -> Result<GethTrace> {
         // TODO: test if passing BlockId::Hash is faster
         let legacy: bool = tx.max_fee_per_gas.is_none() && tx.max_fee_per_gas.is_none();
         let chain_id: U64 = U64::from(tx.chain_id.unwrap_or(U256::from(1)).as_u64());
@@ -67,7 +75,10 @@ impl DebugTraceCallNodeProvider {
                 .chain_id(chain_id)
                 .nonce(tx.nonce)
                 .gas(tx.gas)
-                .gas_price(tx.gas_price.unwrap_or(parse_units(40, "gwei").unwrap().into()))
+                .gas_price(
+                    tx.gas_price
+                        .unwrap_or(parse_units(40, "gwei").unwrap().into()),
+                )
                 .into(),
             false => Eip1559TransactionRequest::new()
                 .from(tx.from)
@@ -77,14 +88,18 @@ impl DebugTraceCallNodeProvider {
                 .chain_id(chain_id)
                 .nonce(tx.nonce)
                 .gas(tx.gas)
-                .max_fee_per_gas(tx.max_fee_per_gas.unwrap_or(parse_units(40, "gwei").unwrap().into()))
+                .max_fee_per_gas(
+                    tx.max_fee_per_gas
+                        .unwrap_or(parse_units(40, "gwei").unwrap().into()),
+                )
                 .max_priority_fee_per_gas(
                     tx.max_priority_fee_per_gas
                         .unwrap_or(parse_units(40, "gwei").unwrap().into()),
                 )
                 .into(),
         };
-        let block_number: Option<BlockId> = block_number.map(|b_number| BlockId::Number(BlockNumber::Number(b_number)));
+        let block_number: Option<BlockId> =
+            block_number.map(|b_number| BlockId::Number(BlockNumber::Number(b_number)));
 
         let trace: GethTrace = self
             .data

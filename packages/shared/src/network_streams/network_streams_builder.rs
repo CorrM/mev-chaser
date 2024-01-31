@@ -6,10 +6,7 @@ use tokio::sync::{broadcast, broadcast::Sender};
 
 use crate::provider::NodeProviderKind;
 
-use super::{
-    network_event::NetworkEvent, network_streams_manager::NetworkStreamsManager
-    ,
-};
+use super::{network_event::NetworkEvent, network_streams_manager::NetworkStreamsManager};
 
 pub struct NetworkStreamManagerBuilder {
     provider: Arc<NodeProviderKind>,
@@ -33,7 +30,10 @@ impl NetworkStreamManagerBuilder {
         self
     }
 
-    pub fn watch_pending_transactions(&mut self, filter_to_address: Option<Vec<String>>) -> &mut Self {
+    pub fn watch_pending_transactions(
+        &mut self,
+        filter_to_address: Option<Vec<String>>,
+    ) -> &mut Self {
         self.pending_transactions = filter_to_address;
         self
     }

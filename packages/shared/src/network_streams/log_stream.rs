@@ -10,7 +10,11 @@ use crate::provider::NodeProvider;
 
 use super::NetworkEvent;
 
-pub async fn stream_log_event<T: NodeProvider>(provider: T, event_sender: Sender<NetworkEvent>, filter: Filter) {
+pub async fn stream_log_event<T: NodeProvider>(
+    provider: T,
+    event_sender: Sender<NetworkEvent>,
+    filter: Filter,
+) {
     let ws: &Provider<Ws> = provider.raw_ws_provider();
     let mut stream: SubscriptionStream<Ws, Log> = ws.subscribe_logs(&filter).await.unwrap();
 

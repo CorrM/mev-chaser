@@ -28,8 +28,11 @@ pub async fn get_uniswap_v2_reserves<T: NodeProvider>(
 
     let mut multicall: Multicall<Provider<Http>> = Multicall::new(client.clone(), None).await?;
     for pool in &pools {
-        let contract =
-            Contract::<Provider<Http>>::new(*pool.address(), abi.uniswap_v2_pair.clone(), client.clone());
+        let contract = Contract::<Provider<Http>>::new(
+            *pool.address(),
+            abi.uniswap_v2_pair.clone(),
+            client.clone(),
+        );
         let call = contract.method::<_, H256>("getReserves", ())?;
         multicall.add_call(call, false);
     }

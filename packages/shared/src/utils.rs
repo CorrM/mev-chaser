@@ -1,7 +1,11 @@
 use ethers::types::U256;
 use rand::Rng;
 
-pub fn calculate_next_block_base_fee(gas_used: U256, gas_limit: U256, base_fee_per_gas: U256) -> U256 {
+pub fn calculate_next_block_base_fee(
+    gas_used: U256,
+    gas_limit: U256,
+    base_fee_per_gas: U256,
+) -> U256 {
     let mut target_gas_used: U256 = gas_limit / 2;
     target_gas_used = if target_gas_used == U256::zero() {
         U256::one()
@@ -10,9 +14,13 @@ pub fn calculate_next_block_base_fee(gas_used: U256, gas_limit: U256, base_fee_p
     };
 
     let new_base_fee: U256 = if gas_used > target_gas_used {
-        base_fee_per_gas + ((base_fee_per_gas * (gas_used - target_gas_used)) / target_gas_used) / U256::from(8u64)
+        base_fee_per_gas
+            + ((base_fee_per_gas * (gas_used - target_gas_used)) / target_gas_used)
+                / U256::from(8u64)
     } else {
-        base_fee_per_gas - ((base_fee_per_gas * (target_gas_used - gas_used)) / target_gas_used) / U256::from(8u64)
+        base_fee_per_gas
+            - ((base_fee_per_gas * (target_gas_used - gas_used)) / target_gas_used)
+                / U256::from(8u64)
     };
 
     let seed: i32 = rand::thread_rng().gen_range(0..9);

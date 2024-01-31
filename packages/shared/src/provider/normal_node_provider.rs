@@ -16,7 +16,10 @@ pub struct NormalNodeProvider {
 }
 
 impl NormalNodeProvider {
-    pub async fn new(name: impl Into<String>, network_info: NodeProviderNetworkInfo) -> Result<Self> {
+    pub async fn new(
+        name: impl Into<String>,
+        network_info: NodeProviderNetworkInfo,
+    ) -> Result<Self> {
         let ws: Ws = Ws::connect(&network_info.wss_url).await?;
         let http: Http = Http::from_str(&network_info.http_url)?;
 

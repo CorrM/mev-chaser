@@ -10,10 +10,16 @@ pub struct NodeProviderManager {
 }
 
 impl NodeProviderManager {
-    pub fn new(providers: Vec<NormalNodeProvider>, debug_trace_call_providers: Vec<DebugTraceCallNodeProvider>) -> Result<Self> {
+    pub fn new(
+        providers: Vec<NormalNodeProvider>,
+        debug_trace_call_providers: Vec<DebugTraceCallNodeProvider>,
+    ) -> Result<Self> {
         Ok(Self {
             providers: providers.into_iter().map(Arc::new).collect(),
-            debug_trace_call_providers: debug_trace_call_providers.into_iter().map(Arc::new).collect(),
+            debug_trace_call_providers: debug_trace_call_providers
+                .into_iter()
+                .map(Arc::new)
+                .collect(),
         })
     }
 
