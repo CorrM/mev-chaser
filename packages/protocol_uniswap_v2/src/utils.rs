@@ -4,10 +4,11 @@ use anyhow::Result;
 use ethers::{
     abi::Token,
     providers::{Http, Provider},
-    types::{Bytes, H160, H256, U256},
+    types::{Bytes, H256, U256},
 };
 use ethers_contract::{Contract, Multicall};
 
+use ethers_core::types::Address;
 use shared::{abi::ABI, amm::AmmPool, provider::NodeProvider};
 
 use crate::UniswapV2Pool;
@@ -22,7 +23,7 @@ pub async fn get_uniswap_v2_reserves<T: NodeProvider>(
     provider: T,
     abi: ABI,
     pools: Vec<UniswapV2Pool>,
-) -> Result<HashMap<H160, Reserve>> {
+) -> Result<HashMap<Address, Reserve>> {
     let client: Provider<Http> = provider.raw_http_provider().clone();
     let client: Arc<Provider<Http>> = Arc::new(client);
 
@@ -39,7 +40,7 @@ pub async fn get_uniswap_v2_reserves<T: NodeProvider>(
 
     let result: Vec<Result<Token, Bytes>> = multicall.call_raw().await?;
 
-    let mut reserves: HashMap<H160, Reserve> = HashMap::new();
+    let mut reserves: HashMap<Address, Reserve> = HashMap::new();
     for i in 0..result.len() {
         let pool = &pools[i];
         let reserve = result[i].clone();
@@ -59,7 +60,7 @@ pub async fn batch_get_uniswap_v2_reserves<T: 'static + NodeProvider>(
     provider: T,
     abi: &ABI,
     pools: Vec<UniswapV2Pool>,
-) -> HashMap<H160, Reserve> {
+) -> HashMap<Address, Reserve> {
     let pools_cnt: usize = pools.len();
     let batch: f32 = ((pools_cnt / 250) as f32).ceil();
     let pools_per_batch: usize = ((pools_cnt as f32) / batch).ceil() as usize;
@@ -77,7 +78,7 @@ pub async fn batch_get_uniswap_v2_reserves<T: 'static + NodeProvider>(
         handles.push(handle);
     }
 
-    let mut reserves: HashMap<H160, Reserve> = HashMap::new();
+    let mut reserves: HashMap<Address, Reserve> = HashMap::new();
 
     for handle in handles {
         let result = handle.await.unwrap();

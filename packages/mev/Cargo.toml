@@ -9,3 +9,7 @@ amm_protocol = { path = "../../packages/amm_protocol" }
 
 anyhow = { workspace = true }
 tokio = { workspace = true }
+ethers-providers = { workspace = true }
+ethers-core = { workspace = true }
+ethers-contract = { workspace = true }
+ethers = { workspace = true }

@@ -1,8 +1,8 @@
-use ethers_core::types::{Bytes, CallFrame, GethTrace, GethTraceFrame, H160, H256};
+use ethers_core::types::{Address, Bytes, CallFrame, GethTrace, GethTraceFrame, H256};
 
 #[derive(Debug, Clone)]
 pub struct TraceLogData {
-    address: H160,
+    address: Address,
     topics: Vec<H256>,
     data: Bytes,
 }
@@ -16,7 +16,7 @@ impl TraceLogData {
         self.data.clone()
     }
 
-    pub fn address(&self) -> H160 {
+    pub fn address(&self) -> Address {
         self.address
     }
 }

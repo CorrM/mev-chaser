@@ -1,8 +1,10 @@
 use anyhow::Result;
+use ethers_core::{
+    abi::{Abi, Log, RawLog},
+    types::Address,
+};
 use std::str::FromStr;
-use ethers_core::abi::{Abi, Log, RawLog};
 use std::sync::Arc;
-use ethers_core::types::H160;
 
 use shared::{
     amm::{AmmPool, AmmProtocol, AmmProtocolKind},
@@ -15,8 +17,8 @@ pub struct UniswapV2Protocol {
     name: String,
     fees: u32,
     pools: Vec<Arc<UniswapV2Pool>>,
-    factory: H160,
-    router: H160,
+    factory: Address,
+    router: Address,
 }
 
 impl UniswapV2Protocol {
@@ -30,8 +32,8 @@ impl UniswapV2Protocol {
             name: name.into(),
             fees,
             pools: Vec::new(),
-            factory: H160::from_str(&factory.into())?,
-            router: H160::from_str(&router.into())?,
+            factory: Address::from_str(&factory.into())?,
+            router: Address::from_str(&router.into())?,
         })
     }
 
@@ -56,11 +58,11 @@ impl UniswapV2Protocol {
         ret
     }
 
-    pub fn factory(&self) -> &H160 {
+    pub fn factory(&self) -> &Address {
         &self.factory
     }
 
-    pub fn router(&self) -> &H160 {
+    pub fn router(&self) -> &Address {
         &self.router
     }
 }

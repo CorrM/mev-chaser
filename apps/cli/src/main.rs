@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Result};
+use database::Database;
 use ethers::prelude::H256;
 use ethers_contract::{Contract, Multicall};
 use ethers_core::abi::{Abi, Token};
@@ -8,6 +9,7 @@ use ethers_core::{
     types::H160,
 };
 use ethers_providers::{Http, Provider};
+use mev::DexBackRunnerStragegy;
 use std::{env::VarError, ops::Deref, path::Path, str::FromStr, sync::Arc};
 use tokio::sync::broadcast::Receiver;
 
@@ -68,17 +70,14 @@ async fn get_node_providers(env: &Env, target_network: &NetworkKind) -> Result<V
     Ok(providers)
 }
 
-async fn get_debug_trace_call_node_providers(
-    env: &Env,
-    target_network: &NetworkKind,
-) -> Result<Vec<DebugTraceCallNodeProvider>> {
+async fn get_debug_node_providers(env: &Env, target_network: &NetworkKind) -> Result<Vec<DebugTraceCallNodeProvider>> {
     let blockpi_network_subdomain: String = match target_network {
         NetworkKind::Ethereum => "ethereum".to_string(),
         NetworkKind::Polygon => "polygon".to_string(),
     };
 
     let blockpi_net_info: NodeProviderNetworkInfo = NodeProviderNetworkInfo {
-        network: target_network.clone(),
+        network: *target_network,
         http_url: format!(
             "https://{}.blockpi.network/v1/rpc/{}",
             blockpi_network_subdomain, env.blockpi_api_key
@@ -98,10 +97,7 @@ async fn get_debug_trace_call_node_providers(
 
 async fn create_node_provider_manager(env: &Env, target_network: &NetworkKind) -> Result<NodeProviderManager> {
     let providers: Vec<NormalNodeProvider> = get_node_providers(env, target_network).await?;
-    NodeProviderManager::new(
-        providers,
-        get_debug_trace_call_node_providers(env, target_network).await?,
-    )
+    NodeProviderManager::new(providers, get_debug_node_providers(env, target_network).await?)
 }
 
 async fn get_tokens(provider: &impl NodeProvider, erc20_abi: &Abi) -> Result<Vec<CryptoToken>> {
@@ -131,7 +127,7 @@ async fn get_tokens(provider: &impl NodeProvider, erc20_abi: &Abi) -> Result<Vec
     let result: Vec<Result<Token, Bytes>> = multicall.call_raw().await?;
 
     let contract = Contract::<Provider<Http>>::new(
-        H160::from_str(tokens[0]).unwrap(),
+        Address::from_str(tokens[0]).unwrap(),
         erc20_abi.clone(),
         client.clone(),
     );
@@ -176,46 +172,21 @@ fn get_amms(network: &NetworkKind) -> Result<Vec<AmmProtocolContainer>> {
     ])
 }
 
-fn new_pending_tx(tx_hash: String, decoded_log: Vec<(String, Log)>) {
-    println!("tx_hash: {}", tx_hash);
-    println!("decoded_log: {:#?}", decoded_log);
-
-    let sync_log: Option<&(String, Log)> = decoded_log.iter().find(|(name, log)| name == "Sync");
-    if let None = sync_log {
-        return;
-    }
-
-    let (name, log): &(String, Log) = sync_log.unwrap();
-    println!("sync_log: {:#?}", log);
-}
-
 #[tokio::main]
 async fn main() -> Result<()> {
     let env: Env = get_env()?;
-    let abi = ABI::new(Path::new("./abi"));
-    let db = Database::new();
+    let abi = ABI::new(Path::new("./abi"))?;
+    let db = Database::new(Path::new("./Main.db"))?;
 
     let target_network: NetworkKind = unsafe { std::mem::transmute(env.chain_id) };
-
     let provider_manager: NodeProviderManager = create_node_provider_manager(&env, &target_network).await?;
-    let provider: &Arc<NormalNodeProvider> = provider_manager.get_next();
-    let provider_kind: &Arc<NodeProviderKind> = &Arc::new(NodeProviderKind::Normal(provider.deref().clone()));
 
     //let tokens: Vec<CryptoToken> = get_tokens(provider.deref(), &abi.erc20).await?;
-    let amms: Vec<AmmProtocolKind> = get_amms(&target_network)?;
-    let router_addresses: Vec<String> = amms
-        .iter()
-        .map(|a| match a {
-            AmmProtocolKind::UniswapV2(v2) => v2.router().encode_hex(),
-            _ => {
-                panic!("UniswapV2 not found");
-            }
-        })
-        .collect();
+    let amms: Vec<AmmProtocolContainer> = get_amms(&target_network)?;
 
-    let filters: Vec<H160> = router_addresses.iter().map(|s| H160::from_str(s).unwrap()).collect();
+    let strategy = DexBackRunnerStragegy::new(abi, provider_manager, amms);
+    strategy.run().await?;
 
-    
     //sb.0.spawn(event_handler(provider.clone(), sb.1.clone()));
 
     //while let Some(res) = ns.join_next().await {

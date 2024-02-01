@@ -1,7 +1,7 @@
 use std::{str::FromStr, sync::Arc};
 
 use anyhow::Result;
-use ethers_core::types::{H160, U256};
+use ethers_core::types::{Address, U256};
 
 use shared::{
     amm::AmmPool,
@@ -14,7 +14,7 @@ use crate::uniswap_v2_protocol::UniswapV2Protocol;
 
 #[derive(Clone)]
 pub struct UniswapV2Pool {
-    address: H160,
+    address: Address,
     dex: Arc<UniswapV2Protocol>,
     //network: NetworkKind,
 }
@@ -22,7 +22,7 @@ pub struct UniswapV2Pool {
 impl UniswapV2Pool {
     pub fn new(address: impl Into<String>, dex: Arc<UniswapV2Protocol>) -> Result<Self> {
         Ok(Self {
-            address: H160::from_str(&address.into())?,
+            address: Address::from_str(&address.into())?,
             dex: dex.clone(),
             //network: dex.network(),
         })
@@ -30,7 +30,7 @@ impl UniswapV2Pool {
 }
 
 impl AmmPool for UniswapV2Pool {
-    fn address(&self) -> &H160 {
+    fn address(&self) -> &Address {
         &self.address
     }
 

@@ -59,7 +59,7 @@ impl DebugTraceCallNodeProvider {
 
     pub async fn debug_trace_call(
         &self,
-        tx: Transaction,
+        tx: &Transaction,
         block_number: Option<U64>,
     ) -> Result<GethTrace> {
         // TODO: test if passing BlockId::Hash is faster
@@ -71,7 +71,7 @@ impl DebugTraceCallNodeProvider {
                 .from(tx.from)
                 .to(tx.to.unwrap())
                 .value(tx.value)
-                .data(tx.input)
+                .data(tx.input.clone())
                 .chain_id(chain_id)
                 .nonce(tx.nonce)
                 .gas(tx.gas)
@@ -84,7 +84,7 @@ impl DebugTraceCallNodeProvider {
                 .from(tx.from)
                 .to(tx.to.unwrap())
                 .value(tx.value)
-                .data(tx.input)
+                .data(tx.input.clone())
                 .chain_id(chain_id)
                 .nonce(tx.nonce)
                 .gas(tx.gas)

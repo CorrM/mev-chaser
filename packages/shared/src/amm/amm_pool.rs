@@ -1,4 +1,4 @@
-use ethers_core::types::{H160, U256};
+use ethers_core::types::{Address, U256};
 use std::sync::Arc;
 
 use crate::{network::network_kind::NetworkKind, token::crypto_token::CryptoToken};
@@ -6,7 +6,7 @@ use crate::{network::network_kind::NetworkKind, token::crypto_token::CryptoToken
 use super::AmmProtocol;
 
 pub trait AmmPool {
-    fn address(&self) -> &H160;
+    fn address(&self) -> &Address;
     fn dex(&self) -> Arc<dyn AmmProtocol>;
     fn network(&self) -> &NetworkKind;
     fn token0(&self) -> &Arc<CryptoToken>;
