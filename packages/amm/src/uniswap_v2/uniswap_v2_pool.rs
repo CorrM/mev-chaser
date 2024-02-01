@@ -4,13 +4,11 @@ use anyhow::Result;
 use ethers_core::types::{Address, U256};
 
 use shared::{
-    amm::AmmPool,
     network::NetworkKind,
     token::CryptoToken,
 };
-use shared::amm::AmmProtocol;
 
-use crate::uniswap_v2_protocol::UniswapV2Protocol;
+use crate::{uniswap_v2_protocol::UniswapV2Protocol, AmmPool, AmmProtocol};
 
 #[derive(Clone)]
 pub struct UniswapV2Pool {
@@ -20,9 +18,9 @@ pub struct UniswapV2Pool {
 }
 
 impl UniswapV2Pool {
-    pub fn new(address: impl Into<String>, dex: Arc<UniswapV2Protocol>) -> Result<Self> {
+    pub fn new(address: Address, dex: Arc<UniswapV2Protocol>) -> Result<Self> {
         Ok(Self {
-            address: Address::from_str(&address.into())?,
+            address,
             dex: dex.clone(),
             //network: dex.network(),
         })
@@ -30,11 +28,13 @@ impl UniswapV2Pool {
 }
 
 impl AmmPool for UniswapV2Pool {
+    type Protocol = UniswapV2Protocol;
+
     fn address(&self) -> &Address {
         &self.address
     }
-
-    fn dex(&self) -> Arc<dyn AmmProtocol> {
+    
+    fn dex(&self) -> Arc<dyn AmmProtocol<Pool = Self>> {
         self.dex.clone()
     }
 

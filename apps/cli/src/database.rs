@@ -1,9 +1,9 @@
+use amm::{AmmPool, AmmProtocol, AmmProtocolKind};
 use rusqlite::{params, Connection, OptionalExtension, Result, Statement};
 use std::path::Path;
 
-use shared::amm::{AmmProtocol, AmmProtocolKind};
 use shared::token::CryptoToken;
-use shared::{amm::AmmPool, network::NetworkKind};
+use shared::network::NetworkKind;
 
 #[derive(Debug)]
 pub struct DbNetwork {
@@ -289,12 +289,9 @@ impl Database {
         )?;
 
         let token_address: String = format!("{:?}", token.address());
-        let db_token_network: DbTokenNetwork =
-            self.add_token_network(token.network(), &token_address)?;
-        
-        let mut stmt: Statement = self
-            .db
-            .prepare("UPDATE Tokens SET tokenNetworksIds = ? WHERE id = ?")?;
+        let db_token_network: DbTokenNetwork = self.add_token_network(token.network(), &token_address)?;
+
+        let mut stmt: Statement = self.db.prepare("UPDATE Tokens SET tokenNetworksIds = ? WHERE id = ?")?;
 
         stmt.execute(params![
             format!("{}{},", db_token.token_networks_ids, db_token_network.id),
@@ -407,18 +404,22 @@ impl Database {
         stmt.query_row(params![dex_id], DbDex::from_row).optional()
     }
 
-    pub fn add_dex(&self, dex: &impl AmmProtocol) -> Result<DbDex> {
-        let dex_protocol_id: Option<DbDexProtocol> = self.get_dex_protocol(&dex.protocol())?;
+    pub fn add_dex(&self, dex: &AmmProtocolKind) -> Result<DbDex> {
+        let dex_protocol_id: Option<DbDexProtocol> = self.get_dex_protocol(&dex)?;
         if dex_protocol_id.is_none() {
             return Err(rusqlite::Error::QueryReturnedNoRows);
         }
+
+        let (name, options) = match dex {
+            AmmProtocolKind::UniswapV2(v2) => (v2.name(), v2.options()),
+        };
 
         let mut stmt: Statement = self
             .db
             .prepare("INSERT INTO Dexes (name, dexProtocolId, options) VALUES (?, ?, ?) RETURNING id")?;
 
         stmt.query_row(
-            params![dex.name(), dex_protocol_id.unwrap().id, dex.options()],
+            params![name, dex_protocol_id.unwrap().id, options],
             DbDex::from_row,
         )
     }

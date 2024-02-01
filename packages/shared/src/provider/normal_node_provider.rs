@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::{str::FromStr, sync::Arc};
 
 use anyhow::Result;
 use ethers::providers::{Http, Provider, Ws};
@@ -11,8 +11,8 @@ use super::{NodeProvider, NodeProviderNetworkInfo};
 pub struct NormalNodeProvider {
     name: String,
     network: NetworkKind,
-    http_provider: Provider<Http>,
-    ws_provider: Provider<Ws>,
+    http_provider: Arc<Provider<Http>>,
+    ws_provider: Arc<Provider<Ws>>,
 }
 
 impl NormalNodeProvider {
@@ -26,8 +26,8 @@ impl NormalNodeProvider {
         Ok(Self {
             name: name.into(),
             network: network_info.network,
-            ws_provider: Provider::new(ws),
-            http_provider: Provider::new(http),
+            ws_provider: Arc::new(Provider::new(ws)),
+            http_provider: Arc::new(Provider::new(http)),
         })
     }
 }
@@ -41,11 +41,11 @@ impl NodeProvider for NormalNodeProvider {
         &self.network
     }
 
-    fn raw_http_provider(&self) -> &Provider<Http> {
+    fn raw_http_provider(&self) -> &Arc<Provider<Http>> {
         &self.http_provider
     }
 
-    fn raw_ws_provider(&self) -> &Provider<Ws> {
+    fn raw_ws_provider(&self) -> &Arc<Provider<Ws>> {
         &self.ws_provider
     }
 }

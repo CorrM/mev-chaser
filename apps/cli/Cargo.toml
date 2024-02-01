@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 shared = { path = "../../packages/shared" }
-amm_protocol = { path = "../../packages/amm_protocol" }
+amm = { path = "../../packages/amm" }
 mev = { path = "../../packages/mev" }
 
 anyhow = { workspace = true }

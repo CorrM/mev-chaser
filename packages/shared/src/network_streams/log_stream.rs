@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use ethers::{
     providers::Ws,
     types::{Filter, Log},
@@ -15,7 +17,7 @@ pub async fn stream_log_event<T: NodeProvider>(
     event_sender: Sender<NetworkEvent>,
     filter: Filter,
 ) {
-    let ws: &Provider<Ws> = provider.raw_ws_provider();
+    let ws: &Arc<Provider<Ws>> = provider.raw_ws_provider();
     let mut stream: SubscriptionStream<Ws, Log> = ws.subscribe_logs(&filter).await.unwrap();
 
     while let Some(result) = stream.next().await {

@@ -9,9 +9,9 @@ use ethers::{
 use ethers_contract::{Contract, Multicall};
 
 use ethers_core::types::Address;
-use shared::{abi::ABI, amm::AmmPool, provider::NodeProvider};
+use shared::{abi::ABI, provider::NodeProvider};
 
-use crate::UniswapV2Pool;
+use crate::{AmmPool, UniswapV2Pool};
 
 #[derive(Default, Debug, Clone)]
 pub struct Reserve {
@@ -24,16 +24,11 @@ pub async fn get_uniswap_v2_reserves<T: NodeProvider>(
     abi: ABI,
     pools: Vec<UniswapV2Pool>,
 ) -> Result<HashMap<Address, Reserve>> {
-    let client: Provider<Http> = provider.raw_http_provider().clone();
-    let client: Arc<Provider<Http>> = Arc::new(client);
+    let client: &Arc<Provider<Http>> = provider.raw_http_provider();
 
     let mut multicall: Multicall<Provider<Http>> = Multicall::new(client.clone(), None).await?;
     for pool in &pools {
-        let contract = Contract::<Provider<Http>>::new(
-            *pool.address(),
-            abi.uniswap_v2_pair.clone(),
-            client.clone(),
-        );
+        let contract = Contract::<Provider<Http>>::new(*pool.address(), abi.uniswap_v2_pair.clone(), client.clone());
         let call = contract.method::<_, H256>("getReserves", ())?;
         multicall.add_call(call, false);
     }

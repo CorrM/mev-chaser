@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use ethers::{
     providers::Middleware,
     types::{Block, H256, U256, U64},
@@ -18,7 +20,7 @@ pub struct NewBlock {
 }
 
 pub async fn stream_new_blocks<T: NodeProvider>(provider: T, event_sender: Sender<NetworkEvent>) {
-    let ws: &Provider<Ws> = provider.raw_ws_provider();
+    let ws: &Arc<Provider<Ws>> = provider.raw_ws_provider();
     let stream = ws.subscribe_blocks().await.unwrap();
     let mut stream = stream.filter_map(|block: Block<H256>| match block.number {
         Some(number) => Some(NewBlock {

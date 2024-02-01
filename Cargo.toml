@@ -2,8 +2,7 @@
 resolver = "2"
 members = [ # Dont use * for paths in the workspace
     "packages/shared",
-    "packages/protocol_uniswap_v2",
-    "packages/amm_protocol",
+    "packages/amm",
     "packages/mev",
     "apps/cli",
 ]

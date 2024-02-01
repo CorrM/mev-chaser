@@ -1,7 +1,0 @@
-[package]
-name = "amm_protocol"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-protocol_uniswap_v2 = { path = "../protocol_uniswap_v2" }

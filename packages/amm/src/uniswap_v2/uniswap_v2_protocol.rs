@@ -3,14 +3,14 @@ use ethers_core::{
     abi::{Abi, Log, RawLog},
     types::Address,
 };
+use shared::trace::TraceLogData;
 use std::{str::FromStr, sync::Arc};
 
-use shared::{
-    amm::{AmmPool, AmmProtocol, AmmProtocolKind}, trace::TraceLogData
-};
+use crate::AmmProtocol;
 
 use crate::uniswap_v2_pool::UniswapV2Pool;
 
+#[derive(Clone)]
 pub struct UniswapV2Protocol {
     name: String,
     fees: u32,
@@ -24,7 +24,7 @@ impl UniswapV2Protocol {
         name: impl Into<String>,
         fees: u32,
         factory: impl Into<String>,
-        router: impl Into<String>
+        router: impl Into<String>,
     ) -> Result<Self> {
         Ok(Self {
             name: name.into(),
@@ -70,16 +70,14 @@ impl UniswapV2Protocol {
 }
 
 impl AmmProtocol for UniswapV2Protocol {
+    type Pool = UniswapV2Pool;
+    
     fn name(&self) -> &str {
         &self.name
     }
 
-    fn pools(&self) -> Vec<Arc<dyn AmmPool>> {
-        self.pools.iter().map(|x| x.clone() as Arc<dyn AmmPool>).collect()
-    }
-
-    fn protocol(&self) -> AmmProtocolKind {
-        AmmProtocolKind::UniswapV2
+    fn pools(&self) -> Vec<Arc<UniswapV2Pool>> {
+        self.pools.clone()
     }
 
     fn options(&self) -> String {

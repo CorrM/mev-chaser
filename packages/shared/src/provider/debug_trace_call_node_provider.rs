@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use anyhow::{Ok, Result};
 use ethers::{
     providers::{Http, Provider, Ws},
@@ -120,11 +122,11 @@ impl NodeProvider for DebugTraceCallNodeProvider {
         self.data.network()
     }
 
-    fn raw_http_provider(&self) -> &Provider<Http> {
+    fn raw_http_provider(&self) -> &Arc<Provider<Http>> {
         self.data.raw_http_provider()
     }
 
-    fn raw_ws_provider(&self) -> &Provider<Ws> {
+    fn raw_ws_provider(&self) -> &Arc<Provider<Ws>> {
         self.data.raw_ws_provider()
     }
 }

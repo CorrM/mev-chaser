@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use ethers_core::utils;
 use ethers_providers::{Middleware, Provider, Ws};
 use serde_json::{json, Value};
@@ -13,7 +15,7 @@ pub async fn stream_pending_transactions<T: NodeProvider>(
     event_sender: Sender<NetworkEvent>,
     filter_to_addresses: Option<Vec<String>>,
 ) {
-    let ws: &Provider<Ws> = provider.raw_ws_provider();
+    let ws: &Arc<Provider<Ws>> = provider.raw_ws_provider();
 
     //let mut stream = ws.subscribe_pending_txs().await.unwrap();
     //let mut stream = stream.transactions_unordered(256).fuse();

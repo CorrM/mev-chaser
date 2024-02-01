@@ -1,6 +1,7 @@
 use std::{collections::HashMap, ops::Deref, sync::Arc};
 
-use amm_protocol::{AmmProtocolContainer, UniswapV2Protocol};
+use amm::{AmmProtocol, UniswapV2Protocol};
+use amm::{AmmPoolKind, AmmProtocolKind};
 use anyhow::Result;
 use ethers_core::{
     abi::Log,
@@ -8,14 +9,14 @@ use ethers_core::{
 };
 use shared::{
     abi::ABI,
-    amm::{AmmPool, AmmProtocol},
     network_streams::{NetworkEvent, NetworkStreamManagerBuilder, NetworkStreamsManager},
-    pool::{PoolPathFinder, PoolPathItem},
     provider::{NodeProviderKind, NodeProviderManager, NormalNodeProvider},
     token::CryptoToken,
     trace::{get_trace_all_logs, TraceLogData},
 };
 use tokio::sync::broadcast::Receiver;
+
+use crate::pool::{PoolPathFinder, PoolPathItem};
 
 fn on_new_pending_tx(tx: &Transaction, decoded_log: Vec<(String, Log)>) {
     let sync_log: Option<&(String, Log)> = decoded_log.iter().find(|(name, _)| name == "Sync");
@@ -33,33 +34,33 @@ fn on_new_pending_tx(tx: &Transaction, decoded_log: Vec<(String, Log)>) {
 pub struct BackRunnerStragegy {
     abi: ABI,
     provider_manager: NodeProviderManager,
-    dexes: Vec<AmmProtocolContainer>,
+    dexes: Vec<AmmProtocolKind>,
 }
 
 impl BackRunnerStragegy {
     pub fn new(
         abi: ABI,
         provider_manager: NodeProviderManager,
-        dexes: Vec<AmmProtocolContainer>,
+        dexes: Vec<AmmProtocolKind>,
         max_hops: i32,
         start_tokens: Vec<&CryptoToken>,
     ) -> Self {
-        let mut pools: Vec<Arc<dyn AmmPool>> = Vec::new();
+        let mut pools: Vec<AmmPoolKind> = Vec::new();
 
         for dex in &dexes {
             match dex {
-                AmmProtocolContainer::UniswapV2(v2) => pools.extend(v2.pools()),
-                _ => panic!("Unsupported protocol"),
+                AmmProtocolKind::UniswapV2(v2) => {
+                    pools.extend(v2.pools().iter().map(|p| AmmPoolKind::UniswapV2(p.deref().clone())))
+                }
             }
         }
 
         let mut map: HashMap<CryptoToken, Vec<Vec<PoolPathItem>>> = HashMap::new();
-        let path_finder = PoolPathFinder::new(pools);
         for ele in start_tokens {
             let input_token = Arc::new(ele.clone());
             map.insert(
                 ele.clone(),
-                path_finder.generate_paths(input_token.clone(), input_token, max_hops),
+                PoolPathFinder::generate_paths(&pools, input_token.clone(), input_token, max_hops),
             );
         }
 
@@ -75,8 +76,7 @@ impl BackRunnerStragegy {
             .dexes
             .iter()
             .map(|d| match d {
-                AmmProtocolContainer::UniswapV2(v2) => *v2.router(),
-                _ => panic!("Unsupported protocol"),
+                AmmProtocolKind::UniswapV2(v2) => *v2.router(),
             })
             .collect();
         let filters: Vec<String> = router_addresses.iter().map(|s: &Address| format!("{:?}", s)).collect();

@@ -1,17 +1,15 @@
+use amm::{AmmProtocolKind, UniswapV2Pool, UniswapV2Protocol};
 use anyhow::{anyhow, Result};
 use database::Database;
-use ethers_contract::{Contract, Multicall};
-use ethers_core::abi::{Abi, Token};
-use ethers_core::types::{Address, Bytes};
+use ethers_contract::Contract;
+use ethers_core::types::Address;
 use ethers_providers::{Http, Provider};
 use mev::BackRunnerStragegy;
+use shared::provider::NodeProvider;
 use std::ops::Deref;
-use std::str::FromStr;
 use std::sync::Arc;
 use std::{env::VarError, path::Path};
 
-use amm_protocol::{AmmProtocolContainer, UniswapV2Protocol};
-use shared::provider::NodeProvider;
 use shared::token::CryptoToken;
 use shared::{
     abi::ABI,
@@ -191,15 +189,15 @@ fn get_tokens(db: &Database, network: &NetworkKind) -> Result<Vec<CryptoToken>> 
     Ok(tokens)
 }
 
-fn get_amms(tokens: &[CryptoToken]) -> Result<Vec<AmmProtocolContainer>> {
-    let amms: Vec<AmmProtocolContainer> = vec![
-        AmmProtocolContainer::UniswapV2(UniswapV2Protocol::new(
+async fn get_amms(abi: &ABI, provider: &impl NodeProvider, tokens: &[CryptoToken]) -> Result<Vec<AmmProtocolKind>> {
+    let mut amms: Vec<AmmProtocolKind> = vec![
+        AmmProtocolKind::UniswapV2(UniswapV2Protocol::new(
             "SushiSwap",
             300,
             "0xc35DADB65012eC5796536bD9864eD8773aBc74C4",
             "0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506",
         )?),
-        AmmProtocolContainer::UniswapV2(UniswapV2Protocol::new(
+        AmmProtocolKind::UniswapV2(UniswapV2Protocol::new(
             "QuickSwapV2",
             300,
             "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
@@ -208,11 +206,21 @@ fn get_amms(tokens: &[CryptoToken]) -> Result<Vec<AmmProtocolContainer>> {
     ];
 
     let pairs: Vec<(&CryptoToken, &CryptoToken)> = generate_pairs(tokens);
-    for pair in &pairs {
-        for amm in &amms {
+    for (token_a, token_b) in pairs {
+        for amm in &mut amms {
             match amm {
-                AmmProtocolContainer::UniswapV2(v2) => v2.add_pool(pool),
-                AmmProtocolContainer::UniswapV3 => todo!(),
+                AmmProtocolKind::UniswapV2(v2) => {
+                    let contract = Contract::<Provider<Http>>::new(
+                        *v2.factory(),
+                        abi.uniswap_v2_factory.clone(),
+                        provider.raw_http_provider().clone(),
+                    );
+
+                    let call = contract.method::<_, Address>("getPair", ())?;
+                    let pool_address: Address = call.call_raw().await?;
+                    
+                    v2.add_pool(UniswapV2Pool::new(pool_address, Arc::new(v2.clone()))?)
+                },
             }
         }
     }
@@ -231,7 +239,7 @@ async fn main() -> Result<()> {
 
     //let tokens: Vec<CryptoToken> = get_tokens(db, provider_manager.get_next().deref(), &abi.erc20).await?;
     let tokens: Vec<CryptoToken> = get_tokens(&db, &target_network)?;
-    let amms: Vec<AmmProtocolContainer> = get_amms(&tokens)?;
+    let amms: Vec<AmmProtocolKind> = get_amms(&abi, provider_manager.get_next().deref(), &tokens).await?;
 
     // 2 are traingle arbitrage
     let strategy = BackRunnerStragegy::new(abi, provider_manager, amms, 2, vec![]);

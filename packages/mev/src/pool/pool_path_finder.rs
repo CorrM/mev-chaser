@@ -1,37 +1,31 @@
-use std::sync::Arc;
+use std::{ops::Deref, sync::Arc};
 
-use crate::amm::AmmPool;
-use crate::token::CryptoToken;
+use amm::{AmmPool, AmmPoolKind};
+use shared::token::CryptoToken;
 
 use super::pool_path_item::PoolPathItem;
 
 struct DfsParams {
     current_token: Arc<CryptoToken>,
     output_token: Arc<CryptoToken>,
-    visited_pairs: Vec<Arc<dyn AmmPool>>, // TODO: Should use HashSet but with Arc its hard
+    visited_pairs: Vec<Arc<AmmPoolKind>>, // TODO: Should use HashSet but with Arc its hard
     route: Vec<PoolPathItem>,
     hop_count: i32,
     max_multi_hop: i32,
 }
 
 // TODO: Get raid of DfsParams and make input_token and output_token just references
-pub struct PoolPathFinder {
-    token_pools: Vec<Arc<dyn AmmPool>>,
-}
+pub struct PoolPathFinder;
 
 impl PoolPathFinder {
-    pub fn new(token_pools: Vec<Arc<dyn AmmPool>>) -> Self {
-        PoolPathFinder { token_pools }
-    }
-
     pub fn generate_paths(
-        &self,
+        token_pools: &Vec<AmmPoolKind>,
         input_token: Arc<CryptoToken>,
         output_token: Arc<CryptoToken>,
         max_multi_hop: i32,
     ) -> Vec<Vec<PoolPathItem>> {
         let mut arbitrage_paths: Vec<Vec<PoolPathItem>> = Vec::new();
-        let visited_pairs: Vec<Arc<dyn AmmPool>> = Vec::new();
+        let visited_pairs: Vec<Arc<AmmPoolKind>> = Vec::new();
         let initial_route: Vec<PoolPathItem> = Vec::new();
 
         let mut dfs_params = DfsParams {
@@ -43,33 +37,40 @@ impl PoolPathFinder {
             max_multi_hop,
         };
 
-        self.dfs(&mut dfs_params, &mut arbitrage_paths);
+        PoolPathFinder::dfs(token_pools, &mut dfs_params, &mut arbitrage_paths);
 
         arbitrage_paths
     }
 
-    fn dfs(&self, dfs_params: &mut DfsParams, arbitrage_paths: &mut Vec<Vec<PoolPathItem>>) {
+    fn dfs(token_pools: &Vec<AmmPoolKind>, dfs_params: &mut DfsParams, arbitrage_paths: &mut Vec<Vec<PoolPathItem>>) {
         if dfs_params.hop_count > dfs_params.max_multi_hop {
             return;
         }
 
-        for next_pool in &self.token_pools {
-            if !Arc::ptr_eq(&dfs_params.current_token, next_pool.token0())
-                && !Arc::ptr_eq(&dfs_params.current_token, next_pool.token1())
-                || dfs_params.visited_pairs.iter().any(|x| Arc::ptr_eq(x, next_pool))
+        for next_pool in token_pools {
+            let (token0, token1) = match next_pool {
+                AmmPoolKind::UniswapV2(pool) => (pool.token0(), pool.token1()),
+            };
+
+            if !Arc::ptr_eq(&dfs_params.current_token, token0) && !Arc::ptr_eq(&dfs_params.current_token, token1)
+                || dfs_params
+                    .visited_pairs
+                    .iter()
+                    .any(|x| std::ptr::eq(next_pool, x.deref()))
             {
                 continue;
             }
 
-            let next_token: Arc<CryptoToken> = if Arc::ptr_eq(&dfs_params.current_token, next_pool.token0()) {
-                next_pool.token1().clone()
+            let next_token: Arc<CryptoToken> = if Arc::ptr_eq(&dfs_params.current_token, token0) {
+                token1.clone()
             } else {
-                next_pool.token0().clone()
+                token0.clone()
             };
 
+            let next_pool = Arc::new(next_pool.clone());
             dfs_params.route.push(PoolPathItem::new(
                 next_pool.clone(),
-                Arc::ptr_eq(next_pool.token0(), &dfs_params.current_token),
+                Arc::ptr_eq(token0, &dfs_params.current_token),
             ));
             dfs_params.visited_pairs.push(next_pool.clone());
 
@@ -81,7 +82,7 @@ impl PoolPathFinder {
                 dfs_params.current_token = next_token;
                 dfs_params.hop_count += 1;
 
-                self.dfs(dfs_params, arbitrage_paths);
+                PoolPathFinder::dfs(token_pools, dfs_params, arbitrage_paths);
 
                 dfs_params.current_token = cur_token;
                 dfs_params.hop_count -= 1;
