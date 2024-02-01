@@ -5,7 +5,7 @@ use std::sync::Arc;
 use ethers_core::types::H160;
 
 use shared::{
-    amm::{AmmPool, AmmProtocol},
+    amm::{AmmPool, AmmProtocol, AmmProtocolKind},
     trace::TraceLogData,
 };
 
@@ -56,12 +56,12 @@ impl UniswapV2Protocol {
         ret
     }
 
-    pub fn factory(&self) -> H160 {
-        self.factory
+    pub fn factory(&self) -> &H160 {
+        &self.factory
     }
 
-    pub fn router(&self) -> H160 {
-        self.router
+    pub fn router(&self) -> &H160 {
+        &self.router
     }
 }
 
@@ -72,5 +72,17 @@ impl AmmProtocol for UniswapV2Protocol {
 
     fn pools(&self) -> Vec<Arc<dyn AmmPool>> {
         self.pools.iter().map(|x| x.clone() as Arc<dyn AmmPool>).collect()
+    }
+
+    fn protocol(&self) -> AmmProtocolKind {
+        AmmProtocolKind::UniswapV2
+    }
+
+    fn options(&self) -> String {
+        panic!("Unimplemented");
+    }
+
+    fn set_options(&mut self, options: String) {
+        panic!("Unimplemented");
     }
 }

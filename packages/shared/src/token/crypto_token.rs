@@ -2,7 +2,10 @@ use anyhow::Result;
 use std::str::FromStr;
 use ethers_core::types::{H160, U256};
 
+use crate::network::NetworkKind;
+
 pub struct CryptoToken {
+    network: NetworkKind,
     address: H160,
     name: String,
     symbol: String,
@@ -11,16 +14,19 @@ pub struct CryptoToken {
 }
 
 impl CryptoToken {
-    pub fn new(address: impl Into<String>, name: impl Into<String>, symbol: impl Into<String>, decimals: u8) -> Result<Self> {
-        //ethers_core::utils::;
-
+    pub fn new(network: NetworkKind, address: impl Into<String>, name: impl Into<String>, symbol: impl Into<String>, decimals: u8) -> Result<Self> {
         Ok(Self {
+            network,
             address: H160::from_str(&address.into())?,
             name: name.into(),
             symbol: symbol.into(),
             decimals,
             decimals_pow: U256::exp10(decimals as usize),
         })
+    }
+    
+    pub fn network(&self) -> &NetworkKind {
+        &self.network
     }
 
     pub fn address(&self) -> &H160 {
@@ -40,6 +46,7 @@ impl CryptoToken {
     }
 
     fn convert_to_decimal(&self, value: U256) -> String {
+        panic!("Not implemented");
         let integer = value / self.decimals_pow;
         (value % self.decimals_pow).to_string()
     }

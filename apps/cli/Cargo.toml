@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 shared = { path = "../../packages/shared" }
 amm_protocol = { path = "../../packages/amm_protocol" }
+mev = { path = "../../packages/mev" }
 
 anyhow = { workspace = true }
 tokio = { workspace = true }
@@ -15,3 +16,4 @@ ethers-contract = { workspace = true }
 ethers = { workspace = true }
 
 dotenv = "0.15.0"
+rusqlite = { version = "0.30.0", features = ["bundled"] }

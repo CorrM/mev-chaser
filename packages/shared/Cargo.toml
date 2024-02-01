@@ -14,4 +14,3 @@ ethers = { workspace = true }
 
 rand = "0.8.5"
 serde_json = "1.0.113"
-rusqlite = { version = "0.30.0", features = ["bundled"] }

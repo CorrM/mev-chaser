@@ -1,5 +1,6 @@
-use crate::amm::AmmPool;
 use std::sync::Arc;
+
+use crate::amm::AmmPool;
 
 #[derive(Clone)]
 pub struct PoolPathItem {

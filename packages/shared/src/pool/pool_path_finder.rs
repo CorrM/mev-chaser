@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use shared::amm::AmmPool;
-use shared::token::CryptoToken;
+use crate::amm::AmmPool;
+use crate::token::CryptoToken;
 
 use super::pool_path_item::PoolPathItem;
 
@@ -60,12 +60,11 @@ impl PoolPathFinder {
                 continue;
             }
 
-            let next_token: Arc<CryptoToken> =
-                if Arc::ptr_eq(&dfs_params.current_token, next_pool.token0()) {
-                    next_pool.token1().clone()
-                } else {
-                    next_pool.token0().clone()
-                };
+            let next_token: Arc<CryptoToken> = if Arc::ptr_eq(&dfs_params.current_token, next_pool.token0()) {
+                next_pool.token1().clone()
+            } else {
+                next_pool.token0().clone()
+            };
 
             dfs_params.route.push(PoolPathItem::new(
                 next_pool.clone(),
@@ -77,7 +76,7 @@ impl PoolPathFinder {
                 arbitrage_paths.push(dfs_params.route.to_vec());
             } else {
                 let cur_token: Arc<CryptoToken> = dfs_params.current_token.clone();
-                
+
                 dfs_params.current_token = next_token;
                 dfs_params.hop_count += 1;
 

@@ -1,3 +1,3 @@
-pub mod pool;
+pub mod strategy;
 
-pub use pool::*;
+pub use strategy::*;

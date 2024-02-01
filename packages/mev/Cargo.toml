@@ -4,5 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-shared = { path = "../shared" }
-amm_protocol = { path = "../amm_protocol" }
+shared = { path = "../../packages/shared" }
+amm_protocol = { path = "../../packages/amm_protocol" }
+
+anyhow = { workspace = true }
+tokio = { workspace = true }

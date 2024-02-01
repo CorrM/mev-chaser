@@ -1,5 +1,3 @@
-use std::{env::VarError, ops::Deref, path::Path, str::FromStr, sync::Arc};
-
 use anyhow::{anyhow, Result};
 use ethers::prelude::H256;
 use ethers_contract::{Contract, Multicall};
@@ -10,9 +8,10 @@ use ethers_core::{
     types::H160,
 };
 use ethers_providers::{Http, Provider};
+use std::{env::VarError, ops::Deref, path::Path, str::FromStr, sync::Arc};
 use tokio::sync::broadcast::Receiver;
 
-use amm_protocol::{AmmProtocolKind, UniswapV2Protocol};
+use amm_protocol::{AmmProtocolContainer, UniswapV2Protocol};
 use shared::provider::NodeProvider;
 use shared::token::CryptoToken;
 use shared::{
@@ -20,14 +19,14 @@ use shared::{
     network::NetworkKind,
     network_streams::{NetworkEvent, NetworkStreamManagerBuilder, NetworkStreamsManager},
     provider::{
-        DebugTraceCallNodeProvider, NodeProviderKind, NodeProviderManager, NodeProviderNetworkInfo,
-        NormalNodeProvider,
+        DebugTraceCallNodeProvider, NodeProviderKind, NodeProviderManager, NodeProviderNetworkInfo, NormalNodeProvider,
     },
     trace::{get_trace_all_logs, TraceLogData},
 };
 
 use crate::utils::env::Env;
 
+mod database;
 mod utils;
 
 fn get_env() -> Result<Env> {
@@ -38,19 +37,13 @@ fn get_env() -> Result<Env> {
 
     let var_parse: Result<Env, VarError> = Env::new();
     if var_parse.is_err() {
-        return Err(anyhow!(
-            "Error while parsing .env file: {:?}",
-            var_parse.unwrap_err()
-        ));
+        return Err(anyhow!("Error while parsing .env file: {:?}", var_parse.unwrap_err()));
     }
 
     Ok(var_parse.unwrap())
 }
 
-async fn get_node_providers(
-    env: &Env,
-    target_network: &NetworkKind,
-) -> Result<Vec<NormalNodeProvider>> {
+async fn get_node_providers(env: &Env, target_network: &NetworkKind) -> Result<Vec<NormalNodeProvider>> {
     let providers: Vec<NormalNodeProvider> = vec![
         NormalNodeProvider::new(
             "Alchemy",
@@ -103,10 +96,7 @@ async fn get_debug_trace_call_node_providers(
     ])
 }
 
-async fn create_node_provider_manager(
-    env: &Env,
-    target_network: &NetworkKind,
-) -> Result<NodeProviderManager> {
+async fn create_node_provider_manager(env: &Env, target_network: &NetworkKind) -> Result<NodeProviderManager> {
     let providers: Vec<NormalNodeProvider> = get_node_providers(env, target_network).await?;
     NodeProviderManager::new(
         providers,
@@ -168,16 +158,16 @@ async fn get_tokens(provider: &impl NodeProvider, erc20_abi: &Abi) -> Result<Vec
     */
 }
 
-fn get_amms(network: &NetworkKind) -> Result<Vec<AmmProtocolKind>> {
+fn get_amms(network: &NetworkKind) -> Result<Vec<AmmProtocolContainer>> {
     // TODO: depend on network
     Ok(vec![
-        AmmProtocolKind::UniswapV2(UniswapV2Protocol::new(
+        AmmProtocolContainer::UniswapV2(UniswapV2Protocol::new(
             "SushiSwap",
             300,
             "0xc35DADB65012eC5796536bD9864eD8773aBc74C4",
             "0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506",
         )?),
-        AmmProtocolKind::UniswapV2(UniswapV2Protocol::new(
+        AmmProtocolContainer::UniswapV2(UniswapV2Protocol::new(
             "QuickSwapV2",
             300,
             "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
@@ -203,19 +193,16 @@ fn new_pending_tx(tx_hash: String, decoded_log: Vec<(String, Log)>) {
 async fn main() -> Result<()> {
     let env: Env = get_env()?;
     let abi = ABI::new(Path::new("./abi"));
+    let db = Database::new();
 
     let target_network: NetworkKind = unsafe { std::mem::transmute(env.chain_id) };
 
-    let provider_manager: NodeProviderManager =
-        create_node_provider_manager(&env, &target_network).await?;
-
+    let provider_manager: NodeProviderManager = create_node_provider_manager(&env, &target_network).await?;
     let provider: &Arc<NormalNodeProvider> = provider_manager.get_next();
-    let provider_kind: &Arc<NodeProviderKind> =
-        &Arc::new(NodeProviderKind::Normal(provider.deref().clone()));
+    let provider_kind: &Arc<NodeProviderKind> = &Arc::new(NodeProviderKind::Normal(provider.deref().clone()));
 
     //let tokens: Vec<CryptoToken> = get_tokens(provider.deref(), &abi.erc20).await?;
     let amms: Vec<AmmProtocolKind> = get_amms(&target_network)?;
-
     let router_addresses: Vec<String> = amms
         .iter()
         .map(|a| match a {
@@ -226,43 +213,9 @@ async fn main() -> Result<()> {
         })
         .collect();
 
-    let ns: NetworkStreamsManager = NetworkStreamManagerBuilder::new(provider_kind.clone())
-        //.watch_new_blocks()
-        .watch_pending_transactions(Some(router_addresses.clone()))
-        //.watch_log("Sync(uint112,uint112)")
-        .build();
+    let filters: Vec<H160> = router_addresses.iter().map(|s| H160::from_str(s).unwrap()).collect();
 
-    let filters: Vec<H160> = router_addresses
-        .iter()
-        .map(|s| H160::from_str(s).unwrap())
-        .collect();
-
-    let debug_provider: &Arc<DebugTraceCallNodeProvider> =
-        provider_manager.get_next_debug_trace_call();
-    let mut event_receiver: Receiver<NetworkEvent> = ns.subscribe();
-
-    while let Ok(event) = event_receiver.recv().await {
-        if let NetworkEvent::PendingTx(tx) = &event {
-            if let Some(to) = tx.to {
-                if !filters.iter().any(|&f| f == to) {
-                    continue;
-                }
-
-                let tx_hash: String = tx.hash.encode_hex();
-                let trace_logs: Vec<TraceLogData> =
-                    get_trace_all_logs(debug_provider.debug_trace_call(tx.clone(), None).await?);
-
-                for trace_log in trace_logs {
-                    new_pending_tx(
-                        tx_hash.clone(),
-                        UniswapV2Protocol::decode_pair_trace_logs(&abi.uniswap_v2_pair, trace_log),
-                    );
-                }
-
-                println!("=============");
-            }
-        }
-    }
+    
     //sb.0.spawn(event_handler(provider.clone(), sb.1.clone()));
 
     //while let Some(res) = ns.join_next().await {
