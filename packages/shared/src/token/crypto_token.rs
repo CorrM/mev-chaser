@@ -1,9 +1,10 @@
 use anyhow::Result;
-use std::str::FromStr;
 use ethers_core::types::{Address, U256};
+use std::str::FromStr;
 
 use crate::network::NetworkKind;
 
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct CryptoToken {
     network: NetworkKind,
     address: Address,
@@ -14,9 +15,15 @@ pub struct CryptoToken {
 }
 
 impl CryptoToken {
-    pub fn new(network: NetworkKind, address: impl Into<String>, name: impl Into<String>, symbol: impl Into<String>, decimals: u8) -> Result<Self> {
+    pub fn new(
+        network: &NetworkKind,
+        address: impl Into<String>,
+        name: impl Into<String>,
+        symbol: impl Into<String>,
+        decimals: u8,
+    ) -> Result<Self> {
         Ok(Self {
-            network,
+            network: *network,
             address: Address::from_str(&address.into())?,
             name: name.into(),
             symbol: symbol.into(),
@@ -24,7 +31,7 @@ impl CryptoToken {
             decimals_pow: U256::exp10(decimals as usize),
         })
     }
-    
+
     pub fn network(&self) -> &NetworkKind {
         &self.network
     }

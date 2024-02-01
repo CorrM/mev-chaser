@@ -14,6 +14,7 @@ struct DfsParams {
     max_multi_hop: i32,
 }
 
+// TODO: Get raid of DfsParams and make input_token and output_token just references
 pub struct PoolPathFinder {
     token_pools: Vec<Arc<dyn AmmPool>>,
 }

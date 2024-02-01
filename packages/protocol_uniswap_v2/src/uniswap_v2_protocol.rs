@@ -3,12 +3,10 @@ use ethers_core::{
     abi::{Abi, Log, RawLog},
     types::Address,
 };
-use std::str::FromStr;
-use std::sync::Arc;
+use std::{str::FromStr, sync::Arc};
 
 use shared::{
-    amm::{AmmPool, AmmProtocol, AmmProtocolKind},
-    trace::TraceLogData,
+    amm::{AmmPool, AmmProtocol, AmmProtocolKind}, trace::TraceLogData
 };
 
 use crate::uniswap_v2_pool::UniswapV2Pool;
@@ -26,7 +24,7 @@ impl UniswapV2Protocol {
         name: impl Into<String>,
         fees: u32,
         factory: impl Into<String>,
-        router: impl Into<String>,
+        router: impl Into<String>
     ) -> Result<Self> {
         Ok(Self {
             name: name.into(),
@@ -64,6 +62,10 @@ impl UniswapV2Protocol {
 
     pub fn router(&self) -> &Address {
         &self.router
+    }
+
+    pub fn add_pool(&mut self, pool: UniswapV2Pool) {
+        self.pools.push(Arc::new(pool));
     }
 }
 

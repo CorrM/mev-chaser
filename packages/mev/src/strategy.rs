@@ -1,3 +1,3 @@
-pub mod dex_back_runner_stragegy;
+pub mod back_runner_stragegy;
 
-pub use dex_back_runner_stragegy::*;
+pub use back_runner_stragegy::*;

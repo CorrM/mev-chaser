@@ -1,17 +1,14 @@
 use anyhow::{anyhow, Result};
 use database::Database;
-use ethers::prelude::H256;
 use ethers_contract::{Contract, Multicall};
 use ethers_core::abi::{Abi, Token};
-use ethers_core::types::Bytes;
-use ethers_core::{
-    abi::{AbiEncode, Log},
-    types::H160,
-};
+use ethers_core::types::{Address, Bytes};
 use ethers_providers::{Http, Provider};
-use mev::DexBackRunnerStragegy;
-use std::{env::VarError, ops::Deref, path::Path, str::FromStr, sync::Arc};
-use tokio::sync::broadcast::Receiver;
+use mev::BackRunnerStragegy;
+use std::ops::Deref;
+use std::str::FromStr;
+use std::sync::Arc;
+use std::{env::VarError, path::Path};
 
 use amm_protocol::{AmmProtocolContainer, UniswapV2Protocol};
 use shared::provider::NodeProvider;
@@ -19,17 +16,23 @@ use shared::token::CryptoToken;
 use shared::{
     abi::ABI,
     network::NetworkKind,
-    network_streams::{NetworkEvent, NetworkStreamManagerBuilder, NetworkStreamsManager},
-    provider::{
-        DebugTraceCallNodeProvider, NodeProviderKind, NodeProviderManager, NodeProviderNetworkInfo, NormalNodeProvider,
-    },
-    trace::{get_trace_all_logs, TraceLogData},
+    provider::{DebugTraceCallNodeProvider, NodeProviderManager, NodeProviderNetworkInfo, NormalNodeProvider},
 };
 
 use crate::utils::env::Env;
 
 mod database;
 mod utils;
+
+fn generate_pairs<T>(list: &[T]) -> Vec<(&T, &T)> {
+    let mut pairs: Vec<(&T, &T)> = Vec::new();
+    for (i, fst) in list.iter().enumerate() {
+        for snd in list.iter().skip(i + 1) {
+            pairs.push((fst, snd));
+        }
+    }
+    pairs
+}
 
 fn get_env() -> Result<Env> {
     // Env
@@ -50,7 +53,7 @@ async fn get_node_providers(env: &Env, target_network: &NetworkKind) -> Result<V
         NormalNodeProvider::new(
             "Alchemy",
             NodeProviderNetworkInfo {
-                network: target_network.clone(),
+                network: *target_network,
                 http_url: env.https_url.clone(),
                 wss_url: env.wss_url.clone(),
             },
@@ -59,7 +62,7 @@ async fn get_node_providers(env: &Env, target_network: &NetworkKind) -> Result<V
         NormalNodeProvider::new(
             "Infura",
             NodeProviderNetworkInfo {
-                network: target_network.clone(),
+                network: *target_network,
                 http_url: env.https_url.clone(),
                 wss_url: env.wss_url.clone(),
             },
@@ -100,9 +103,8 @@ async fn create_node_provider_manager(env: &Env, target_network: &NetworkKind) -
     NodeProviderManager::new(providers, get_debug_node_providers(env, target_network).await?)
 }
 
-async fn get_tokens(provider: &impl NodeProvider, erc20_abi: &Abi) -> Result<Vec<CryptoToken>> {
-    panic!("Not implemented");
-    /*
+/*
+async fn get_tokens(db: &Database, provider: &impl NodeProvider, erc20_abi: &Abi) -> Result<Vec<CryptoToken>> {
     // TODO: depend on network
     let tokens = vec![
         "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270",
@@ -113,19 +115,36 @@ async fn get_tokens(provider: &impl NodeProvider, erc20_abi: &Abi) -> Result<Vec
     let client: Arc<Provider<Http>> = Arc::new(client);
 
     let mut multicall: Multicall<Provider<Http>> = Multicall::new(client.clone(), None).await?;
-    for pool in tokens {
+    for token in &tokens {
         let contract = Contract::<Provider<Http>>::new(
-            *pool.address(),
+            Address::from_str(token).unwrap(),
             erc20_abi.clone(),
             client.clone(),
         );
 
-        let call = contract.method::<_, H256>("getReserves", ())?;
+        let call = contract.method::<_, String>("name", ())?;
         multicall.add_call(call, false);
     }
 
-    let result: Vec<Result<Token, Bytes>> = multicall.call_raw().await?;
+    let mut reserves = HashMap::new();
 
+    let result: Vec<Result<Token, Bytes>> = multicall.call_raw().await?;
+    for i in 0..result.len() {
+        let pool = tokens[i];
+        let reserve = result[i].clone();
+        match reserve.unwrap() {
+            Token::Tuple(response) => {
+                let reserve_data = Reserve {
+                    reserve0: response[0].clone().into_uint().unwrap(),
+                    reserve1: response[1].clone().into_uint().unwrap(),
+                };
+                reserves.insert(pool.address.clone(), reserve_data);
+            }
+            _ => {}
+        }
+    }
+
+    /*
     let contract = Contract::<Provider<Http>>::new(
         Address::from_str(tokens[0]).unwrap(),
         erc20_abi.clone(),
@@ -136,6 +155,7 @@ async fn get_tokens(provider: &impl NodeProvider, erc20_abi: &Abi) -> Result<Vec
     let name = call.call_raw().await?;
 
     println!("TokenName: {}", name);
+    */
 
     Ok(vec![
         CryptoToken::new(
@@ -151,12 +171,28 @@ async fn get_tokens(provider: &impl NodeProvider, erc20_abi: &Abi) -> Result<Vec
             18
         )?,
     ])
-    */
+}
+*/
+
+fn get_tokens(db: &Database, network: &NetworkKind) -> Result<Vec<CryptoToken>> {
+    let db_tokens: Vec<(database::DbToken, database::DbTokenNetwork)> = db.get_tokens(network)?;
+    let mut tokens: Vec<CryptoToken> = Vec::new();
+
+    for (db_token, db_token_network) in db_tokens {
+        tokens.push(CryptoToken::new(
+            network,
+            db_token_network.address,
+            db_token.name,
+            db_token.symbol,
+            db_token.decimals as u8,
+        )?);
+    }
+
+    Ok(tokens)
 }
 
-fn get_amms(network: &NetworkKind) -> Result<Vec<AmmProtocolContainer>> {
-    // TODO: depend on network
-    Ok(vec![
+fn get_amms(tokens: &[CryptoToken]) -> Result<Vec<AmmProtocolContainer>> {
+    let amms: Vec<AmmProtocolContainer> = vec![
         AmmProtocolContainer::UniswapV2(UniswapV2Protocol::new(
             "SushiSwap",
             300,
@@ -169,7 +205,19 @@ fn get_amms(network: &NetworkKind) -> Result<Vec<AmmProtocolContainer>> {
             "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
             "0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff",
         )?),
-    ])
+    ];
+
+    let pairs: Vec<(&CryptoToken, &CryptoToken)> = generate_pairs(tokens);
+    for pair in &pairs {
+        for amm in &amms {
+            match amm {
+                AmmProtocolContainer::UniswapV2(v2) => v2.add_pool(pool),
+                AmmProtocolContainer::UniswapV3 => todo!(),
+            }
+        }
+    }
+
+    Ok(amms)
 }
 
 #[tokio::main]
@@ -181,10 +229,12 @@ async fn main() -> Result<()> {
     let target_network: NetworkKind = unsafe { std::mem::transmute(env.chain_id) };
     let provider_manager: NodeProviderManager = create_node_provider_manager(&env, &target_network).await?;
 
-    //let tokens: Vec<CryptoToken> = get_tokens(provider.deref(), &abi.erc20).await?;
-    let amms: Vec<AmmProtocolContainer> = get_amms(&target_network)?;
+    //let tokens: Vec<CryptoToken> = get_tokens(db, provider_manager.get_next().deref(), &abi.erc20).await?;
+    let tokens: Vec<CryptoToken> = get_tokens(&db, &target_network)?;
+    let amms: Vec<AmmProtocolContainer> = get_amms(&tokens)?;
 
-    let strategy = DexBackRunnerStragegy::new(abi, provider_manager, amms);
+    // 2 are traingle arbitrage
+    let strategy = BackRunnerStragegy::new(abi, provider_manager, amms, 2, vec![]);
     strategy.run().await?;
 
     //sb.0.spawn(event_handler(provider.clone(), sb.1.clone()));
