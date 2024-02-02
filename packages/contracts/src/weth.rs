@@ -1,4 +1,4 @@
-pub use weth::*;
+pub use weth_abi::*;
 /// This module was auto-generated with ethers-rs Abigen.
 /// More information at: <https://github.com/gakonst/ethers-rs>
 #[allow(
@@ -9,7 +9,7 @@ pub use weth::*;
     dead_code,
     non_camel_case_types,
 )]
-pub mod weth {
+pub mod weth_abi {
     #[allow(deprecated)]
     fn __abi() -> ::ethers::core::abi::Abi {
         ::ethers::core::abi::ethabi::Contract {
@@ -387,32 +387,32 @@ pub mod weth {
         }
     }
     ///The parsed JSON ABI of the contract.
-    pub static WETH_ABI: ::ethers::contract::Lazy<::ethers::core::abi::Abi> = ::ethers::contract::Lazy::new(
+    pub static WETHABI_ABI: ::ethers::contract::Lazy<::ethers::core::abi::Abi> = ::ethers::contract::Lazy::new(
         __abi,
     );
-    pub struct WETH<M>(::ethers::contract::Contract<M>);
-    impl<M> ::core::clone::Clone for WETH<M> {
+    pub struct WethAbi<M>(::ethers::contract::Contract<M>);
+    impl<M> ::core::clone::Clone for WethAbi<M> {
         fn clone(&self) -> Self {
             Self(::core::clone::Clone::clone(&self.0))
         }
     }
-    impl<M> ::core::ops::Deref for WETH<M> {
+    impl<M> ::core::ops::Deref for WethAbi<M> {
         type Target = ::ethers::contract::Contract<M>;
         fn deref(&self) -> &Self::Target {
             &self.0
         }
     }
-    impl<M> ::core::ops::DerefMut for WETH<M> {
+    impl<M> ::core::ops::DerefMut for WethAbi<M> {
         fn deref_mut(&mut self) -> &mut Self::Target {
             &mut self.0
         }
     }
-    impl<M> ::core::fmt::Debug for WETH<M> {
+    impl<M> ::core::fmt::Debug for WethAbi<M> {
         fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-            f.debug_tuple(::core::stringify!(WETH)).field(&self.address()).finish()
+            f.debug_tuple(::core::stringify!(WethAbi)).field(&self.address()).finish()
         }
     }
-    impl<M: ::ethers::providers::Middleware> WETH<M> {
+    impl<M: ::ethers::providers::Middleware> WethAbi<M> {
         /// Creates a new contract instance with the specified `ethers` client at
         /// `address`. The contract derefs to a `ethers::Contract` object.
         pub fn new<T: Into<::ethers::core::types::Address>>(
@@ -422,7 +422,7 @@ pub mod weth {
             Self(
                 ::ethers::contract::Contract::new(
                     address.into(),
-                    WETH_ABI.clone(),
+                    WETHABI_ABI.clone(),
                     client,
                 ),
             )
@@ -561,12 +561,12 @@ pub mod weth {
         /// Returns an `Event` builder for all the events of this contract.
         pub fn events(
             &self,
-        ) -> ::ethers::contract::builders::Event<::std::sync::Arc<M>, M, WETHEvents> {
+        ) -> ::ethers::contract::builders::Event<::std::sync::Arc<M>, M, WethAbiEvents> {
             self.0.event_with_filter(::core::default::Default::default())
         }
     }
     impl<M: ::ethers::providers::Middleware> From<::ethers::contract::Contract<M>>
-    for WETH<M> {
+    for WethAbi<M> {
         fn from(contract: ::ethers::contract::Contract<M>) -> Self {
             Self::new(contract.address(), contract.client())
         }
@@ -641,32 +641,32 @@ pub mod weth {
     }
     ///Container type for all of the contract's events
     #[derive(Clone, ::ethers::contract::EthAbiType, Debug, PartialEq, Eq, Hash)]
-    pub enum WETHEvents {
+    pub enum WethAbiEvents {
         ApprovalFilter(ApprovalFilter),
         DepositFilter(DepositFilter),
         TransferFilter(TransferFilter),
         WithdrawalFilter(WithdrawalFilter),
     }
-    impl ::ethers::contract::EthLogDecode for WETHEvents {
+    impl ::ethers::contract::EthLogDecode for WethAbiEvents {
         fn decode_log(
             log: &::ethers::core::abi::RawLog,
         ) -> ::core::result::Result<Self, ::ethers::core::abi::Error> {
             if let Ok(decoded) = ApprovalFilter::decode_log(log) {
-                return Ok(WETHEvents::ApprovalFilter(decoded));
+                return Ok(WethAbiEvents::ApprovalFilter(decoded));
             }
             if let Ok(decoded) = DepositFilter::decode_log(log) {
-                return Ok(WETHEvents::DepositFilter(decoded));
+                return Ok(WethAbiEvents::DepositFilter(decoded));
             }
             if let Ok(decoded) = TransferFilter::decode_log(log) {
-                return Ok(WETHEvents::TransferFilter(decoded));
+                return Ok(WethAbiEvents::TransferFilter(decoded));
             }
             if let Ok(decoded) = WithdrawalFilter::decode_log(log) {
-                return Ok(WETHEvents::WithdrawalFilter(decoded));
+                return Ok(WethAbiEvents::WithdrawalFilter(decoded));
             }
             Err(::ethers::core::abi::Error::InvalidData)
         }
     }
-    impl ::core::fmt::Display for WETHEvents {
+    impl ::core::fmt::Display for WethAbiEvents {
         fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
             match self {
                 Self::ApprovalFilter(element) => ::core::fmt::Display::fmt(element, f),
@@ -676,22 +676,22 @@ pub mod weth {
             }
         }
     }
-    impl ::core::convert::From<ApprovalFilter> for WETHEvents {
+    impl ::core::convert::From<ApprovalFilter> for WethAbiEvents {
         fn from(value: ApprovalFilter) -> Self {
             Self::ApprovalFilter(value)
         }
     }
-    impl ::core::convert::From<DepositFilter> for WETHEvents {
+    impl ::core::convert::From<DepositFilter> for WethAbiEvents {
         fn from(value: DepositFilter) -> Self {
             Self::DepositFilter(value)
         }
     }
-    impl ::core::convert::From<TransferFilter> for WETHEvents {
+    impl ::core::convert::From<TransferFilter> for WethAbiEvents {
         fn from(value: TransferFilter) -> Self {
             Self::TransferFilter(value)
         }
     }
-    impl ::core::convert::From<WithdrawalFilter> for WETHEvents {
+    impl ::core::convert::From<WithdrawalFilter> for WethAbiEvents {
         fn from(value: WithdrawalFilter) -> Self {
             Self::WithdrawalFilter(value)
         }
@@ -856,7 +856,7 @@ pub mod weth {
     }
     ///Container type for all of the contract's call
     #[derive(Clone, ::ethers::contract::EthAbiType, Debug, PartialEq, Eq, Hash)]
-    pub enum WETHCalls {
+    pub enum WethAbiCalls {
         Allowance(AllowanceCall),
         Approve(ApproveCall),
         BalanceOf(BalanceOfCall),
@@ -869,7 +869,7 @@ pub mod weth {
         TransferFrom(TransferFromCall),
         Withdraw(WithdrawCall),
     }
-    impl ::ethers::core::abi::AbiDecode for WETHCalls {
+    impl ::ethers::core::abi::AbiDecode for WethAbiCalls {
         fn decode(
             data: impl AsRef<[u8]>,
         ) -> ::core::result::Result<Self, ::ethers::core::abi::AbiError> {
@@ -932,7 +932,7 @@ pub mod weth {
             Err(::ethers::core::abi::Error::InvalidData.into())
         }
     }
-    impl ::ethers::core::abi::AbiEncode for WETHCalls {
+    impl ::ethers::core::abi::AbiEncode for WethAbiCalls {
         fn encode(self) -> Vec<u8> {
             match self {
                 Self::Allowance(element) => {
@@ -963,7 +963,7 @@ pub mod weth {
             }
         }
     }
-    impl ::core::fmt::Display for WETHCalls {
+    impl ::core::fmt::Display for WethAbiCalls {
         fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
             match self {
                 Self::Allowance(element) => ::core::fmt::Display::fmt(element, f),
@@ -980,57 +980,57 @@ pub mod weth {
             }
         }
     }
-    impl ::core::convert::From<AllowanceCall> for WETHCalls {
+    impl ::core::convert::From<AllowanceCall> for WethAbiCalls {
         fn from(value: AllowanceCall) -> Self {
             Self::Allowance(value)
         }
     }
-    impl ::core::convert::From<ApproveCall> for WETHCalls {
+    impl ::core::convert::From<ApproveCall> for WethAbiCalls {
         fn from(value: ApproveCall) -> Self {
             Self::Approve(value)
         }
     }
-    impl ::core::convert::From<BalanceOfCall> for WETHCalls {
+    impl ::core::convert::From<BalanceOfCall> for WethAbiCalls {
         fn from(value: BalanceOfCall) -> Self {
             Self::BalanceOf(value)
         }
     }
-    impl ::core::convert::From<DecimalsCall> for WETHCalls {
+    impl ::core::convert::From<DecimalsCall> for WethAbiCalls {
         fn from(value: DecimalsCall) -> Self {
             Self::Decimals(value)
         }
     }
-    impl ::core::convert::From<DepositCall> for WETHCalls {
+    impl ::core::convert::From<DepositCall> for WethAbiCalls {
         fn from(value: DepositCall) -> Self {
             Self::Deposit(value)
         }
     }
-    impl ::core::convert::From<NameCall> for WETHCalls {
+    impl ::core::convert::From<NameCall> for WethAbiCalls {
         fn from(value: NameCall) -> Self {
             Self::Name(value)
         }
     }
-    impl ::core::convert::From<SymbolCall> for WETHCalls {
+    impl ::core::convert::From<SymbolCall> for WethAbiCalls {
         fn from(value: SymbolCall) -> Self {
             Self::Symbol(value)
         }
     }
-    impl ::core::convert::From<TotalSupplyCall> for WETHCalls {
+    impl ::core::convert::From<TotalSupplyCall> for WethAbiCalls {
         fn from(value: TotalSupplyCall) -> Self {
             Self::TotalSupply(value)
         }
     }
-    impl ::core::convert::From<TransferCall> for WETHCalls {
+    impl ::core::convert::From<TransferCall> for WethAbiCalls {
         fn from(value: TransferCall) -> Self {
             Self::Transfer(value)
         }
     }
-    impl ::core::convert::From<TransferFromCall> for WETHCalls {
+    impl ::core::convert::From<TransferFromCall> for WethAbiCalls {
         fn from(value: TransferFromCall) -> Self {
             Self::TransferFrom(value)
         }
     }
-    impl ::core::convert::From<WithdrawCall> for WETHCalls {
+    impl ::core::convert::From<WithdrawCall> for WethAbiCalls {
         fn from(value: WithdrawCall) -> Self {
             Self::Withdraw(value)
         }

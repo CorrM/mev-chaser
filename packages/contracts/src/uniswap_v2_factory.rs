@@ -1,4 +1,4 @@
-pub use uniswap_v2_factory::*;
+pub use uniswap_v2_factory_abi::*;
 /// This module was auto-generated with ethers-rs Abigen.
 /// More information at: <https://github.com/gakonst/ethers-rs>
 #[allow(
@@ -9,7 +9,7 @@ pub use uniswap_v2_factory::*;
     dead_code,
     non_camel_case_types,
 )]
-pub mod uniswap_v2_factory {
+pub mod uniswap_v2_factory_abi {
     #[allow(deprecated)]
     fn __abi() -> ::ethers::core::abi::Abi {
         ::ethers::core::abi::ethabi::Contract {
@@ -269,34 +269,34 @@ pub mod uniswap_v2_factory {
         }
     }
     ///The parsed JSON ABI of the contract.
-    pub static UNISWAPV2FACTORY_ABI: ::ethers::contract::Lazy<
+    pub static UNISWAPV2FACTORYABI_ABI: ::ethers::contract::Lazy<
         ::ethers::core::abi::Abi,
     > = ::ethers::contract::Lazy::new(__abi);
-    pub struct UniswapV2Factory<M>(::ethers::contract::Contract<M>);
-    impl<M> ::core::clone::Clone for UniswapV2Factory<M> {
+    pub struct UniswapV2FactoryAbi<M>(::ethers::contract::Contract<M>);
+    impl<M> ::core::clone::Clone for UniswapV2FactoryAbi<M> {
         fn clone(&self) -> Self {
             Self(::core::clone::Clone::clone(&self.0))
         }
     }
-    impl<M> ::core::ops::Deref for UniswapV2Factory<M> {
+    impl<M> ::core::ops::Deref for UniswapV2FactoryAbi<M> {
         type Target = ::ethers::contract::Contract<M>;
         fn deref(&self) -> &Self::Target {
             &self.0
         }
     }
-    impl<M> ::core::ops::DerefMut for UniswapV2Factory<M> {
+    impl<M> ::core::ops::DerefMut for UniswapV2FactoryAbi<M> {
         fn deref_mut(&mut self) -> &mut Self::Target {
             &mut self.0
         }
     }
-    impl<M> ::core::fmt::Debug for UniswapV2Factory<M> {
+    impl<M> ::core::fmt::Debug for UniswapV2FactoryAbi<M> {
         fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-            f.debug_tuple(::core::stringify!(UniswapV2Factory))
+            f.debug_tuple(::core::stringify!(UniswapV2FactoryAbi))
                 .field(&self.address())
                 .finish()
         }
     }
-    impl<M: ::ethers::providers::Middleware> UniswapV2Factory<M> {
+    impl<M: ::ethers::providers::Middleware> UniswapV2FactoryAbi<M> {
         /// Creates a new contract instance with the specified `ethers` client at
         /// `address`. The contract derefs to a `ethers::Contract` object.
         pub fn new<T: Into<::ethers::core::types::Address>>(
@@ -306,7 +306,7 @@ pub mod uniswap_v2_factory {
             Self(
                 ::ethers::contract::Contract::new(
                     address.into(),
-                    UNISWAPV2FACTORY_ABI.clone(),
+                    UNISWAPV2FACTORYABI_ABI.clone(),
                     client,
                 ),
             )
@@ -419,7 +419,7 @@ pub mod uniswap_v2_factory {
         }
     }
     impl<M: ::ethers::providers::Middleware> From<::ethers::contract::Contract<M>>
-    for UniswapV2Factory<M> {
+    for UniswapV2FactoryAbi<M> {
         fn from(contract: ::ethers::contract::Contract<M>) -> Self {
             Self::new(contract.address(), contract.client())
         }
@@ -562,7 +562,7 @@ pub mod uniswap_v2_factory {
     }
     ///Container type for all of the contract's call
     #[derive(Clone, ::ethers::contract::EthAbiType, Debug, PartialEq, Eq, Hash)]
-    pub enum UniswapV2FactoryCalls {
+    pub enum UniswapV2FactoryAbiCalls {
         AllPairs(AllPairsCall),
         AllPairsLength(AllPairsLengthCall),
         CreatePair(CreatePairCall),
@@ -572,7 +572,7 @@ pub mod uniswap_v2_factory {
         SetFeeTo(SetFeeToCall),
         SetFeeToSetter(SetFeeToSetterCall),
     }
-    impl ::ethers::core::abi::AbiDecode for UniswapV2FactoryCalls {
+    impl ::ethers::core::abi::AbiDecode for UniswapV2FactoryAbiCalls {
         fn decode(
             data: impl AsRef<[u8]>,
         ) -> ::core::result::Result<Self, ::ethers::core::abi::AbiError> {
@@ -620,7 +620,7 @@ pub mod uniswap_v2_factory {
             Err(::ethers::core::abi::Error::InvalidData.into())
         }
     }
-    impl ::ethers::core::abi::AbiEncode for UniswapV2FactoryCalls {
+    impl ::ethers::core::abi::AbiEncode for UniswapV2FactoryAbiCalls {
         fn encode(self) -> Vec<u8> {
             match self {
                 Self::AllPairs(element) => {
@@ -646,7 +646,7 @@ pub mod uniswap_v2_factory {
             }
         }
     }
-    impl ::core::fmt::Display for UniswapV2FactoryCalls {
+    impl ::core::fmt::Display for UniswapV2FactoryAbiCalls {
         fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
             match self {
                 Self::AllPairs(element) => ::core::fmt::Display::fmt(element, f),
@@ -660,42 +660,42 @@ pub mod uniswap_v2_factory {
             }
         }
     }
-    impl ::core::convert::From<AllPairsCall> for UniswapV2FactoryCalls {
+    impl ::core::convert::From<AllPairsCall> for UniswapV2FactoryAbiCalls {
         fn from(value: AllPairsCall) -> Self {
             Self::AllPairs(value)
         }
     }
-    impl ::core::convert::From<AllPairsLengthCall> for UniswapV2FactoryCalls {
+    impl ::core::convert::From<AllPairsLengthCall> for UniswapV2FactoryAbiCalls {
         fn from(value: AllPairsLengthCall) -> Self {
             Self::AllPairsLength(value)
         }
     }
-    impl ::core::convert::From<CreatePairCall> for UniswapV2FactoryCalls {
+    impl ::core::convert::From<CreatePairCall> for UniswapV2FactoryAbiCalls {
         fn from(value: CreatePairCall) -> Self {
             Self::CreatePair(value)
         }
     }
-    impl ::core::convert::From<FeeToCall> for UniswapV2FactoryCalls {
+    impl ::core::convert::From<FeeToCall> for UniswapV2FactoryAbiCalls {
         fn from(value: FeeToCall) -> Self {
             Self::FeeTo(value)
         }
     }
-    impl ::core::convert::From<FeeToSetterCall> for UniswapV2FactoryCalls {
+    impl ::core::convert::From<FeeToSetterCall> for UniswapV2FactoryAbiCalls {
         fn from(value: FeeToSetterCall) -> Self {
             Self::FeeToSetter(value)
         }
     }
-    impl ::core::convert::From<GetPairCall> for UniswapV2FactoryCalls {
+    impl ::core::convert::From<GetPairCall> for UniswapV2FactoryAbiCalls {
         fn from(value: GetPairCall) -> Self {
             Self::GetPair(value)
         }
     }
-    impl ::core::convert::From<SetFeeToCall> for UniswapV2FactoryCalls {
+    impl ::core::convert::From<SetFeeToCall> for UniswapV2FactoryAbiCalls {
         fn from(value: SetFeeToCall) -> Self {
             Self::SetFeeTo(value)
         }
     }
-    impl ::core::convert::From<SetFeeToSetterCall> for UniswapV2FactoryCalls {
+    impl ::core::convert::From<SetFeeToSetterCall> for UniswapV2FactoryAbiCalls {
         fn from(value: SetFeeToSetterCall) -> Self {
             Self::SetFeeToSetter(value)
         }

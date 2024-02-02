@@ -3,12 +3,12 @@ use std::{collections::HashMap, ops::Deref, sync::Arc};
 use amm::{AmmProtocol, UniswapV2Protocol};
 use amm::{AmmPoolKind, AmmProtocolKind};
 use anyhow::Result;
+use ethers_core::utils::to_checksum;
 use ethers_core::{
     abi::Log,
     types::{Address, Transaction},
 };
 use shared::{
-    abi::ABI,
     network_streams::{NetworkEvent, NetworkStreamManagerBuilder, NetworkStreamsManager},
     provider::{NodeProviderKind, NodeProviderManager, NormalNodeProvider},
     token::CryptoToken,
@@ -32,14 +32,12 @@ fn on_new_pending_tx(tx: &Transaction, decoded_log: Vec<(String, Log)>) {
 }
 
 pub struct BackRunnerStragegy {
-    abi: ABI,
     provider_manager: NodeProviderManager,
     dexes: Vec<AmmProtocolKind>,
 }
 
 impl BackRunnerStragegy {
     pub fn new(
-        abi: ABI,
         provider_manager: NodeProviderManager,
         dexes: Vec<AmmProtocolKind>,
         max_hops: i32,
@@ -65,7 +63,6 @@ impl BackRunnerStragegy {
         }
 
         Self {
-            abi,
             provider_manager,
             dexes,
         }
@@ -79,7 +76,7 @@ impl BackRunnerStragegy {
                 AmmProtocolKind::UniswapV2(v2) => *v2.router(),
             })
             .collect();
-        let filters: Vec<String> = router_addresses.iter().map(|s: &Address| format!("{:?}", s)).collect();
+        let filters: Vec<String> = router_addresses.iter().map(|s: &Address| to_checksum(s, None)).collect();
 
         let provider: &Arc<NormalNodeProvider> = self.provider_manager.get_next();
         let provider_kind: &Arc<NodeProviderKind> = &Arc::new(NodeProviderKind::Normal(provider.deref().clone()));
@@ -108,7 +105,7 @@ impl BackRunnerStragegy {
                     for trace_log in trace_logs {
                         on_new_pending_tx(
                             tx,
-                            UniswapV2Protocol::decode_pair_trace_logs(&self.abi.uniswap_v2_pair, trace_log),
+                            UniswapV2Protocol::decode_pair_trace_logs(trace_log),
                         );
                     }
                 }

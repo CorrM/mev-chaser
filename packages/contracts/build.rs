@@ -15,9 +15,9 @@ fn gen_abi(contract_name: &str, abi_file_name: &str, dist_file_name: &str) {
 }
 
 fn main() {
-    gen_abi("ERC20Token", "ERC20.json", "erc20_token.rs");
-    gen_abi("WETH", "WETH.json", "weth.rs");
-    gen_abi("UniswapV2Factory", "UniswapV2Factory.json", "uniswap_v2_factory.rs");
-    gen_abi("UniswapV2Pair", "UniswapV2Pair.json", "uniswap_v2_pair.rs");
-    gen_abi("UniswapV2Router", "UniswapV2Router.json", "uniswap_v2_router.rs");
+    gen_abi("ERC20TokenAbi", "ERC20.json", "erc20_token.rs");
+    gen_abi("WethAbi", "WETH.json", "weth.rs");
+    gen_abi("UniswapV2FactoryAbi", "UniswapV2Factory.json", "uniswap_v2_factory.rs");
+    gen_abi("UniswapV2PairAbi", "UniswapV2Pair.json", "uniswap_v2_pair.rs");
+    gen_abi("UniswapV2RouterAbi", "UniswapV2Router.json", "uniswap_v2_router.rs");
 }

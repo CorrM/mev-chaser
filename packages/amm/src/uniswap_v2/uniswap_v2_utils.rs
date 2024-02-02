@@ -1,15 +1,16 @@
 use std::{collections::HashMap, sync::Arc};
 
 use anyhow::Result;
+use contracts::UniswapV2PairAbi;
 use ethers::{
     abi::Token,
     providers::{Http, Provider},
-    types::{Bytes, H256, U256},
+    types::{Bytes, U256},
 };
-use ethers_contract::{Contract, Multicall};
+use ethers_contract::Multicall;
 
 use ethers_core::types::Address;
-use shared::{abi::ABI, provider::NodeProvider};
+use shared::provider::NodeProvider;
 
 use crate::{AmmPool, UniswapV2Pool};
 
@@ -21,16 +22,14 @@ pub struct Reserve {
 
 pub async fn get_uniswap_v2_reserves<T: NodeProvider>(
     provider: T,
-    abi: ABI,
     pools: Vec<UniswapV2Pool>,
 ) -> Result<HashMap<Address, Reserve>> {
     let client: &Arc<Provider<Http>> = provider.raw_http_provider();
 
     let mut multicall: Multicall<Provider<Http>> = Multicall::new(client.clone(), None).await?;
     for pool in &pools {
-        let contract = Contract::<Provider<Http>>::new(*pool.address(), abi.uniswap_v2_pair.clone(), client.clone());
-        let call = contract.method::<_, H256>("getReserves", ())?;
-        multicall.add_call(call, false);
+        let contract = UniswapV2PairAbi::new(*pool.address(), client.clone());
+        multicall.add_call(contract.get_reserves(), false);
     }
 
     let result: Vec<Result<Token, Bytes>> = multicall.call_raw().await?;
@@ -53,7 +52,6 @@ pub async fn get_uniswap_v2_reserves<T: NodeProvider>(
 
 pub async fn batch_get_uniswap_v2_reserves<T: 'static + NodeProvider>(
     provider: T,
-    abi: &ABI,
     pools: Vec<UniswapV2Pool>,
 ) -> HashMap<Address, Reserve> {
     let pools_cnt: usize = pools.len();
@@ -67,7 +65,6 @@ pub async fn batch_get_uniswap_v2_reserves<T: 'static + NodeProvider>(
         let end_idx: usize = std::cmp::min(start_idx + pools_per_batch, pools_cnt);
         let handle = tokio::spawn(get_uniswap_v2_reserves(
             provider.clone(),
-            abi.clone(),
             pools[start_idx..end_idx].to_vec(),
         ));
         handles.push(handle);

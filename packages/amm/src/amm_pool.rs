@@ -14,5 +14,5 @@ pub trait AmmPool {
     fn token1(&self) -> &Arc<CryptoToken>;
     fn reserve0(&self) -> U256;
     fn reserve1(&self) -> U256;
-    fn update_reserve(&mut self);
+    fn update_reserve(&mut self, reserve0: U256, reserve1: U256);
 }

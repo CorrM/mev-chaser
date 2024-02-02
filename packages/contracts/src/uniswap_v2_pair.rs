@@ -1,4 +1,4 @@
-pub use uniswap_v2_pair::*;
+pub use uniswap_v2_pair_abi::*;
 /// This module was auto-generated with ethers-rs Abigen.
 /// More information at: <https://github.com/gakonst/ethers-rs>
 #[allow(
@@ -9,7 +9,7 @@ pub use uniswap_v2_pair::*;
     dead_code,
     non_camel_case_types,
 )]
-pub mod uniswap_v2_pair {
+pub mod uniswap_v2_pair_abi {
     #[allow(deprecated)]
     fn __abi() -> ::ethers::core::abi::Abi {
         ::ethers::core::abi::ethabi::Contract {
@@ -997,34 +997,34 @@ pub mod uniswap_v2_pair {
         }
     }
     ///The parsed JSON ABI of the contract.
-    pub static UNISWAPV2PAIR_ABI: ::ethers::contract::Lazy<::ethers::core::abi::Abi> = ::ethers::contract::Lazy::new(
-        __abi,
-    );
-    pub struct UniswapV2Pair<M>(::ethers::contract::Contract<M>);
-    impl<M> ::core::clone::Clone for UniswapV2Pair<M> {
+    pub static UNISWAPV2PAIRABI_ABI: ::ethers::contract::Lazy<
+        ::ethers::core::abi::Abi,
+    > = ::ethers::contract::Lazy::new(__abi);
+    pub struct UniswapV2PairAbi<M>(::ethers::contract::Contract<M>);
+    impl<M> ::core::clone::Clone for UniswapV2PairAbi<M> {
         fn clone(&self) -> Self {
             Self(::core::clone::Clone::clone(&self.0))
         }
     }
-    impl<M> ::core::ops::Deref for UniswapV2Pair<M> {
+    impl<M> ::core::ops::Deref for UniswapV2PairAbi<M> {
         type Target = ::ethers::contract::Contract<M>;
         fn deref(&self) -> &Self::Target {
             &self.0
         }
     }
-    impl<M> ::core::ops::DerefMut for UniswapV2Pair<M> {
+    impl<M> ::core::ops::DerefMut for UniswapV2PairAbi<M> {
         fn deref_mut(&mut self) -> &mut Self::Target {
             &mut self.0
         }
     }
-    impl<M> ::core::fmt::Debug for UniswapV2Pair<M> {
+    impl<M> ::core::fmt::Debug for UniswapV2PairAbi<M> {
         fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-            f.debug_tuple(::core::stringify!(UniswapV2Pair))
+            f.debug_tuple(::core::stringify!(UniswapV2PairAbi))
                 .field(&self.address())
                 .finish()
         }
     }
-    impl<M: ::ethers::providers::Middleware> UniswapV2Pair<M> {
+    impl<M: ::ethers::providers::Middleware> UniswapV2PairAbi<M> {
         /// Creates a new contract instance with the specified `ethers` client at
         /// `address`. The contract derefs to a `ethers::Contract` object.
         pub fn new<T: Into<::ethers::core::types::Address>>(
@@ -1034,7 +1034,7 @@ pub mod uniswap_v2_pair {
             Self(
                 ::ethers::contract::Contract::new(
                     address.into(),
-                    UNISWAPV2PAIR_ABI.clone(),
+                    UNISWAPV2PAIRABI_ABI.clone(),
                     client,
                 ),
             )
@@ -1343,13 +1343,13 @@ pub mod uniswap_v2_pair {
         ) -> ::ethers::contract::builders::Event<
             ::std::sync::Arc<M>,
             M,
-            UniswapV2PairEvents,
+            UniswapV2PairAbiEvents,
         > {
             self.0.event_with_filter(::core::default::Default::default())
         }
     }
     impl<M: ::ethers::providers::Middleware> From<::ethers::contract::Contract<M>>
-    for UniswapV2Pair<M> {
+    for UniswapV2PairAbi<M> {
         fn from(contract: ::ethers::contract::Contract<M>) -> Self {
             Self::new(contract.address(), contract.client())
         }
@@ -1467,7 +1467,7 @@ pub mod uniswap_v2_pair {
     }
     ///Container type for all of the contract's events
     #[derive(Clone, ::ethers::contract::EthAbiType, Debug, PartialEq, Eq, Hash)]
-    pub enum UniswapV2PairEvents {
+    pub enum UniswapV2PairAbiEvents {
         ApprovalFilter(ApprovalFilter),
         BurnFilter(BurnFilter),
         MintFilter(MintFilter),
@@ -1475,32 +1475,32 @@ pub mod uniswap_v2_pair {
         SyncFilter(SyncFilter),
         TransferFilter(TransferFilter),
     }
-    impl ::ethers::contract::EthLogDecode for UniswapV2PairEvents {
+    impl ::ethers::contract::EthLogDecode for UniswapV2PairAbiEvents {
         fn decode_log(
             log: &::ethers::core::abi::RawLog,
         ) -> ::core::result::Result<Self, ::ethers::core::abi::Error> {
             if let Ok(decoded) = ApprovalFilter::decode_log(log) {
-                return Ok(UniswapV2PairEvents::ApprovalFilter(decoded));
+                return Ok(UniswapV2PairAbiEvents::ApprovalFilter(decoded));
             }
             if let Ok(decoded) = BurnFilter::decode_log(log) {
-                return Ok(UniswapV2PairEvents::BurnFilter(decoded));
+                return Ok(UniswapV2PairAbiEvents::BurnFilter(decoded));
             }
             if let Ok(decoded) = MintFilter::decode_log(log) {
-                return Ok(UniswapV2PairEvents::MintFilter(decoded));
+                return Ok(UniswapV2PairAbiEvents::MintFilter(decoded));
             }
             if let Ok(decoded) = SwapFilter::decode_log(log) {
-                return Ok(UniswapV2PairEvents::SwapFilter(decoded));
+                return Ok(UniswapV2PairAbiEvents::SwapFilter(decoded));
             }
             if let Ok(decoded) = SyncFilter::decode_log(log) {
-                return Ok(UniswapV2PairEvents::SyncFilter(decoded));
+                return Ok(UniswapV2PairAbiEvents::SyncFilter(decoded));
             }
             if let Ok(decoded) = TransferFilter::decode_log(log) {
-                return Ok(UniswapV2PairEvents::TransferFilter(decoded));
+                return Ok(UniswapV2PairAbiEvents::TransferFilter(decoded));
             }
             Err(::ethers::core::abi::Error::InvalidData)
         }
     }
-    impl ::core::fmt::Display for UniswapV2PairEvents {
+    impl ::core::fmt::Display for UniswapV2PairAbiEvents {
         fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
             match self {
                 Self::ApprovalFilter(element) => ::core::fmt::Display::fmt(element, f),
@@ -1512,32 +1512,32 @@ pub mod uniswap_v2_pair {
             }
         }
     }
-    impl ::core::convert::From<ApprovalFilter> for UniswapV2PairEvents {
+    impl ::core::convert::From<ApprovalFilter> for UniswapV2PairAbiEvents {
         fn from(value: ApprovalFilter) -> Self {
             Self::ApprovalFilter(value)
         }
     }
-    impl ::core::convert::From<BurnFilter> for UniswapV2PairEvents {
+    impl ::core::convert::From<BurnFilter> for UniswapV2PairAbiEvents {
         fn from(value: BurnFilter) -> Self {
             Self::BurnFilter(value)
         }
     }
-    impl ::core::convert::From<MintFilter> for UniswapV2PairEvents {
+    impl ::core::convert::From<MintFilter> for UniswapV2PairAbiEvents {
         fn from(value: MintFilter) -> Self {
             Self::MintFilter(value)
         }
     }
-    impl ::core::convert::From<SwapFilter> for UniswapV2PairEvents {
+    impl ::core::convert::From<SwapFilter> for UniswapV2PairAbiEvents {
         fn from(value: SwapFilter) -> Self {
             Self::SwapFilter(value)
         }
     }
-    impl ::core::convert::From<SyncFilter> for UniswapV2PairEvents {
+    impl ::core::convert::From<SyncFilter> for UniswapV2PairAbiEvents {
         fn from(value: SyncFilter) -> Self {
             Self::SyncFilter(value)
         }
     }
-    impl ::core::convert::From<TransferFilter> for UniswapV2PairEvents {
+    impl ::core::convert::From<TransferFilter> for UniswapV2PairAbiEvents {
         fn from(value: TransferFilter) -> Self {
             Self::TransferFilter(value)
         }
@@ -1933,7 +1933,7 @@ pub mod uniswap_v2_pair {
     }
     ///Container type for all of the contract's call
     #[derive(Clone, ::ethers::contract::EthAbiType, Debug, PartialEq, Eq, Hash)]
-    pub enum UniswapV2PairCalls {
+    pub enum UniswapV2PairAbiCalls {
         DomainSeparator(DomainSeparatorCall),
         MinimumLiquidity(MinimumLiquidityCall),
         PermitTypehash(PermitTypehashCall),
@@ -1962,7 +1962,7 @@ pub mod uniswap_v2_pair {
         Transfer(TransferCall),
         TransferFrom(TransferFromCall),
     }
-    impl ::ethers::core::abi::AbiDecode for UniswapV2PairCalls {
+    impl ::ethers::core::abi::AbiDecode for UniswapV2PairAbiCalls {
         fn decode(
             data: impl AsRef<[u8]>,
         ) -> ::core::result::Result<Self, ::ethers::core::abi::AbiError> {
@@ -2105,7 +2105,7 @@ pub mod uniswap_v2_pair {
             Err(::ethers::core::abi::Error::InvalidData.into())
         }
     }
-    impl ::ethers::core::abi::AbiEncode for UniswapV2PairCalls {
+    impl ::ethers::core::abi::AbiEncode for UniswapV2PairAbiCalls {
         fn encode(self) -> Vec<u8> {
             match self {
                 Self::DomainSeparator(element) => {
@@ -2164,7 +2164,7 @@ pub mod uniswap_v2_pair {
             }
         }
     }
-    impl ::core::fmt::Display for UniswapV2PairCalls {
+    impl ::core::fmt::Display for UniswapV2PairAbiCalls {
         fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
             match self {
                 Self::DomainSeparator(element) => ::core::fmt::Display::fmt(element, f),
@@ -2201,137 +2201,137 @@ pub mod uniswap_v2_pair {
             }
         }
     }
-    impl ::core::convert::From<DomainSeparatorCall> for UniswapV2PairCalls {
+    impl ::core::convert::From<DomainSeparatorCall> for UniswapV2PairAbiCalls {
         fn from(value: DomainSeparatorCall) -> Self {
             Self::DomainSeparator(value)
         }
     }
-    impl ::core::convert::From<MinimumLiquidityCall> for UniswapV2PairCalls {
+    impl ::core::convert::From<MinimumLiquidityCall> for UniswapV2PairAbiCalls {
         fn from(value: MinimumLiquidityCall) -> Self {
             Self::MinimumLiquidity(value)
         }
     }
-    impl ::core::convert::From<PermitTypehashCall> for UniswapV2PairCalls {
+    impl ::core::convert::From<PermitTypehashCall> for UniswapV2PairAbiCalls {
         fn from(value: PermitTypehashCall) -> Self {
             Self::PermitTypehash(value)
         }
     }
-    impl ::core::convert::From<AllowanceCall> for UniswapV2PairCalls {
+    impl ::core::convert::From<AllowanceCall> for UniswapV2PairAbiCalls {
         fn from(value: AllowanceCall) -> Self {
             Self::Allowance(value)
         }
     }
-    impl ::core::convert::From<ApproveCall> for UniswapV2PairCalls {
+    impl ::core::convert::From<ApproveCall> for UniswapV2PairAbiCalls {
         fn from(value: ApproveCall) -> Self {
             Self::Approve(value)
         }
     }
-    impl ::core::convert::From<BalanceOfCall> for UniswapV2PairCalls {
+    impl ::core::convert::From<BalanceOfCall> for UniswapV2PairAbiCalls {
         fn from(value: BalanceOfCall) -> Self {
             Self::BalanceOf(value)
         }
     }
-    impl ::core::convert::From<BurnCall> for UniswapV2PairCalls {
+    impl ::core::convert::From<BurnCall> for UniswapV2PairAbiCalls {
         fn from(value: BurnCall) -> Self {
             Self::Burn(value)
         }
     }
-    impl ::core::convert::From<DecimalsCall> for UniswapV2PairCalls {
+    impl ::core::convert::From<DecimalsCall> for UniswapV2PairAbiCalls {
         fn from(value: DecimalsCall) -> Self {
             Self::Decimals(value)
         }
     }
-    impl ::core::convert::From<FactoryCall> for UniswapV2PairCalls {
+    impl ::core::convert::From<FactoryCall> for UniswapV2PairAbiCalls {
         fn from(value: FactoryCall) -> Self {
             Self::Factory(value)
         }
     }
-    impl ::core::convert::From<GetReservesCall> for UniswapV2PairCalls {
+    impl ::core::convert::From<GetReservesCall> for UniswapV2PairAbiCalls {
         fn from(value: GetReservesCall) -> Self {
             Self::GetReserves(value)
         }
     }
-    impl ::core::convert::From<InitializeCall> for UniswapV2PairCalls {
+    impl ::core::convert::From<InitializeCall> for UniswapV2PairAbiCalls {
         fn from(value: InitializeCall) -> Self {
             Self::Initialize(value)
         }
     }
-    impl ::core::convert::From<KlastCall> for UniswapV2PairCalls {
+    impl ::core::convert::From<KlastCall> for UniswapV2PairAbiCalls {
         fn from(value: KlastCall) -> Self {
             Self::Klast(value)
         }
     }
-    impl ::core::convert::From<MintCall> for UniswapV2PairCalls {
+    impl ::core::convert::From<MintCall> for UniswapV2PairAbiCalls {
         fn from(value: MintCall) -> Self {
             Self::Mint(value)
         }
     }
-    impl ::core::convert::From<NameCall> for UniswapV2PairCalls {
+    impl ::core::convert::From<NameCall> for UniswapV2PairAbiCalls {
         fn from(value: NameCall) -> Self {
             Self::Name(value)
         }
     }
-    impl ::core::convert::From<NoncesCall> for UniswapV2PairCalls {
+    impl ::core::convert::From<NoncesCall> for UniswapV2PairAbiCalls {
         fn from(value: NoncesCall) -> Self {
             Self::Nonces(value)
         }
     }
-    impl ::core::convert::From<PermitCall> for UniswapV2PairCalls {
+    impl ::core::convert::From<PermitCall> for UniswapV2PairAbiCalls {
         fn from(value: PermitCall) -> Self {
             Self::Permit(value)
         }
     }
-    impl ::core::convert::From<Price0CumulativeLastCall> for UniswapV2PairCalls {
+    impl ::core::convert::From<Price0CumulativeLastCall> for UniswapV2PairAbiCalls {
         fn from(value: Price0CumulativeLastCall) -> Self {
             Self::Price0CumulativeLast(value)
         }
     }
-    impl ::core::convert::From<Price1CumulativeLastCall> for UniswapV2PairCalls {
+    impl ::core::convert::From<Price1CumulativeLastCall> for UniswapV2PairAbiCalls {
         fn from(value: Price1CumulativeLastCall) -> Self {
             Self::Price1CumulativeLast(value)
         }
     }
-    impl ::core::convert::From<SkimCall> for UniswapV2PairCalls {
+    impl ::core::convert::From<SkimCall> for UniswapV2PairAbiCalls {
         fn from(value: SkimCall) -> Self {
             Self::Skim(value)
         }
     }
-    impl ::core::convert::From<SwapCall> for UniswapV2PairCalls {
+    impl ::core::convert::From<SwapCall> for UniswapV2PairAbiCalls {
         fn from(value: SwapCall) -> Self {
             Self::Swap(value)
         }
     }
-    impl ::core::convert::From<SymbolCall> for UniswapV2PairCalls {
+    impl ::core::convert::From<SymbolCall> for UniswapV2PairAbiCalls {
         fn from(value: SymbolCall) -> Self {
             Self::Symbol(value)
         }
     }
-    impl ::core::convert::From<SyncCall> for UniswapV2PairCalls {
+    impl ::core::convert::From<SyncCall> for UniswapV2PairAbiCalls {
         fn from(value: SyncCall) -> Self {
             Self::Sync(value)
         }
     }
-    impl ::core::convert::From<Token0Call> for UniswapV2PairCalls {
+    impl ::core::convert::From<Token0Call> for UniswapV2PairAbiCalls {
         fn from(value: Token0Call) -> Self {
             Self::Token0(value)
         }
     }
-    impl ::core::convert::From<Token1Call> for UniswapV2PairCalls {
+    impl ::core::convert::From<Token1Call> for UniswapV2PairAbiCalls {
         fn from(value: Token1Call) -> Self {
             Self::Token1(value)
         }
     }
-    impl ::core::convert::From<TotalSupplyCall> for UniswapV2PairCalls {
+    impl ::core::convert::From<TotalSupplyCall> for UniswapV2PairAbiCalls {
         fn from(value: TotalSupplyCall) -> Self {
             Self::TotalSupply(value)
         }
     }
-    impl ::core::convert::From<TransferCall> for UniswapV2PairCalls {
+    impl ::core::convert::From<TransferCall> for UniswapV2PairAbiCalls {
         fn from(value: TransferCall) -> Self {
             Self::Transfer(value)
         }
     }
-    impl ::core::convert::From<TransferFromCall> for UniswapV2PairCalls {
+    impl ::core::convert::From<TransferFromCall> for UniswapV2PairAbiCalls {
         fn from(value: TransferFromCall) -> Self {
             Self::TransferFrom(value)
         }

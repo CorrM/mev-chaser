@@ -1,4 +1,5 @@
 use anyhow::Result;
+use contracts::UNISWAPV2PAIRABI_ABI;
 use ethers_core::{
     abi::{Abi, Log, RawLog},
     types::Address,
@@ -35,10 +36,10 @@ impl UniswapV2Protocol {
         })
     }
 
-    pub fn decode_pair_trace_logs(pair_abi: &Abi, trace_log: TraceLogData) -> Vec<(String, Log)> {
+    pub fn decode_pair_trace_logs(trace_log: TraceLogData) -> Vec<(String, Log)> {
         let mut ret: Vec<(String, Log)> = Vec::new();
 
-        for ev in pair_abi.events() {
+        for ev in UNISWAPV2PAIRABI_ABI.events() {
             if ev.signature() != trace_log.topics()[0] {
                 continue;
             }
@@ -78,13 +79,5 @@ impl AmmProtocol for UniswapV2Protocol {
 
     fn pools(&self) -> Vec<Arc<UniswapV2Pool>> {
         self.pools.clone()
-    }
-
-    fn options(&self) -> String {
-        panic!("Unimplemented");
-    }
-
-    fn set_options(&mut self, options: String) {
-        panic!("Unimplemented");
     }
 }

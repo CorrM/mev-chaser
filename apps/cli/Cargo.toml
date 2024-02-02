@@ -10,6 +10,7 @@ mev = { path = "../../packages/mev" }
 contracts = { path = "../../packages/contracts" }
 
 anyhow = { workspace = true }
+serde_json = { workspace = true }
 tokio = { workspace = true }
 ethers-providers = { workspace = true }
 ethers-core = { workspace = true }

@@ -7,6 +7,4 @@ pub trait AmmProtocol {
 
     fn name(&self) -> &str;
     fn pools(&self) -> Vec<Arc<Self::Pool>>;
-    fn options(&self) -> String;
-    fn set_options(&mut self, options: String);
 }

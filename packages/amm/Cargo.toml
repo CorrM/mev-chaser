@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 shared = { path = "../shared" }
+contracts = { path = "../contracts" }
 
 anyhow = { workspace = true }
 tokio = { workspace = true }

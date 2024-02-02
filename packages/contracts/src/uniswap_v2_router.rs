@@ -1,4 +1,4 @@
-pub use uniswap_v2_router::*;
+pub use uniswap_v2_router_abi::*;
 /// This module was auto-generated with ethers-rs Abigen.
 /// More information at: <https://github.com/gakonst/ethers-rs>
 #[allow(
@@ -9,7 +9,7 @@ pub use uniswap_v2_router::*;
     dead_code,
     non_camel_case_types,
 )]
-pub mod uniswap_v2_router {
+pub mod uniswap_v2_router_abi {
     #[allow(deprecated)]
     fn __abi() -> ::ethers::core::abi::Abi {
         ::ethers::core::abi::ethabi::Contract {
@@ -1707,34 +1707,34 @@ pub mod uniswap_v2_router {
         }
     }
     ///The parsed JSON ABI of the contract.
-    pub static UNISWAPV2ROUTER_ABI: ::ethers::contract::Lazy<::ethers::core::abi::Abi> = ::ethers::contract::Lazy::new(
-        __abi,
-    );
-    pub struct UniswapV2Router<M>(::ethers::contract::Contract<M>);
-    impl<M> ::core::clone::Clone for UniswapV2Router<M> {
+    pub static UNISWAPV2ROUTERABI_ABI: ::ethers::contract::Lazy<
+        ::ethers::core::abi::Abi,
+    > = ::ethers::contract::Lazy::new(__abi);
+    pub struct UniswapV2RouterAbi<M>(::ethers::contract::Contract<M>);
+    impl<M> ::core::clone::Clone for UniswapV2RouterAbi<M> {
         fn clone(&self) -> Self {
             Self(::core::clone::Clone::clone(&self.0))
         }
     }
-    impl<M> ::core::ops::Deref for UniswapV2Router<M> {
+    impl<M> ::core::ops::Deref for UniswapV2RouterAbi<M> {
         type Target = ::ethers::contract::Contract<M>;
         fn deref(&self) -> &Self::Target {
             &self.0
         }
     }
-    impl<M> ::core::ops::DerefMut for UniswapV2Router<M> {
+    impl<M> ::core::ops::DerefMut for UniswapV2RouterAbi<M> {
         fn deref_mut(&mut self) -> &mut Self::Target {
             &mut self.0
         }
     }
-    impl<M> ::core::fmt::Debug for UniswapV2Router<M> {
+    impl<M> ::core::fmt::Debug for UniswapV2RouterAbi<M> {
         fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-            f.debug_tuple(::core::stringify!(UniswapV2Router))
+            f.debug_tuple(::core::stringify!(UniswapV2RouterAbi))
                 .field(&self.address())
                 .finish()
         }
     }
-    impl<M: ::ethers::providers::Middleware> UniswapV2Router<M> {
+    impl<M: ::ethers::providers::Middleware> UniswapV2RouterAbi<M> {
         /// Creates a new contract instance with the specified `ethers` client at
         /// `address`. The contract derefs to a `ethers::Contract` object.
         pub fn new<T: Into<::ethers::core::types::Address>>(
@@ -1744,7 +1744,7 @@ pub mod uniswap_v2_router {
             Self(
                 ::ethers::contract::Contract::new(
                     address.into(),
-                    UNISWAPV2ROUTER_ABI.clone(),
+                    UNISWAPV2ROUTERABI_ABI.clone(),
                     client,
                 ),
             )
@@ -2218,7 +2218,7 @@ pub mod uniswap_v2_router {
         }
     }
     impl<M: ::ethers::providers::Middleware> From<::ethers::contract::Contract<M>>
-    for UniswapV2Router<M> {
+    for UniswapV2RouterAbi<M> {
         fn from(contract: ::ethers::contract::Contract<M>) -> Self {
             Self::new(contract.address(), contract.client())
         }
@@ -2729,7 +2729,7 @@ pub mod uniswap_v2_router {
     }
     ///Container type for all of the contract's call
     #[derive(Clone, ::ethers::contract::EthAbiType, Debug, PartialEq, Eq, Hash)]
-    pub enum UniswapV2RouterCalls {
+    pub enum UniswapV2RouterAbiCalls {
         Weth(WethCall),
         AddLiquidity(AddLiquidityCall),
         AddLiquidityETH(AddLiquidityETHCall),
@@ -2765,7 +2765,7 @@ pub mod uniswap_v2_router {
         SwapTokensForExactETH(SwapTokensForExactETHCall),
         SwapTokensForExactTokens(SwapTokensForExactTokensCall),
     }
-    impl ::ethers::core::abi::AbiDecode for UniswapV2RouterCalls {
+    impl ::ethers::core::abi::AbiDecode for UniswapV2RouterAbiCalls {
         fn decode(
             data: impl AsRef<[u8]>,
         ) -> ::core::result::Result<Self, ::ethers::core::abi::AbiError> {
@@ -2905,7 +2905,7 @@ pub mod uniswap_v2_router {
             Err(::ethers::core::abi::Error::InvalidData.into())
         }
     }
-    impl ::ethers::core::abi::AbiEncode for UniswapV2RouterCalls {
+    impl ::ethers::core::abi::AbiEncode for UniswapV2RouterAbiCalls {
         fn encode(self) -> Vec<u8> {
             match self {
                 Self::Weth(element) => ::ethers::core::abi::AbiEncode::encode(element),
@@ -2977,7 +2977,7 @@ pub mod uniswap_v2_router {
             }
         }
     }
-    impl ::core::fmt::Display for UniswapV2RouterCalls {
+    impl ::core::fmt::Display for UniswapV2RouterAbiCalls {
         fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
             match self {
                 Self::Weth(element) => ::core::fmt::Display::fmt(element, f),
@@ -3035,133 +3035,136 @@ pub mod uniswap_v2_router {
             }
         }
     }
-    impl ::core::convert::From<WethCall> for UniswapV2RouterCalls {
+    impl ::core::convert::From<WethCall> for UniswapV2RouterAbiCalls {
         fn from(value: WethCall) -> Self {
             Self::Weth(value)
         }
     }
-    impl ::core::convert::From<AddLiquidityCall> for UniswapV2RouterCalls {
+    impl ::core::convert::From<AddLiquidityCall> for UniswapV2RouterAbiCalls {
         fn from(value: AddLiquidityCall) -> Self {
             Self::AddLiquidity(value)
         }
     }
-    impl ::core::convert::From<AddLiquidityETHCall> for UniswapV2RouterCalls {
+    impl ::core::convert::From<AddLiquidityETHCall> for UniswapV2RouterAbiCalls {
         fn from(value: AddLiquidityETHCall) -> Self {
             Self::AddLiquidityETH(value)
         }
     }
-    impl ::core::convert::From<FactoryCall> for UniswapV2RouterCalls {
+    impl ::core::convert::From<FactoryCall> for UniswapV2RouterAbiCalls {
         fn from(value: FactoryCall) -> Self {
             Self::Factory(value)
         }
     }
-    impl ::core::convert::From<GetAmountInCall> for UniswapV2RouterCalls {
+    impl ::core::convert::From<GetAmountInCall> for UniswapV2RouterAbiCalls {
         fn from(value: GetAmountInCall) -> Self {
             Self::GetAmountIn(value)
         }
     }
-    impl ::core::convert::From<GetAmountOutCall> for UniswapV2RouterCalls {
+    impl ::core::convert::From<GetAmountOutCall> for UniswapV2RouterAbiCalls {
         fn from(value: GetAmountOutCall) -> Self {
             Self::GetAmountOut(value)
         }
     }
-    impl ::core::convert::From<GetAmountsInCall> for UniswapV2RouterCalls {
+    impl ::core::convert::From<GetAmountsInCall> for UniswapV2RouterAbiCalls {
         fn from(value: GetAmountsInCall) -> Self {
             Self::GetAmountsIn(value)
         }
     }
-    impl ::core::convert::From<GetAmountsOutCall> for UniswapV2RouterCalls {
+    impl ::core::convert::From<GetAmountsOutCall> for UniswapV2RouterAbiCalls {
         fn from(value: GetAmountsOutCall) -> Self {
             Self::GetAmountsOut(value)
         }
     }
-    impl ::core::convert::From<QuoteCall> for UniswapV2RouterCalls {
+    impl ::core::convert::From<QuoteCall> for UniswapV2RouterAbiCalls {
         fn from(value: QuoteCall) -> Self {
             Self::Quote(value)
         }
     }
-    impl ::core::convert::From<RemoveLiquidityCall> for UniswapV2RouterCalls {
+    impl ::core::convert::From<RemoveLiquidityCall> for UniswapV2RouterAbiCalls {
         fn from(value: RemoveLiquidityCall) -> Self {
             Self::RemoveLiquidity(value)
         }
     }
-    impl ::core::convert::From<RemoveLiquidityETHCall> for UniswapV2RouterCalls {
+    impl ::core::convert::From<RemoveLiquidityETHCall> for UniswapV2RouterAbiCalls {
         fn from(value: RemoveLiquidityETHCall) -> Self {
             Self::RemoveLiquidityETH(value)
         }
     }
     impl ::core::convert::From<RemoveLiquidityETHSupportingFeeOnTransferTokensCall>
-    for UniswapV2RouterCalls {
+    for UniswapV2RouterAbiCalls {
         fn from(value: RemoveLiquidityETHSupportingFeeOnTransferTokensCall) -> Self {
             Self::RemoveLiquidityETHSupportingFeeOnTransferTokens(value)
         }
     }
     impl ::core::convert::From<RemoveLiquidityETHWithPermitCall>
-    for UniswapV2RouterCalls {
+    for UniswapV2RouterAbiCalls {
         fn from(value: RemoveLiquidityETHWithPermitCall) -> Self {
             Self::RemoveLiquidityETHWithPermit(value)
         }
     }
     impl ::core::convert::From<
         RemoveLiquidityETHWithPermitSupportingFeeOnTransferTokensCall,
-    > for UniswapV2RouterCalls {
+    > for UniswapV2RouterAbiCalls {
         fn from(
             value: RemoveLiquidityETHWithPermitSupportingFeeOnTransferTokensCall,
         ) -> Self {
             Self::RemoveLiquidityETHWithPermitSupportingFeeOnTransferTokens(value)
         }
     }
-    impl ::core::convert::From<RemoveLiquidityWithPermitCall> for UniswapV2RouterCalls {
+    impl ::core::convert::From<RemoveLiquidityWithPermitCall>
+    for UniswapV2RouterAbiCalls {
         fn from(value: RemoveLiquidityWithPermitCall) -> Self {
             Self::RemoveLiquidityWithPermit(value)
         }
     }
-    impl ::core::convert::From<SwapETHForExactTokensCall> for UniswapV2RouterCalls {
+    impl ::core::convert::From<SwapETHForExactTokensCall> for UniswapV2RouterAbiCalls {
         fn from(value: SwapETHForExactTokensCall) -> Self {
             Self::SwapETHForExactTokens(value)
         }
     }
-    impl ::core::convert::From<SwapExactETHForTokensCall> for UniswapV2RouterCalls {
+    impl ::core::convert::From<SwapExactETHForTokensCall> for UniswapV2RouterAbiCalls {
         fn from(value: SwapExactETHForTokensCall) -> Self {
             Self::SwapExactETHForTokens(value)
         }
     }
     impl ::core::convert::From<SwapExactETHForTokensSupportingFeeOnTransferTokensCall>
-    for UniswapV2RouterCalls {
+    for UniswapV2RouterAbiCalls {
         fn from(value: SwapExactETHForTokensSupportingFeeOnTransferTokensCall) -> Self {
             Self::SwapExactETHForTokensSupportingFeeOnTransferTokens(value)
         }
     }
-    impl ::core::convert::From<SwapExactTokensForETHCall> for UniswapV2RouterCalls {
+    impl ::core::convert::From<SwapExactTokensForETHCall> for UniswapV2RouterAbiCalls {
         fn from(value: SwapExactTokensForETHCall) -> Self {
             Self::SwapExactTokensForETH(value)
         }
     }
     impl ::core::convert::From<SwapExactTokensForETHSupportingFeeOnTransferTokensCall>
-    for UniswapV2RouterCalls {
+    for UniswapV2RouterAbiCalls {
         fn from(value: SwapExactTokensForETHSupportingFeeOnTransferTokensCall) -> Self {
             Self::SwapExactTokensForETHSupportingFeeOnTransferTokens(value)
         }
     }
-    impl ::core::convert::From<SwapExactTokensForTokensCall> for UniswapV2RouterCalls {
+    impl ::core::convert::From<SwapExactTokensForTokensCall>
+    for UniswapV2RouterAbiCalls {
         fn from(value: SwapExactTokensForTokensCall) -> Self {
             Self::SwapExactTokensForTokens(value)
         }
     }
     impl ::core::convert::From<SwapExactTokensForTokensSupportingFeeOnTransferTokensCall>
-    for UniswapV2RouterCalls {
+    for UniswapV2RouterAbiCalls {
         fn from(
             value: SwapExactTokensForTokensSupportingFeeOnTransferTokensCall,
         ) -> Self {
             Self::SwapExactTokensForTokensSupportingFeeOnTransferTokens(value)
         }
     }
-    impl ::core::convert::From<SwapTokensForExactETHCall> for UniswapV2RouterCalls {
+    impl ::core::convert::From<SwapTokensForExactETHCall> for UniswapV2RouterAbiCalls {
         fn from(value: SwapTokensForExactETHCall) -> Self {
             Self::SwapTokensForExactETH(value)
         }
     }
-    impl ::core::convert::From<SwapTokensForExactTokensCall> for UniswapV2RouterCalls {
+    impl ::core::convert::From<SwapTokensForExactTokensCall>
+    for UniswapV2RouterAbiCalls {
         fn from(value: SwapTokensForExactTokensCall) -> Self {
             Self::SwapTokensForExactTokens(value)
         }

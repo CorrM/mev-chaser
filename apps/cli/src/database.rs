@@ -1,9 +1,10 @@
 use amm::{AmmPool, AmmProtocol, AmmProtocolKind};
+use ethers_core::utils::to_checksum;
 use rusqlite::{params, Connection, OptionalExtension, Result, Statement};
 use std::path::Path;
 
-use shared::token::CryptoToken;
 use shared::network::NetworkKind;
+use shared::token::CryptoToken;
 
 #[derive(Debug)]
 pub struct DbNetwork {
@@ -44,6 +45,7 @@ pub struct DbProvider {
 #[derive(Debug, Clone)]
 pub struct DbTokenNetwork {
     pub id: i64,
+    pub token_id: i64,
     pub network_id: i64,
     pub address: String,
 }
@@ -52,8 +54,9 @@ impl DbTokenNetwork {
     fn from_row(row: &rusqlite::Row) -> Result<DbTokenNetwork> {
         Ok(DbTokenNetwork {
             id: row.get(0)?,
-            network_id: row.get(1)?,
-            address: row.get(2)?,
+            token_id: row.get(1)?,
+            network_id: row.get(2)?,
+            address: row.get(3)?,
         })
     }
 }
@@ -183,6 +186,19 @@ impl Database {
         stmt.query_row(params![db_network_id], DbNetwork::from_row).optional()
     }
 
+    pub fn get_token_network_by_token(&self, token_id: i64, network: &NetworkKind) -> Result<Option<DbTokenNetwork>> {
+        let db_network: Option<DbNetwork> = self.get_network(network)?;
+        if db_network.is_none() {
+            return Err(rusqlite::Error::QueryReturnedNoRows);
+        }
+
+        let mut stmt: Statement = self
+            .db
+            .prepare("SELECT * FROM TokenNetworks WHERE tokenId = ? AND networkId = ? LIMIT 1")?;
+        stmt.query_row(params![token_id, db_network.unwrap().id], DbTokenNetwork::from_row)
+            .optional()
+    }
+
     pub fn get_token_network(
         &self,
         address: impl Into<String>,
@@ -203,7 +219,12 @@ impl Database {
         .optional()
     }
 
-    pub fn add_token_network(&self, network: &NetworkKind, address: impl Into<String>) -> Result<DbTokenNetwork> {
+    pub fn add_token_network(
+        &self,
+        token_id: i64,
+        network: &NetworkKind,
+        address: impl Into<String>,
+    ) -> Result<DbTokenNetwork> {
         let db_network: Option<DbNetwork> = self.get_network(network)?;
         if db_network.is_none() {
             return Err(rusqlite::Error::QueryReturnedNoRows);
@@ -211,12 +232,37 @@ impl Database {
 
         let mut stmt: Statement = self
             .db
-            .prepare("INSERT INTO TokenNetworks (networkId, address) VALUES (?, ?) RETURNING *")?;
+            .prepare("INSERT INTO TokenNetworks (tokenId, networkId, address) VALUES (?, ?, ?) RETURNING *")?;
 
         stmt.query_row(
-            params![db_network.unwrap().id, address.into()],
+            params![token_id, db_network.unwrap().id, address.into()],
             DbTokenNetwork::from_row,
         )
+    }
+
+    pub fn get_token_by_id(&self, id: i64) -> Result<Option<DbToken>> {
+        let mut stmt: Statement = self.db.prepare("SELECT * FROM Tokens WHERE id = ? LIMIT 1")?;
+        stmt.query_row(params![id], DbToken::from_row).optional()
+    }
+
+    pub fn get_token_by_address(&self, address: impl Into<String>, network: &NetworkKind) -> Result<Option<DbToken>> {
+        let db_network: Option<DbNetwork> = self.get_network(network)?;
+        if db_network.is_none() {
+            return Err(rusqlite::Error::QueryReturnedNoRows);
+        }
+        let db_network: DbNetwork = db_network.unwrap();
+
+        let mut stmt: Statement = self
+            .db
+            .prepare("SELECT * FROM TokenNetworks WHERE networkId = ? AND address = ? LIMIT 1")?;
+
+        let db_token_network: DbTokenNetwork =
+            stmt.query_row(params![db_network.id, address.into()], DbTokenNetwork::from_row)?;
+
+        let mut stmt: Statement = self.db.prepare("SELECT * FROM Tokens WHERE id = ? LIMIT 1")?;
+
+        stmt.query_row(params![db_token_network.token_id], DbToken::from_row)
+            .optional()
     }
 
     pub fn get_token(
@@ -241,7 +287,7 @@ impl Database {
             .db
             .prepare("SELECT * FROM Tokens WHERE instr(tokenNetworksIds, ?) > 0")?;
 
-        stmt.query_row(params![format!(",{},", db_network.id)], |row| {
+        stmt.query_row(params![format!(",{},", db_token_network.id)], |row| {
             Ok((DbToken::from_row(row)?, db_token_network))
         })
         .optional()
@@ -288,11 +334,10 @@ impl Database {
             DbToken::from_row,
         )?;
 
-        let token_address: String = format!("{:?}", token.address());
-        let db_token_network: DbTokenNetwork = self.add_token_network(token.network(), &token_address)?;
+        let token_address: String = to_checksum(token.address(), None);
+        let db_token_network: DbTokenNetwork = self.add_token_network(db_token.id, token.network(), &token_address)?;
 
         let mut stmt: Statement = self.db.prepare("UPDATE Tokens SET tokenNetworksIds = ? WHERE id = ?")?;
-
         stmt.execute(params![
             format!("{}{},", db_token.token_networks_ids, db_token_network.id),
             db_token.id
@@ -305,6 +350,11 @@ impl Database {
         let mut stmt: Statement = self.db.prepare("SELECT * FROM DexProtocols WHERE name = ? LIMIT 1")?;
         stmt.query_row(params![protocol.to_string()], DbDexProtocol::from_row)
             .optional()
+    }
+
+    pub fn get_dex_protocol_by_id(&self, id: i64) -> Result<Option<DbDexProtocol>> {
+        let mut stmt: Statement = self.db.prepare("SELECT * FROM DexProtocols WHERE id = ? LIMIT 1")?;
+        stmt.query_row(params![id], DbDexProtocol::from_row).optional()
     }
 
     pub fn add_dex_protocol(&self, protocol: &AmmProtocolKind) -> Result<DbDexProtocol> {
@@ -328,7 +378,25 @@ impl Database {
             .optional()
     }
 
-    pub fn add_dex_network(&self, dex_id: i64, network: &NetworkKind, options: &str) -> Result<DbDexNetwork> {
+    pub fn get_dex_networks_by_network(&self, network: &NetworkKind) -> Result<Vec<DbDexNetwork>> {
+        let db_network: Option<DbNetwork> = self.get_network(network)?;
+        if db_network.is_none() {
+            return Err(rusqlite::Error::QueryReturnedNoRows);
+        }
+
+        let mut stmt: Statement = self.db.prepare("SELECT * FROM DexNetworks WHERE networkId = ?")?;
+        let ret = stmt
+            .query_map(params![db_network.unwrap().id], DbDexNetwork::from_row)?
+            .collect();
+        ret
+    }
+
+    pub fn add_dex_network(
+        &self,
+        dex_id: i64,
+        network: &NetworkKind,
+        options: impl Into<String>,
+    ) -> Result<DbDexNetwork> {
         let db_network: Option<DbNetwork> = self.get_network(network)?;
         if db_network.is_none() {
             return Err(rusqlite::Error::QueryReturnedNoRows);
@@ -338,10 +406,18 @@ impl Database {
             .db
             .prepare("INSERT INTO DexNetworks (dexId, networkId, options) VALUES (?, ?, ?) RETURNING *")?;
 
-        stmt.query_row(params![dex_id, db_network.unwrap().id, options], DbDexNetwork::from_row)
+        stmt.query_row(
+            params![dex_id, db_network.unwrap().id, options.into()],
+            DbDexNetwork::from_row,
+        )
     }
 
-    pub fn get_dex_pool(&self, dex_id: i64, network: &NetworkKind, address: &str) -> Result<Option<DbDexPool>> {
+    pub fn get_dex_pool(
+        &self,
+        dex_id: i64,
+        network: &NetworkKind,
+        address: impl Into<String>,
+    ) -> Result<Option<DbDexPool>> {
         let db_network: Option<DbNetwork> = self.get_network(network)?;
         if db_network.is_none() {
             return Err(rusqlite::Error::QueryReturnedNoRows);
@@ -351,8 +427,44 @@ impl Database {
             .db
             .prepare("SELECT * FROM DexPools WHERE dexId = ? AND networkId = ? AND address = ? LIMIT 1")?;
 
-        stmt.query_row(params![dex_id, db_network.unwrap().id, address], DbDexPool::from_row)
-            .optional()
+        stmt.query_row(
+            params![dex_id, db_network.unwrap().id, address.into()],
+            DbDexPool::from_row,
+        )
+        .optional()
+    }
+
+    pub fn get_dex_pool_by_tokens(
+        &self,
+        dex_id: i64,
+        network: &NetworkKind,
+        token_a: &CryptoToken,
+        token_b: &CryptoToken,
+    ) -> Result<Option<DbDexPool>> {
+        let db_network: Option<DbNetwork> = self.get_network(network)?;
+        if db_network.is_none() {
+            return Err(rusqlite::Error::QueryReturnedNoRows);
+        }
+        let db_network = db_network.unwrap();
+
+        let db_token_a: Option<DbToken> = self.get_token_by_address(to_checksum(token_a.address(), None), network)?;
+        let db_token_b: Option<DbToken> = self.get_token_by_address(to_checksum(token_b.address(), None), network)?;
+        if db_token_a.is_none() || db_token_b.is_none() {
+            return Err(rusqlite::Error::QueryReturnedNoRows);
+        }
+
+        let token_a: DbToken = db_token_a.unwrap();
+        let token_b: DbToken = db_token_b.unwrap();
+
+        let mut stmt: Statement = self.db.prepare(
+            "SELECT * FROM DexPools WHERE dexId = ?1 AND networkId = ?2 AND ((token0Id = ?3 AND token1Id = ?4) OR (token1Id = ?3 AND token0Id = ?4)) LIMIT 1",
+        )?;
+
+        stmt.query_row(
+            params![dex_id, db_network.id, token_a.id, token_b.id],
+            DbDexPool::from_row,
+        )
+        .optional()
     }
 
     pub fn add_dex_pool(&self, pool: &impl AmmPool) -> Result<DbDexPool> {
@@ -366,14 +478,20 @@ impl Database {
             return Err(rusqlite::Error::QueryReturnedNoRows);
         }
 
+        let db_dex: DbDex = db_dex.unwrap();
+        let pool_address: String = to_checksum(pool.address(), None);
+        if self.get_dex_pool(db_dex.id, pool.network(), &pool_address)?.is_some() {
+            return Err(rusqlite::Error::QueryReturnedNoRows);
+        };
+
         let db_token0: Option<(DbToken, DbTokenNetwork)> =
-            self.get_token(format!("{:?}", pool.token0().address()), pool.network())?;
+            self.get_token(to_checksum(pool.token0().address(), None), pool.network())?;
         if db_token0.is_none() {
             return Err(rusqlite::Error::QueryReturnedNoRows);
         }
 
         let db_token1: Option<(DbToken, DbTokenNetwork)> =
-            self.get_token(format!("{:?}", pool.token1().address()), pool.network())?;
+            self.get_token(to_checksum(pool.token1().address(), None), pool.network())?;
         if db_token1.is_none() {
             return Err(rusqlite::Error::QueryReturnedNoRows);
         }
@@ -384,9 +502,9 @@ impl Database {
 
         stmt.query_row(
             params![
-                db_dex.unwrap().id,
+                db_dex.id,
                 db_network.unwrap().id,
-                format!("{:?}", pool.address()),
+                pool_address,
                 db_token0.unwrap().0.id,
                 db_token1.unwrap().0.id
             ],
@@ -404,14 +522,41 @@ impl Database {
         stmt.query_row(params![dex_id], DbDex::from_row).optional()
     }
 
-    pub fn add_dex(&self, dex: &AmmProtocolKind) -> Result<DbDex> {
+    pub fn get_dexes(&self) -> Result<Vec<DbDex>> {
+        let mut stmt: Statement = self.db.prepare("SELECT * FROM Dexes")?;
+        let ret = stmt.query_map([], DbDex::from_row)?.collect();
+        ret
+    }
+
+    pub fn get_dexes_by_network(&self, network: &NetworkKind) -> Result<Vec<DbDex>> {
+        let db_network: Option<DbNetwork> = self.get_network(network)?;
+        if db_network.is_none() {
+            return Err(rusqlite::Error::QueryReturnedNoRows);
+        }
+
+        let db_dex_networks: Vec<DbDexNetwork> = self.get_dex_networks_by_network(network)?;
+        let mut stmt: Statement = self
+            .db
+            .prepare("SELECT * FROM Dexes WHERE instr(dexNetworksIds, ?) > 0")?;
+
+        let mut ret: Vec<DbDex> = Vec::new();
+        for db_dex_network in db_dex_networks {
+            for ele in stmt.query_map([format!(",{},", db_dex_network.id)], DbDex::from_row)? {
+                ret.push(ele?);
+            }
+        }
+
+        Ok(ret)
+    }
+
+    pub fn add_dex(&self, dex: &AmmProtocolKind, options: impl Into<String>) -> Result<DbDex> {
         let dex_protocol_id: Option<DbDexProtocol> = self.get_dex_protocol(&dex)?;
         if dex_protocol_id.is_none() {
             return Err(rusqlite::Error::QueryReturnedNoRows);
         }
 
         let (name, options) = match dex {
-            AmmProtocolKind::UniswapV2(v2) => (v2.name(), v2.options()),
+            AmmProtocolKind::UniswapV2(v2) => (v2.name(), options),
         };
 
         let mut stmt: Statement = self
@@ -419,7 +564,7 @@ impl Database {
             .prepare("INSERT INTO Dexes (name, dexProtocolId, options) VALUES (?, ?, ?) RETURNING id")?;
 
         stmt.query_row(
-            params![name, dex_protocol_id.unwrap().id, options],
+            params![name, dex_protocol_id.unwrap().id, options.into()],
             DbDex::from_row,
         )
     }

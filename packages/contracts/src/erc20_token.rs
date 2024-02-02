@@ -1,4 +1,4 @@
-pub use erc20_token::*;
+pub use erc20_token_abi::*;
 /// This module was auto-generated with ethers-rs Abigen.
 /// More information at: <https://github.com/gakonst/ethers-rs>
 #[allow(
@@ -9,7 +9,7 @@ pub use erc20_token::*;
     dead_code,
     non_camel_case_types,
 )]
-pub mod erc20_token {
+pub mod erc20_token_abi {
     #[allow(deprecated)]
     fn __abi() -> ::ethers::core::abi::Abi {
         ::ethers::core::abi::ethabi::Contract {
@@ -926,32 +926,34 @@ pub mod erc20_token {
         }
     }
     ///The parsed JSON ABI of the contract.
-    pub static ERC20TOKEN_ABI: ::ethers::contract::Lazy<::ethers::core::abi::Abi> = ::ethers::contract::Lazy::new(
+    pub static ERC20TOKENABI_ABI: ::ethers::contract::Lazy<::ethers::core::abi::Abi> = ::ethers::contract::Lazy::new(
         __abi,
     );
-    pub struct ERC20Token<M>(::ethers::contract::Contract<M>);
-    impl<M> ::core::clone::Clone for ERC20Token<M> {
+    pub struct ERC20TokenAbi<M>(::ethers::contract::Contract<M>);
+    impl<M> ::core::clone::Clone for ERC20TokenAbi<M> {
         fn clone(&self) -> Self {
             Self(::core::clone::Clone::clone(&self.0))
         }
     }
-    impl<M> ::core::ops::Deref for ERC20Token<M> {
+    impl<M> ::core::ops::Deref for ERC20TokenAbi<M> {
         type Target = ::ethers::contract::Contract<M>;
         fn deref(&self) -> &Self::Target {
             &self.0
         }
     }
-    impl<M> ::core::ops::DerefMut for ERC20Token<M> {
+    impl<M> ::core::ops::DerefMut for ERC20TokenAbi<M> {
         fn deref_mut(&mut self) -> &mut Self::Target {
             &mut self.0
         }
     }
-    impl<M> ::core::fmt::Debug for ERC20Token<M> {
+    impl<M> ::core::fmt::Debug for ERC20TokenAbi<M> {
         fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-            f.debug_tuple(::core::stringify!(ERC20Token)).field(&self.address()).finish()
+            f.debug_tuple(::core::stringify!(ERC20TokenAbi))
+                .field(&self.address())
+                .finish()
         }
     }
-    impl<M: ::ethers::providers::Middleware> ERC20Token<M> {
+    impl<M: ::ethers::providers::Middleware> ERC20TokenAbi<M> {
         /// Creates a new contract instance with the specified `ethers` client at
         /// `address`. The contract derefs to a `ethers::Contract` object.
         pub fn new<T: Into<::ethers::core::types::Address>>(
@@ -961,7 +963,7 @@ pub mod erc20_token {
             Self(
                 ::ethers::contract::Contract::new(
                     address.into(),
-                    ERC20TOKEN_ABI.clone(),
+                    ERC20TOKENABI_ABI.clone(),
                     client,
                 ),
             )
@@ -1343,13 +1345,13 @@ pub mod erc20_token {
         ) -> ::ethers::contract::builders::Event<
             ::std::sync::Arc<M>,
             M,
-            ERC20TokenEvents,
+            ERC20TokenAbiEvents,
         > {
             self.0.event_with_filter(::core::default::Default::default())
         }
     }
     impl<M: ::ethers::providers::Middleware> From<::ethers::contract::Contract<M>>
-    for ERC20Token<M> {
+    for ERC20TokenAbi<M> {
         fn from(contract: ::ethers::contract::Contract<M>) -> Self {
             Self::new(contract.address(), contract.client())
         }
@@ -1519,7 +1521,7 @@ pub mod erc20_token {
     pub struct UnpauseFilter;
     ///Container type for all of the contract's events
     #[derive(Clone, ::ethers::contract::EthAbiType, Debug, PartialEq, Eq, Hash)]
-    pub enum ERC20TokenEvents {
+    pub enum ERC20TokenAbiEvents {
         AddedBlackListFilter(AddedBlackListFilter),
         ApprovalFilter(ApprovalFilter),
         DeprecateFilter(DeprecateFilter),
@@ -1532,47 +1534,47 @@ pub mod erc20_token {
         TransferFilter(TransferFilter),
         UnpauseFilter(UnpauseFilter),
     }
-    impl ::ethers::contract::EthLogDecode for ERC20TokenEvents {
+    impl ::ethers::contract::EthLogDecode for ERC20TokenAbiEvents {
         fn decode_log(
             log: &::ethers::core::abi::RawLog,
         ) -> ::core::result::Result<Self, ::ethers::core::abi::Error> {
             if let Ok(decoded) = AddedBlackListFilter::decode_log(log) {
-                return Ok(ERC20TokenEvents::AddedBlackListFilter(decoded));
+                return Ok(ERC20TokenAbiEvents::AddedBlackListFilter(decoded));
             }
             if let Ok(decoded) = ApprovalFilter::decode_log(log) {
-                return Ok(ERC20TokenEvents::ApprovalFilter(decoded));
+                return Ok(ERC20TokenAbiEvents::ApprovalFilter(decoded));
             }
             if let Ok(decoded) = DeprecateFilter::decode_log(log) {
-                return Ok(ERC20TokenEvents::DeprecateFilter(decoded));
+                return Ok(ERC20TokenAbiEvents::DeprecateFilter(decoded));
             }
             if let Ok(decoded) = DestroyedBlackFundsFilter::decode_log(log) {
-                return Ok(ERC20TokenEvents::DestroyedBlackFundsFilter(decoded));
+                return Ok(ERC20TokenAbiEvents::DestroyedBlackFundsFilter(decoded));
             }
             if let Ok(decoded) = IssueFilter::decode_log(log) {
-                return Ok(ERC20TokenEvents::IssueFilter(decoded));
+                return Ok(ERC20TokenAbiEvents::IssueFilter(decoded));
             }
             if let Ok(decoded) = ParamsFilter::decode_log(log) {
-                return Ok(ERC20TokenEvents::ParamsFilter(decoded));
+                return Ok(ERC20TokenAbiEvents::ParamsFilter(decoded));
             }
             if let Ok(decoded) = PauseFilter::decode_log(log) {
-                return Ok(ERC20TokenEvents::PauseFilter(decoded));
+                return Ok(ERC20TokenAbiEvents::PauseFilter(decoded));
             }
             if let Ok(decoded) = RedeemFilter::decode_log(log) {
-                return Ok(ERC20TokenEvents::RedeemFilter(decoded));
+                return Ok(ERC20TokenAbiEvents::RedeemFilter(decoded));
             }
             if let Ok(decoded) = RemovedBlackListFilter::decode_log(log) {
-                return Ok(ERC20TokenEvents::RemovedBlackListFilter(decoded));
+                return Ok(ERC20TokenAbiEvents::RemovedBlackListFilter(decoded));
             }
             if let Ok(decoded) = TransferFilter::decode_log(log) {
-                return Ok(ERC20TokenEvents::TransferFilter(decoded));
+                return Ok(ERC20TokenAbiEvents::TransferFilter(decoded));
             }
             if let Ok(decoded) = UnpauseFilter::decode_log(log) {
-                return Ok(ERC20TokenEvents::UnpauseFilter(decoded));
+                return Ok(ERC20TokenAbiEvents::UnpauseFilter(decoded));
             }
             Err(::ethers::core::abi::Error::InvalidData)
         }
     }
-    impl ::core::fmt::Display for ERC20TokenEvents {
+    impl ::core::fmt::Display for ERC20TokenAbiEvents {
         fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
             match self {
                 Self::AddedBlackListFilter(element) => {
@@ -1595,57 +1597,57 @@ pub mod erc20_token {
             }
         }
     }
-    impl ::core::convert::From<AddedBlackListFilter> for ERC20TokenEvents {
+    impl ::core::convert::From<AddedBlackListFilter> for ERC20TokenAbiEvents {
         fn from(value: AddedBlackListFilter) -> Self {
             Self::AddedBlackListFilter(value)
         }
     }
-    impl ::core::convert::From<ApprovalFilter> for ERC20TokenEvents {
+    impl ::core::convert::From<ApprovalFilter> for ERC20TokenAbiEvents {
         fn from(value: ApprovalFilter) -> Self {
             Self::ApprovalFilter(value)
         }
     }
-    impl ::core::convert::From<DeprecateFilter> for ERC20TokenEvents {
+    impl ::core::convert::From<DeprecateFilter> for ERC20TokenAbiEvents {
         fn from(value: DeprecateFilter) -> Self {
             Self::DeprecateFilter(value)
         }
     }
-    impl ::core::convert::From<DestroyedBlackFundsFilter> for ERC20TokenEvents {
+    impl ::core::convert::From<DestroyedBlackFundsFilter> for ERC20TokenAbiEvents {
         fn from(value: DestroyedBlackFundsFilter) -> Self {
             Self::DestroyedBlackFundsFilter(value)
         }
     }
-    impl ::core::convert::From<IssueFilter> for ERC20TokenEvents {
+    impl ::core::convert::From<IssueFilter> for ERC20TokenAbiEvents {
         fn from(value: IssueFilter) -> Self {
             Self::IssueFilter(value)
         }
     }
-    impl ::core::convert::From<ParamsFilter> for ERC20TokenEvents {
+    impl ::core::convert::From<ParamsFilter> for ERC20TokenAbiEvents {
         fn from(value: ParamsFilter) -> Self {
             Self::ParamsFilter(value)
         }
     }
-    impl ::core::convert::From<PauseFilter> for ERC20TokenEvents {
+    impl ::core::convert::From<PauseFilter> for ERC20TokenAbiEvents {
         fn from(value: PauseFilter) -> Self {
             Self::PauseFilter(value)
         }
     }
-    impl ::core::convert::From<RedeemFilter> for ERC20TokenEvents {
+    impl ::core::convert::From<RedeemFilter> for ERC20TokenAbiEvents {
         fn from(value: RedeemFilter) -> Self {
             Self::RedeemFilter(value)
         }
     }
-    impl ::core::convert::From<RemovedBlackListFilter> for ERC20TokenEvents {
+    impl ::core::convert::From<RemovedBlackListFilter> for ERC20TokenAbiEvents {
         fn from(value: RemovedBlackListFilter) -> Self {
             Self::RemovedBlackListFilter(value)
         }
     }
-    impl ::core::convert::From<TransferFilter> for ERC20TokenEvents {
+    impl ::core::convert::From<TransferFilter> for ERC20TokenAbiEvents {
         fn from(value: TransferFilter) -> Self {
             Self::TransferFilter(value)
         }
     }
-    impl ::core::convert::From<UnpauseFilter> for ERC20TokenEvents {
+    impl ::core::convert::From<UnpauseFilter> for ERC20TokenAbiEvents {
         fn from(value: UnpauseFilter) -> Self {
             Self::UnpauseFilter(value)
         }
@@ -2105,7 +2107,7 @@ pub mod erc20_token {
     pub struct UpgradedAddressCall;
     ///Container type for all of the contract's call
     #[derive(Clone, ::ethers::contract::EthAbiType, Debug, PartialEq, Eq, Hash)]
-    pub enum ERC20TokenCalls {
+    pub enum ERC20TokenAbiCalls {
         MaxUint(MaxUintCall),
         _TotalSupply(_TotalSupplyCall),
         AddBlackList(AddBlackListCall),
@@ -2139,7 +2141,7 @@ pub mod erc20_token {
         Unpause(UnpauseCall),
         UpgradedAddress(UpgradedAddressCall),
     }
-    impl ::ethers::core::abi::AbiDecode for ERC20TokenCalls {
+    impl ::ethers::core::abi::AbiDecode for ERC20TokenAbiCalls {
         fn decode(
             data: impl AsRef<[u8]>,
         ) -> ::core::result::Result<Self, ::ethers::core::abi::AbiError> {
@@ -2307,7 +2309,7 @@ pub mod erc20_token {
             Err(::ethers::core::abi::Error::InvalidData.into())
         }
     }
-    impl ::ethers::core::abi::AbiEncode for ERC20TokenCalls {
+    impl ::ethers::core::abi::AbiEncode for ERC20TokenAbiCalls {
         fn encode(self) -> Vec<u8> {
             match self {
                 Self::MaxUint(element) => ::ethers::core::abi::AbiEncode::encode(element),
@@ -2387,7 +2389,7 @@ pub mod erc20_token {
             }
         }
     }
-    impl ::core::fmt::Display for ERC20TokenCalls {
+    impl ::core::fmt::Display for ERC20TokenAbiCalls {
         fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
             match self {
                 Self::MaxUint(element) => ::core::fmt::Display::fmt(element, f),
@@ -2427,162 +2429,162 @@ pub mod erc20_token {
             }
         }
     }
-    impl ::core::convert::From<MaxUintCall> for ERC20TokenCalls {
+    impl ::core::convert::From<MaxUintCall> for ERC20TokenAbiCalls {
         fn from(value: MaxUintCall) -> Self {
             Self::MaxUint(value)
         }
     }
-    impl ::core::convert::From<_TotalSupplyCall> for ERC20TokenCalls {
+    impl ::core::convert::From<_TotalSupplyCall> for ERC20TokenAbiCalls {
         fn from(value: _TotalSupplyCall) -> Self {
             Self::_TotalSupply(value)
         }
     }
-    impl ::core::convert::From<AddBlackListCall> for ERC20TokenCalls {
+    impl ::core::convert::From<AddBlackListCall> for ERC20TokenAbiCalls {
         fn from(value: AddBlackListCall) -> Self {
             Self::AddBlackList(value)
         }
     }
-    impl ::core::convert::From<AllowanceCall> for ERC20TokenCalls {
+    impl ::core::convert::From<AllowanceCall> for ERC20TokenAbiCalls {
         fn from(value: AllowanceCall) -> Self {
             Self::Allowance(value)
         }
     }
-    impl ::core::convert::From<AllowedCall> for ERC20TokenCalls {
+    impl ::core::convert::From<AllowedCall> for ERC20TokenAbiCalls {
         fn from(value: AllowedCall) -> Self {
             Self::Allowed(value)
         }
     }
-    impl ::core::convert::From<ApproveCall> for ERC20TokenCalls {
+    impl ::core::convert::From<ApproveCall> for ERC20TokenAbiCalls {
         fn from(value: ApproveCall) -> Self {
             Self::Approve(value)
         }
     }
-    impl ::core::convert::From<BalanceOfCall> for ERC20TokenCalls {
+    impl ::core::convert::From<BalanceOfCall> for ERC20TokenAbiCalls {
         fn from(value: BalanceOfCall) -> Self {
             Self::BalanceOf(value)
         }
     }
-    impl ::core::convert::From<BalancesCall> for ERC20TokenCalls {
+    impl ::core::convert::From<BalancesCall> for ERC20TokenAbiCalls {
         fn from(value: BalancesCall) -> Self {
             Self::Balances(value)
         }
     }
-    impl ::core::convert::From<BasisPointsRateCall> for ERC20TokenCalls {
+    impl ::core::convert::From<BasisPointsRateCall> for ERC20TokenAbiCalls {
         fn from(value: BasisPointsRateCall) -> Self {
             Self::BasisPointsRate(value)
         }
     }
-    impl ::core::convert::From<DecimalsCall> for ERC20TokenCalls {
+    impl ::core::convert::From<DecimalsCall> for ERC20TokenAbiCalls {
         fn from(value: DecimalsCall) -> Self {
             Self::Decimals(value)
         }
     }
-    impl ::core::convert::From<DeprecateCall> for ERC20TokenCalls {
+    impl ::core::convert::From<DeprecateCall> for ERC20TokenAbiCalls {
         fn from(value: DeprecateCall) -> Self {
             Self::Deprecate(value)
         }
     }
-    impl ::core::convert::From<DeprecatedCall> for ERC20TokenCalls {
+    impl ::core::convert::From<DeprecatedCall> for ERC20TokenAbiCalls {
         fn from(value: DeprecatedCall) -> Self {
             Self::Deprecated(value)
         }
     }
-    impl ::core::convert::From<DestroyBlackFundsCall> for ERC20TokenCalls {
+    impl ::core::convert::From<DestroyBlackFundsCall> for ERC20TokenAbiCalls {
         fn from(value: DestroyBlackFundsCall) -> Self {
             Self::DestroyBlackFunds(value)
         }
     }
-    impl ::core::convert::From<GetBlackListStatusCall> for ERC20TokenCalls {
+    impl ::core::convert::From<GetBlackListStatusCall> for ERC20TokenAbiCalls {
         fn from(value: GetBlackListStatusCall) -> Self {
             Self::GetBlackListStatus(value)
         }
     }
-    impl ::core::convert::From<GetOwnerCall> for ERC20TokenCalls {
+    impl ::core::convert::From<GetOwnerCall> for ERC20TokenAbiCalls {
         fn from(value: GetOwnerCall) -> Self {
             Self::GetOwner(value)
         }
     }
-    impl ::core::convert::From<IsBlackListedCall> for ERC20TokenCalls {
+    impl ::core::convert::From<IsBlackListedCall> for ERC20TokenAbiCalls {
         fn from(value: IsBlackListedCall) -> Self {
             Self::IsBlackListed(value)
         }
     }
-    impl ::core::convert::From<IssueCall> for ERC20TokenCalls {
+    impl ::core::convert::From<IssueCall> for ERC20TokenAbiCalls {
         fn from(value: IssueCall) -> Self {
             Self::Issue(value)
         }
     }
-    impl ::core::convert::From<MaximumFeeCall> for ERC20TokenCalls {
+    impl ::core::convert::From<MaximumFeeCall> for ERC20TokenAbiCalls {
         fn from(value: MaximumFeeCall) -> Self {
             Self::MaximumFee(value)
         }
     }
-    impl ::core::convert::From<NameCall> for ERC20TokenCalls {
+    impl ::core::convert::From<NameCall> for ERC20TokenAbiCalls {
         fn from(value: NameCall) -> Self {
             Self::Name(value)
         }
     }
-    impl ::core::convert::From<OwnerCall> for ERC20TokenCalls {
+    impl ::core::convert::From<OwnerCall> for ERC20TokenAbiCalls {
         fn from(value: OwnerCall) -> Self {
             Self::Owner(value)
         }
     }
-    impl ::core::convert::From<PauseCall> for ERC20TokenCalls {
+    impl ::core::convert::From<PauseCall> for ERC20TokenAbiCalls {
         fn from(value: PauseCall) -> Self {
             Self::Pause(value)
         }
     }
-    impl ::core::convert::From<PausedCall> for ERC20TokenCalls {
+    impl ::core::convert::From<PausedCall> for ERC20TokenAbiCalls {
         fn from(value: PausedCall) -> Self {
             Self::Paused(value)
         }
     }
-    impl ::core::convert::From<RedeemCall> for ERC20TokenCalls {
+    impl ::core::convert::From<RedeemCall> for ERC20TokenAbiCalls {
         fn from(value: RedeemCall) -> Self {
             Self::Redeem(value)
         }
     }
-    impl ::core::convert::From<RemoveBlackListCall> for ERC20TokenCalls {
+    impl ::core::convert::From<RemoveBlackListCall> for ERC20TokenAbiCalls {
         fn from(value: RemoveBlackListCall) -> Self {
             Self::RemoveBlackList(value)
         }
     }
-    impl ::core::convert::From<SetParamsCall> for ERC20TokenCalls {
+    impl ::core::convert::From<SetParamsCall> for ERC20TokenAbiCalls {
         fn from(value: SetParamsCall) -> Self {
             Self::SetParams(value)
         }
     }
-    impl ::core::convert::From<SymbolCall> for ERC20TokenCalls {
+    impl ::core::convert::From<SymbolCall> for ERC20TokenAbiCalls {
         fn from(value: SymbolCall) -> Self {
             Self::Symbol(value)
         }
     }
-    impl ::core::convert::From<TotalSupplyCall> for ERC20TokenCalls {
+    impl ::core::convert::From<TotalSupplyCall> for ERC20TokenAbiCalls {
         fn from(value: TotalSupplyCall) -> Self {
             Self::TotalSupply(value)
         }
     }
-    impl ::core::convert::From<TransferCall> for ERC20TokenCalls {
+    impl ::core::convert::From<TransferCall> for ERC20TokenAbiCalls {
         fn from(value: TransferCall) -> Self {
             Self::Transfer(value)
         }
     }
-    impl ::core::convert::From<TransferFromCall> for ERC20TokenCalls {
+    impl ::core::convert::From<TransferFromCall> for ERC20TokenAbiCalls {
         fn from(value: TransferFromCall) -> Self {
             Self::TransferFrom(value)
         }
     }
-    impl ::core::convert::From<TransferOwnershipCall> for ERC20TokenCalls {
+    impl ::core::convert::From<TransferOwnershipCall> for ERC20TokenAbiCalls {
         fn from(value: TransferOwnershipCall) -> Self {
             Self::TransferOwnership(value)
         }
     }
-    impl ::core::convert::From<UnpauseCall> for ERC20TokenCalls {
+    impl ::core::convert::From<UnpauseCall> for ERC20TokenAbiCalls {
         fn from(value: UnpauseCall) -> Self {
             Self::Unpause(value)
         }
     }
-    impl ::core::convert::From<UpgradedAddressCall> for ERC20TokenCalls {
+    impl ::core::convert::From<UpgradedAddressCall> for ERC20TokenAbiCalls {
         fn from(value: UpgradedAddressCall) -> Self {
             Self::UpgradedAddress(value)
         }
