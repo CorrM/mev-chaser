@@ -4,7 +4,7 @@ members = [ # Dont use * for paths in the workspace
     "packages/shared",
     "packages/amm",
     "packages/mev",
-    "apps/cli",
+    "apps/cli", "packages/contracts",
 ]
 
 [workspace.dependencies]

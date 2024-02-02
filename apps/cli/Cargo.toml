@@ -7,6 +7,7 @@ edition = "2021"
 shared = { path = "../../packages/shared" }
 amm = { path = "../../packages/amm" }
 mev = { path = "../../packages/mev" }
+contracts = { path = "../../packages/contracts" }
 
 anyhow = { workspace = true }
 tokio = { workspace = true }

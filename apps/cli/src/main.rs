@@ -1,9 +1,10 @@
 use amm::{AmmProtocolKind, UniswapV2Pool, UniswapV2Protocol};
 use anyhow::{anyhow, Result};
+use contracts::UniswapV2Factory;
 use database::Database;
 use ethers_contract::Contract;
 use ethers_core::types::Address;
-use ethers_providers::{Http, Provider};
+
 use mev::BackRunnerStragegy;
 use shared::provider::NodeProvider;
 use std::ops::Deref;
@@ -210,17 +211,14 @@ async fn get_amms(abi: &ABI, provider: &impl NodeProvider, tokens: &[CryptoToken
         for amm in &mut amms {
             match amm {
                 AmmProtocolKind::UniswapV2(v2) => {
-                    let contract = Contract::<Provider<Http>>::new(
-                        *v2.factory(),
-                        abi.uniswap_v2_factory.clone(),
-                        provider.raw_http_provider().clone(),
-                    );
+                    let contract = UniswapV2Factory::new(*v2.factory(), provider.raw_http_provider().clone());
+                    let pool_address: Address = contract
+                        .get_pair(*token_a.address(), *token_b.address())
+                        .call_raw()
+                        .await?;
 
-                    let call = contract.method::<_, Address>("getPair", ())?;
-                    let pool_address: Address = call.call_raw().await?;
-                    
                     v2.add_pool(UniswapV2Pool::new(pool_address, Arc::new(v2.clone()))?)
-                },
+                }
             }
         }
     }
