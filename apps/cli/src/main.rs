@@ -1,4 +1,4 @@
-use amm::{AmmPool, AmmProtocolKind, UniswapV2Pool, UniswapV2Protocol};
+use amm::{AmmPool, AmmProtocol, AmmProtocolKind, UniswapV2Pool, UniswapV2Protocol};
 use anyhow::{anyhow, Result};
 use contracts::{UniswapV2FactoryAbi, UniswapV2PairAbi};
 use database::{Database, DbDex, DbDexNetwork, DbDexPool, DbDexProtocol, DbToken, DbTokenNetwork};
@@ -11,7 +11,7 @@ use std::ops::Deref;
 use std::sync::Arc;
 use std::{env::VarError, path::Path};
 
-use shared::token::CryptoToken;
+use shared::token::{CryptoToken, TokenManager};
 use shared::{
     network::NetworkKind,
     provider::{DebugTraceCallNodeProvider, NodeProviderManager, NodeProviderNetworkInfo, NormalNodeProvider},
@@ -101,104 +101,6 @@ async fn create_node_provider_manager(env: &Env, target_network: &NetworkKind) -
     NodeProviderManager::new(providers, get_debug_node_providers(env, target_network).await?)
 }
 
-/*
-async fn get_tokens(db: &Database, provider: &impl NodeProvider, erc20_abi: &Abi) -> Result<Vec<CryptoToken>> {
-    // TODO: depend on network
-    let tokens = vec![
-        "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270",
-        "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270",
-    ];
-
-    let client: Provider<Http> = provider.raw_http_provider().clone();
-    let client: Arc<Provider<Http>> = Arc::new(client);
-
-    let mut multicall: Multicall<Provider<Http>> = Multicall::new(client.clone(), None).await?;
-    for token in &tokens {
-        let contract = Contract::<Provider<Http>>::new(
-            Address::from_str(token).unwrap(),
-            erc20_abi.clone(),
-            client.clone(),
-        );
-
-        let call = contract.method::<_, String>("name", ())?;
-        multicall.add_call(call, false);
-    }
-
-    let mut reserves = HashMap::new();
-
-    let result: Vec<Result<Token, Bytes>> = multicall.call_raw().await?;
-    for i in 0..result.len() {
-        let pool = tokens[i];
-        let reserve = result[i].clone();
-        match reserve.unwrap() {
-            Token::Tuple(response) => {
-                let reserve_data = Reserve {
-                    reserve0: response[0].clone().into_uint().unwrap(),
-                    reserve1: response[1].clone().into_uint().unwrap(),
-                };
-                reserves.insert(pool.address.clone(), reserve_data);
-            }
-            _ => {}
-        }
-    }
-
-    /*
-    let contract = Contract::<Provider<Http>>::new(
-        Address::from_str(tokens[0]).unwrap(),
-        erc20_abi.clone(),
-        client.clone(),
-    );
-
-    let call = contract.method::<_, String>("name", ())?;
-    let name = call.call_raw().await?;
-
-    println!("TokenName: {}", name);
-    */
-
-    Ok(vec![
-        CryptoToken::new(
-            "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270",
-            "Wrapped Matic",
-            "WMATIC",
-            18
-        )?,
-        CryptoToken::new(
-            "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270",
-            "Wrapped Ether",
-            "WETH",
-            18
-        )?,
-    ])
-}
-*/
-
-fn get_token_from_db(db: &Database, token_id: i64, network: &NetworkKind) -> Result<CryptoToken> {
-    let db_token: Option<DbToken> = db.get_token_by_id(token_id)?;
-    if db_token.is_none() {
-        return Err(anyhow!("Token not found"));
-    }
-
-    let db_token_network: Option<DbTokenNetwork> = db.get_token_network_by_token(token_id, network)?;
-    if db_token_network.is_none() {
-        return Err(anyhow!("Token network not found"));
-    }
-
-    let db_token_network: DbTokenNetwork = db_token_network.unwrap();
-    let db_token: DbToken = db_token.unwrap();
-
-    CryptoToken::new(
-        network,
-        db_token_network.address,
-        db_token.name,
-        db_token.symbol,
-        db_token.decimals as u8,
-    )
-}
-
-fn token_from_db_token(db: &Database, db_token: DbToken, network: &NetworkKind) -> Result<CryptoToken> {
-    get_token_from_db(db, db_token.id, network)
-}
-
 fn get_tokens(db: &Database, network: &NetworkKind) -> Result<Vec<CryptoToken>> {
     let db_tokens: Vec<(database::DbToken, database::DbTokenNetwork)> = db.get_tokens(network)?;
     let mut tokens: Vec<CryptoToken> = Vec::new();
@@ -216,11 +118,15 @@ fn get_tokens(db: &Database, network: &NetworkKind) -> Result<Vec<CryptoToken>> 
     Ok(tokens)
 }
 
-async fn get_amms(db: &Database, network: &NetworkKind, provider: &impl NodeProvider) -> Result<Vec<AmmProtocolKind>> {
-    let tokens: Vec<CryptoToken> = get_tokens(db, network)?;
-    let pairs: Vec<(&CryptoToken, &CryptoToken)> = generate_pairs(&tokens);
-
+async fn get_amms(
+    db: &Database,
+    network: &NetworkKind,
+    provider: &impl NodeProvider,
+    token_manager: &TokenManager,
+) -> Result<Vec<AmmProtocolKind>> {
+    let pairs: Vec<(&Arc<CryptoToken>, &Arc<CryptoToken>)> = generate_pairs(token_manager.tokens());
     let mut amms: Vec<AmmProtocolKind> = Vec::new();
+
     let db_dexes: Vec<DbDex> = db.get_dexes_by_network(network)?;
     for db_dex in &db_dexes {
         let db_dex_protocol: Option<DbDexProtocol> = db.get_dex_protocol_by_id(db_dex.dex_protocol_id)?;
@@ -259,15 +165,24 @@ async fn get_amms(db: &Database, network: &NetworkKind, provider: &impl NodeProv
                             return Err(anyhow!("Token not found"));
                         }
 
-                        let token0: CryptoToken = get_token_from_db(db, token0.unwrap().id, network)?;
-                        let token1: CryptoToken = get_token_from_db(db, token1.unwrap().id, network)?;
+                        let db_token0_network: DbTokenNetwork =
+                            db.get_token_network_by_token(token0.unwrap().id, network)?.unwrap();
+                        let db_token1_network: DbTokenNetwork =
+                            db.get_token_network_by_token(token1.unwrap().id, network)?.unwrap();
+
+                        let token0: Arc<CryptoToken> = token_manager
+                            .get_token_by_address_str(&db_token0_network.address)
+                            .unwrap();
+                        let token1: Arc<CryptoToken> = token_manager
+                            .get_token_by_address_str(&db_token1_network.address)
+                            .unwrap();
 
                         uniswap_v2.add_pool(UniswapV2Pool::new(
                             pool_address,
                             Arc::new(uniswap_v2.clone()),
                             *network,
-                            Arc::new(token0),
-                            Arc::new(token1),
+                            token0,
+                            token1,
                         )?);
                         continue;
                     }
@@ -278,6 +193,11 @@ async fn get_amms(db: &Database, network: &NetworkKind, provider: &impl NodeProv
                         .await?;
 
                     if pool_address.is_zero() {
+                        let db_dex: DbDex = db.get_dex_by_name(uniswap_v2.name())?.unwrap();
+
+                        if db.add_dex_pool_empty(db_dex.id, network, token_a, token_b).is_err() {
+                            panic!("Failed to add dex empty pool");
+                        };
                         continue;
                     }
 
@@ -285,22 +205,11 @@ async fn get_amms(db: &Database, network: &NetworkKind, provider: &impl NodeProv
                     let token0: Address = pair_contract.token_0().call_raw().await?;
                     let token1: Address = pair_contract.token_1().call_raw().await?;
 
-                    let token0: Option<DbToken> = db.get_token_by_address(to_checksum(&token0, None), network)?;
-                    let token1: Option<DbToken> = db.get_token_by_address(to_checksum(&token1, None), network)?;
-                    if token0.is_none() || token1.is_none() {
-                        return Err(anyhow!("Token not found"));
-                    }
+                    let token0: Arc<CryptoToken> = token_manager.get_token_by_address(&token0).unwrap();
+                    let token1: Arc<CryptoToken> = token_manager.get_token_by_address(&token1).unwrap();
 
-                    let token0: CryptoToken = token_from_db_token(db, token0.unwrap(), network)?;
-                    let token1: CryptoToken = token_from_db_token(db, token1.unwrap(), network)?;
-
-                    let pool: UniswapV2Pool = UniswapV2Pool::new(
-                        pool_address,
-                        Arc::new(uniswap_v2.clone()),
-                        *network,
-                        Arc::new(token0),
-                        Arc::new(token1),
-                    )?;
+                    let pool: UniswapV2Pool =
+                        UniswapV2Pool::new(pool_address, Arc::new(uniswap_v2.clone()), *network, token0, token1)?;
 
                     if db.add_dex_pool(&pool).is_err() {
                         panic!("Failed to add dex pool {}", to_checksum(pool.address(), None));
@@ -321,21 +230,21 @@ async fn get_amms(db: &Database, network: &NetworkKind, provider: &impl NodeProv
 async fn main() -> Result<()> {
     let env: Env = get_env()?;
     let db = Database::new(Path::new("./Main.db"))?;
-
     let target_network: NetworkKind = unsafe { std::mem::transmute(env.chain_id) };
     let provider_manager: NodeProviderManager = create_node_provider_manager(&env, &target_network).await?;
+    let token_manager: TokenManager = TokenManager::new(get_tokens(&db, &target_network)?);
 
-    let amms: Vec<AmmProtocolKind> = get_amms(&db, &target_network, provider_manager.get_next().deref()).await?;
+    let amms: Vec<AmmProtocolKind> = get_amms(
+        &db,
+        &target_network,
+        provider_manager.get_next().deref(),
+        &token_manager,
+    )
+    .await?;
 
     // 2 are traingle arbitrage
     let strategy = BackRunnerStragegy::new(provider_manager, amms, 2, vec![]);
     strategy.run().await?;
-
-    //sb.0.spawn(event_handler(provider.clone(), sb.1.clone()));
-
-    //while let Some(res) = ns.join_next().await {
-    //    println!("{:?}", res);
-    //}
 
     Ok(())
 }

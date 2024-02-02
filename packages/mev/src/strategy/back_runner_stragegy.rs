@@ -1,7 +1,7 @@
 use std::{collections::HashMap, ops::Deref, sync::Arc};
 
-use amm::{AmmProtocol, UniswapV2Protocol};
 use amm::{AmmPoolKind, AmmProtocolKind};
+use amm::{AmmProtocol, UniswapV2Protocol};
 use anyhow::Result;
 use ethers_core::utils::to_checksum;
 use ethers_core::{
@@ -41,7 +41,7 @@ impl BackRunnerStragegy {
         provider_manager: NodeProviderManager,
         dexes: Vec<AmmProtocolKind>,
         max_hops: i32,
-        start_tokens: Vec<&CryptoToken>,
+        start_tokens: Vec<Arc<CryptoToken>>,
     ) -> Self {
         let mut pools: Vec<AmmPoolKind> = Vec::new();
 
@@ -53,13 +53,11 @@ impl BackRunnerStragegy {
             }
         }
 
-        let mut map: HashMap<CryptoToken, Vec<Vec<PoolPathItem>>> = HashMap::new();
-        for ele in start_tokens {
-            let input_token = Arc::new(ele.clone());
-            map.insert(
-                ele.clone(),
-                PoolPathFinder::generate_paths(&pools, input_token.clone(), input_token, max_hops),
-            );
+        let mut map: HashMap<Arc<CryptoToken>, Vec<Vec<PoolPathItem>>> = HashMap::new();
+        for start_token in start_tokens {
+            let paths: Vec<Vec<PoolPathItem>> =
+                PoolPathFinder::generate_paths(&pools, start_token.clone(), start_token.clone(), max_hops);
+            map.insert(start_token.clone(), paths);
         }
 
         Self {
@@ -76,7 +74,10 @@ impl BackRunnerStragegy {
                 AmmProtocolKind::UniswapV2(v2) => *v2.router(),
             })
             .collect();
-        let filters: Vec<String> = router_addresses.iter().map(|s: &Address| to_checksum(s, None)).collect();
+        let filters: Vec<String> = router_addresses
+            .iter()
+            .map(|s: &Address| to_checksum(s, None))
+            .collect();
 
         let provider: &Arc<NormalNodeProvider> = self.provider_manager.get_next();
         let provider_kind: &Arc<NodeProviderKind> = &Arc::new(NodeProviderKind::Normal(provider.deref().clone()));
@@ -103,10 +104,7 @@ impl BackRunnerStragegy {
 
                     // TODO: Use to_address to determine which dex to `decode_pair_trace_logs`
                     for trace_log in trace_logs {
-                        on_new_pending_tx(
-                            tx,
-                            UniswapV2Protocol::decode_pair_trace_logs(trace_log),
-                        );
+                        on_new_pending_tx(tx, UniswapV2Protocol::decode_pair_trace_logs(trace_log));
                     }
                 }
             }

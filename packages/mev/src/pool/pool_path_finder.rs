@@ -19,7 +19,7 @@ pub struct PoolPathFinder;
 
 impl PoolPathFinder {
     pub fn generate_paths(
-        token_pools: &Vec<AmmPoolKind>,
+        pools: &Vec<AmmPoolKind>,
         input_token: Arc<CryptoToken>,
         output_token: Arc<CryptoToken>,
         max_multi_hop: i32,
@@ -37,7 +37,7 @@ impl PoolPathFinder {
             max_multi_hop,
         };
 
-        PoolPathFinder::dfs(token_pools, &mut dfs_params, &mut arbitrage_paths);
+        PoolPathFinder::dfs(pools, &mut dfs_params, &mut arbitrage_paths);
 
         arbitrage_paths
     }

@@ -1,4 +1,5 @@
 use amm::{AmmPool, AmmProtocol, AmmProtocolKind};
+use ethers_core::types::Address;
 use ethers_core::utils::to_checksum;
 use rusqlite::{params, Connection, OptionalExtension, Result, Statement};
 use std::path::Path;
@@ -500,6 +501,57 @@ impl Database {
             "INSERT INTO DexPools (dexId, networkId, address, token0Id, token1Id) VALUES (?, ?, ?, ?, ?) RETURNING *",
         )?;
 
+        stmt.query_row(
+            params![
+                db_dex.id,
+                db_network.unwrap().id,
+                pool_address,
+                db_token0.unwrap().0.id,
+                db_token1.unwrap().0.id
+            ],
+            DbDexPool::from_row,
+        )
+    }
+
+    pub fn add_dex_pool_empty(
+        &self,
+        dex_id: i64,
+        network: &NetworkKind,
+        token_a: &CryptoToken,
+        token_b: &CryptoToken,
+    ) -> Result<DbDexPool> {
+        let db_network: Option<DbNetwork> = self.get_network(network)?;
+        if db_network.is_none() {
+            return Err(rusqlite::Error::QueryReturnedNoRows);
+        }
+
+        let db_dex: Option<DbDex> = self.get_dex_by_id(dex_id)?;
+        if db_dex.is_none() {
+            return Err(rusqlite::Error::QueryReturnedNoRows);
+        }
+
+        let db_token0: Option<(DbToken, DbTokenNetwork)> =
+            self.get_token(to_checksum(token_a.address(), None), network)?;
+        if db_token0.is_none() {
+            return Err(rusqlite::Error::QueryReturnedNoRows);
+        }
+
+        let db_token1: Option<(DbToken, DbTokenNetwork)> =
+            self.get_token(to_checksum(token_b.address(), None), network)?;
+        if db_token1.is_none() {
+            return Err(rusqlite::Error::QueryReturnedNoRows);
+        }
+
+        let db_dex: DbDex = db_dex.unwrap();
+        if self.get_dex_pool_by_tokens(db_dex.id, network, token_a, token_b)?.is_some() {
+            return Err(rusqlite::Error::QueryReturnedNoRows);   
+        }
+
+        let mut stmt: Statement = self.db.prepare(
+            "INSERT INTO DexPools (dexId, networkId, address, token0Id, token1Id) VALUES (?, ?, ?, ?, ?) RETURNING *",
+        )?;
+
+        let pool_address: String = to_checksum(&Address::zero(), None);
         stmt.query_row(
             params![
                 db_dex.id,
