@@ -16,7 +16,7 @@ use shared::{
 };
 use tokio::sync::broadcast::Receiver;
 
-use crate::pool::{generate_pool_paths, PoolPathItem};
+use crate::pool::{generate_pool_paths, PoolPath, PoolPathItem};
 
 fn on_new_pending_tx(tx: &Transaction, decoded_log: &HashMap<String, (Address, Log)>) {
     let sync_log: Option<&(Address, Log)> = decoded_log.get("Sync");
@@ -54,9 +54,9 @@ impl BackRunnerStragegy {
             }
         }
 
-        let mut map: HashMap<Arc<CryptoToken>, Vec<Vec<PoolPathItem>>> = HashMap::new();
+        let mut map: HashMap<Arc<CryptoToken>, Vec<PoolPath>> = HashMap::new();
         for start_token in start_tokens {
-            let paths: Vec<Vec<PoolPathItem>> = generate_pool_paths(&pools, &start_token, &start_token, max_hops);
+            let paths: Vec<PoolPath> = generate_pool_paths(&pools, &start_token, &start_token, max_hops);
             map.insert(start_token, paths);
         }
 

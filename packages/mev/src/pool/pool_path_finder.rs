@@ -3,17 +3,17 @@ use std::{ops::Deref, sync::Arc};
 use amm::{AmmPool, AmmPoolKind};
 use shared::token::CryptoToken;
 
-use super::pool_path_item::PoolPathItem;
+use super::{pool_path_item::PoolPathItem, PoolPath};
 
 fn dfs(
     token_pools: &Vec<AmmPoolKind>,
     current_token: &Arc<CryptoToken>,
     output_token: &Arc<CryptoToken>,
     visited_pairs: &mut Vec<Arc<AmmPoolKind>>,
-    route: &mut Vec<PoolPathItem>,
+    route: &mut PoolPath,
     hop_count: i32,
     max_multi_hop: i32,
-    arbitrage_paths: &mut Vec<Vec<PoolPathItem>>,
+    arbitrage_paths: &mut Vec<PoolPath>,
 ) {
     if hop_count > max_multi_hop {
         return;
@@ -68,10 +68,10 @@ pub fn generate_pool_paths(
     input_token: &Arc<CryptoToken>,
     output_token: &Arc<CryptoToken>,
     max_multi_hop: i32,
-) -> Vec<Vec<PoolPathItem>> {
-    let mut arbitrage_paths: Vec<Vec<PoolPathItem>> = Vec::new();
+) -> Vec<PoolPath> {
+    let mut arbitrage_paths: Vec<PoolPath> = Vec::new();
     let mut visited_pairs: Vec<Arc<AmmPoolKind>> = Vec::new();
-    let mut initial_route: Vec<PoolPathItem> = Vec::new();
+    let mut initial_route: PoolPath = Vec::new();
 
     dfs(
         pools,
