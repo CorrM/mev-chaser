@@ -5,7 +5,7 @@ use database::{Database, DbDex, DbDexNetwork, DbDexPool, DbDexProtocol, DbToken,
 use ethers_core::types::Address;
 
 use ethers_core::utils::to_checksum;
-use mev::BackRunnerStragegy;
+use mev::BackRunnerStrategy;
 use shared::provider::NodeProvider;
 use std::ops::Deref;
 use std::sync::Arc;
@@ -249,7 +249,7 @@ async fn main() -> Result<()> {
     ];
 
     // 2 are traingle arbitrage
-    let strategy = BackRunnerStragegy::new(provider_manager, amms, 2, start_tokens);
+    let strategy = BackRunnerStrategy::new(provider_manager, amms, 2, start_tokens);
     strategy.run().await?;
 
     Ok(())

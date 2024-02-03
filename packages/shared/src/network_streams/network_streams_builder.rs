@@ -34,7 +34,7 @@ impl NetworkStreamManagerBuilder {
         &mut self,
         filter_to_address: Option<Vec<String>>,
     ) -> &mut Self {
-        self.pending_transactions = filter_to_address;
+        self.pending_transactions = Some(filter_to_address.unwrap_or_default());
         self
     }
 

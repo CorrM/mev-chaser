@@ -5,7 +5,7 @@ use ethers_core::{
     types::Address,
 };
 use shared::trace::TraceLogData;
-use std::{collections::HashMap, str::FromStr, sync::Arc};
+use std::{collections::HashMap, str::FromStr, sync::{Arc, Mutex, RwLock}};
 
 use crate::{AmmPool, AmmProtocol, AmmProtocolKind};
 
@@ -15,7 +15,7 @@ use crate::uniswap_v2_pool::UniswapV2Pool;
 pub struct UniswapV2Protocol {
     name: String,
     fees: u32,
-    pools: Vec<Arc<UniswapV2Pool>>,
+    pools: Vec<Arc<RwLock<UniswapV2Pool>>>,
     factory: Address,
     router: Address,
 }
@@ -64,7 +64,7 @@ impl UniswapV2Protocol {
     }
 
     pub fn add_pool(&mut self, pool: UniswapV2Pool) {
-        self.pools.push(Arc::new(pool));
+        self.pools.push(Arc::new(RwLock::new(pool)));
     }
 }
 
@@ -77,7 +77,7 @@ impl AmmProtocol for UniswapV2Protocol {
         &self.name
     }
 
-    fn pools(&self) -> Vec<Arc<dyn AmmPool>> {
-        self.pools.iter().map(|p| Arc::clone(p) as Arc<dyn AmmPool>).collect()
+    fn pools(&self) -> Vec<Arc<RwLock<dyn AmmPool>>> {
+        self.pools.iter().map(|p| Arc::clone(p) as Arc<RwLock<dyn AmmPool>>).collect()
     }
 }
