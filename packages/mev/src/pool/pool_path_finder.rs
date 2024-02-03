@@ -1,15 +1,15 @@
-use std::{ops::Deref, sync::Arc};
+use std::sync::Arc;
 
-use amm::{AmmPool, AmmPoolKind};
+use amm::AmmPool;
 use shared::token::CryptoToken;
 
 use super::{pool_path_item::PoolPathItem, PoolPath};
 
 fn dfs(
-    token_pools: &Vec<AmmPoolKind>,
+    token_pools: &Vec<Arc<dyn AmmPool>>,
     current_token: &Arc<CryptoToken>,
     output_token: &Arc<CryptoToken>,
-    visited_pairs: &mut Vec<Arc<AmmPoolKind>>,
+    visited_pairs: &mut Vec<Arc<dyn AmmPool>>,
     route: &mut PoolPath,
     hop_count: i32,
     max_multi_hop: i32,
@@ -20,12 +20,13 @@ fn dfs(
     }
 
     for next_pool in token_pools {
-        let (token0, token1) = match next_pool {
-            AmmPoolKind::UniswapV2(pool) => (pool.token0(), pool.token1()),
-        };
+        let token0: &Arc<CryptoToken> = next_pool.token0();
+        let token1: &Arc<CryptoToken> = next_pool.token1();
 
         if !Arc::ptr_eq(current_token, token0) && !Arc::ptr_eq(current_token, token1)
-            || visited_pairs.iter().any(|x| std::ptr::eq(next_pool, x.deref()))
+            || visited_pairs
+                .iter()
+                .any(|x| Arc::ptr_eq(next_pool, x))
         {
             continue;
         }
@@ -36,12 +37,11 @@ fn dfs(
             token0
         };
 
-        let next_pool = Arc::new(next_pool.clone());
         route.push(PoolPathItem::new(
-            next_pool.clone(),
+            Arc::clone(next_pool),
             Arc::ptr_eq(token0, current_token),
         ));
-        visited_pairs.push(next_pool);
+        visited_pairs.push(Arc::clone(next_pool));
 
         if Arc::ptr_eq(next_token, output_token) && route.len() > 1 {
             arbitrage_paths.push(route.to_vec());
@@ -64,13 +64,13 @@ fn dfs(
 }
 
 pub fn generate_pool_paths(
-    pools: &Vec<AmmPoolKind>,
+    pools: &Vec<Arc<dyn AmmPool>>,
     input_token: &Arc<CryptoToken>,
     output_token: &Arc<CryptoToken>,
     max_multi_hop: i32,
 ) -> Vec<PoolPath> {
     let mut arbitrage_paths: Vec<PoolPath> = Vec::new();
-    let mut visited_pairs: Vec<Arc<AmmPoolKind>> = Vec::new();
+    let mut visited_pairs: Vec<Arc<dyn AmmPool>> = Vec::new();
     let mut initial_route: PoolPath = Vec::new();
 
     dfs(

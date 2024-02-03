@@ -16,10 +16,10 @@ impl PoolPathsContainer {
     }
 
     fn add_path(&mut self, path: PoolPath) {
-        let arc_path = Arc::new(path);
-        for pool in arc_path.iter() {
+        let arc_path: Arc<PoolPath> = Arc::new(path);
+        for path_item in arc_path.iter() {
             self.address_to_paths
-                .entry(pool.address.clone())
+                .entry(path_item.pool.address().clone())
                 .or_insert_with(Vec::new)
                 .push(Arc::clone(&arc_path));
         }

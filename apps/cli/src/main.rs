@@ -1,4 +1,4 @@
-use amm::{AmmPool, AmmProtocol, AmmProtocolKind, UniswapV2Pool, UniswapV2Protocol};
+use amm::{AmmPool, AmmProtocol, UniswapV2Pool, UniswapV2Protocol};
 use anyhow::{anyhow, Result};
 use contracts::{UniswapV2FactoryAbi, UniswapV2PairAbi};
 use database::{Database, DbDex, DbDexNetwork, DbDexPool, DbDexProtocol, DbToken, DbTokenNetwork};
@@ -123,9 +123,9 @@ async fn get_amms(
     network: &NetworkKind,
     provider: &impl NodeProvider,
     token_manager: &TokenManager,
-) -> Result<Vec<AmmProtocolKind>> {
+) -> Result<Vec<Arc<dyn AmmProtocol>>> {
     let pairs: Vec<(&Arc<CryptoToken>, &Arc<CryptoToken>)> = generate_pairs(token_manager.tokens());
-    let mut amms: Vec<AmmProtocolKind> = Vec::new();
+    let mut amms: Vec<Arc<dyn AmmProtocol>> = Vec::new();
 
     let db_dexes: Vec<DbDex> = db.get_dexes_by_network(network)?;
     for db_dex in &db_dexes {
@@ -215,7 +215,7 @@ async fn get_amms(
                     uniswap_v2.add_pool(pool);
                 }
 
-                amms.push(AmmProtocolKind::UniswapV2(uniswap_v2));
+                amms.push(Arc::new(uniswap_v2));
             }
             _ => panic!("Unsupported dex protocol"),
         }
@@ -232,7 +232,7 @@ async fn main() -> Result<()> {
     let provider_manager: NodeProviderManager = create_node_provider_manager(&env, &target_network).await?;
     let token_manager: TokenManager = TokenManager::new(get_tokens(&db, &target_network)?);
 
-    let amms: Vec<AmmProtocolKind> = get_amms(
+    let amms: Vec<Arc<dyn AmmProtocol>> = get_amms(
         &db,
         &target_network,
         provider_manager.get_next().deref(),

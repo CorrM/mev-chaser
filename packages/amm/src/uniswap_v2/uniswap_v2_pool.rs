@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use shared::{network::NetworkKind, token::CryptoToken};
 
-use crate::{uniswap_v2_protocol::UniswapV2Protocol, AmmPool, AmmProtocol};
+use crate::{uniswap_v2_protocol::UniswapV2Protocol, AmmPool, AmmPoolKind, AmmProtocol};
 
 #[derive(Clone)]
 pub struct UniswapV2Pool {
@@ -27,7 +27,7 @@ impl UniswapV2Pool {
     ) -> Result<Self> {
         Ok(Self {
             address,
-            dex: dex.clone(),
+            dex,
             network,
             token0,
             token1,
@@ -38,13 +38,15 @@ impl UniswapV2Pool {
 }
 
 impl AmmPool for UniswapV2Pool {
-    type Protocol = UniswapV2Protocol;
+    fn kind(&self) -> AmmPoolKind {
+        AmmPoolKind::UniswapV2
+    }
 
     fn address(&self) -> &Address {
         &self.address
     }
 
-    fn dex(&self) -> Arc<dyn AmmProtocol<Pool = Self>> {
+    fn dex(&self) -> Arc<dyn AmmProtocol> {
         self.dex.clone()
     }
 

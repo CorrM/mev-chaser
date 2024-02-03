@@ -2,13 +2,12 @@ use ethers_core::types::{Address, U256};
 use shared::{network::NetworkKind, token::CryptoToken};
 use std::sync::Arc;
 
-use crate::AmmProtocol;
+use crate::{AmmPoolKind, AmmProtocol};
 
 pub trait AmmPool {
-    type Protocol: AmmProtocol;
-
+    fn kind(&self) -> AmmPoolKind;
     fn address(&self) -> &Address;
-    fn dex(&self) -> Arc<dyn AmmProtocol<Pool = Self>>;
+    fn dex(&self) -> Arc<dyn AmmProtocol>;
     fn network(&self) -> &NetworkKind;
     fn token0(&self) -> &Arc<CryptoToken>;
     fn token1(&self) -> &Arc<CryptoToken>;

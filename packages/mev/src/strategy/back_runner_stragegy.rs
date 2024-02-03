@@ -1,6 +1,7 @@
+use std::any::Any;
 use std::{collections::HashMap, ops::Deref, sync::Arc};
 
-use amm::{AmmPoolKind, AmmProtocolKind};
+use amm::{AmmPool, AmmPoolKind, AmmProtocolKind};
 use amm::{AmmProtocol, UniswapV2Protocol};
 use anyhow::Result;
 use ethers_core::utils::to_checksum;
@@ -34,24 +35,20 @@ fn on_new_pending_tx(tx: &Transaction, decoded_log: &HashMap<String, (Address, L
 
 pub struct BackRunnerStragegy {
     provider_manager: NodeProviderManager,
-    dexes: Vec<AmmProtocolKind>,
+    dexes: Vec<Arc<dyn AmmProtocol>>,
 }
 
 impl BackRunnerStragegy {
     pub fn new(
         provider_manager: NodeProviderManager,
-        dexes: Vec<AmmProtocolKind>,
+        dexes: Vec<Arc<dyn AmmProtocol>>,
         max_hops: i32,
         start_tokens: Vec<Arc<CryptoToken>>,
     ) -> Self {
-        let mut pools: Vec<AmmPoolKind> = Vec::new();
+        let mut pools: Vec<Arc<dyn AmmPool>> = Vec::new();
 
         for dex in &dexes {
-            match dex {
-                AmmProtocolKind::UniswapV2(v2) => {
-                    pools.extend(v2.pools().iter().map(|p| AmmPoolKind::UniswapV2(p.deref().clone())))
-                }
-            }
+            pools.extend(dex.pools())
         }
 
         let mut map: HashMap<Arc<CryptoToken>, Vec<PoolPath>> = HashMap::new();
@@ -70,8 +67,8 @@ impl BackRunnerStragegy {
         let router_addresses: Vec<Address> = self
             .dexes
             .iter()
-            .map(|d| match d {
-                AmmProtocolKind::UniswapV2(v2) => *v2.router(),
+            .map(|d| match d.kind() {
+                AmmProtocolKind::UniswapV2 => *((d as &dyn Any).downcast_ref::<UniswapV2Protocol>().unwrap().router()),
             })
             .collect();
         let filters: Vec<String> = router_addresses

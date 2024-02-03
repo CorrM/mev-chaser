@@ -1,13 +1,13 @@
 use anyhow::Result;
 use contracts::UNISWAPV2PAIRABI_ABI;
 use ethers_core::{
-    abi::{Abi, Log, RawLog},
+    abi::{Log, RawLog},
     types::Address,
 };
 use shared::trace::TraceLogData;
 use std::{collections::HashMap, str::FromStr, sync::Arc};
 
-use crate::AmmProtocol;
+use crate::{AmmPool, AmmProtocol, AmmProtocolKind};
 
 use crate::uniswap_v2_pool::UniswapV2Pool;
 
@@ -69,13 +69,15 @@ impl UniswapV2Protocol {
 }
 
 impl AmmProtocol for UniswapV2Protocol {
-    type Pool = UniswapV2Pool;
-    
+    fn kind(&self) -> AmmProtocolKind {
+        AmmProtocolKind::UniswapV2
+    }
+
     fn name(&self) -> &str {
         &self.name
     }
 
-    fn pools(&self) -> Vec<Arc<UniswapV2Pool>> {
-        self.pools.clone()
+    fn pools(&self) -> Vec<Arc<dyn AmmPool>> {
+        self.pools.iter().map(|p| Arc::clone(p) as Arc<dyn AmmPool>).collect()
     }
 }

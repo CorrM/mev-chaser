@@ -1,10 +1,9 @@
 use std::sync::Arc;
 
-use crate::AmmPool;
+use crate::{AmmPool, AmmProtocolKind};
 
 pub trait AmmProtocol {
-    type Pool: AmmPool;
-
+    fn kind(&self) -> AmmProtocolKind;
     fn name(&self) -> &str;
-    fn pools(&self) -> Vec<Arc<Self::Pool>>;
+    fn pools(&self) -> Vec<Arc<dyn AmmPool>>;
 }

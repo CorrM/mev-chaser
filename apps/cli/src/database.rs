@@ -347,9 +347,9 @@ impl Database {
         Ok(self.get_token(&token_address, token.network())?.unwrap())
     }
 
-    pub fn get_dex_protocol(&self, protocol: &AmmProtocolKind) -> Result<Option<DbDexProtocol>> {
+    pub fn get_dex_protocol(&self, protocol: &impl AmmProtocol) -> Result<Option<DbDexProtocol>> {
         let mut stmt: Statement = self.db.prepare("SELECT * FROM DexProtocols WHERE name = ? LIMIT 1")?;
-        stmt.query_row(params![protocol.to_string()], DbDexProtocol::from_row)
+        stmt.query_row(params![protocol.kind().to_string()], DbDexProtocol::from_row)
             .optional()
     }
 
@@ -601,22 +601,18 @@ impl Database {
         Ok(ret)
     }
 
-    pub fn add_dex(&self, dex: &AmmProtocolKind, options: impl Into<String>) -> Result<DbDex> {
-        let dex_protocol_id: Option<DbDexProtocol> = self.get_dex_protocol(&dex)?;
+    pub fn add_dex(&self, dex: &impl AmmProtocol, options: impl Into<String>) -> Result<DbDex> {
+        let dex_protocol_id: Option<DbDexProtocol> = self.get_dex_protocol(dex)?;
         if dex_protocol_id.is_none() {
             return Err(rusqlite::Error::QueryReturnedNoRows);
         }
-
-        let (name, options) = match dex {
-            AmmProtocolKind::UniswapV2(v2) => (v2.name(), options),
-        };
 
         let mut stmt: Statement = self
             .db
             .prepare("INSERT INTO Dexes (name, dexProtocolId, options) VALUES (?, ?, ?) RETURNING id")?;
 
         stmt.query_row(
-            params![name, dex_protocol_id.unwrap().id, options.into()],
+            params![dex.name(), dex_protocol_id.unwrap().id, options.into()],
             DbDex::from_row,
         )
     }
