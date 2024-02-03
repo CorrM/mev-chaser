@@ -16,10 +16,10 @@ use shared::{
 };
 use tokio::sync::broadcast::Receiver;
 
-use crate::pool::{PoolPathFinder, PoolPathItem};
+use crate::pool::{generate_pool_paths, PoolPathItem};
 
-fn on_new_pending_tx(tx: &Transaction, decoded_log: Vec<(String, Log)>) {
-    let sync_log: Option<&(String, Log)> = decoded_log.iter().find(|(name, _)| name == "Sync");
+fn on_new_pending_tx(tx: &Transaction, decoded_log: &HashMap<String, (Address, Log)>) {
+    let sync_log: Option<&(Address, Log)> = decoded_log.get("Sync");
     if sync_log.is_none() {
         return;
     }
@@ -27,7 +27,8 @@ fn on_new_pending_tx(tx: &Transaction, decoded_log: Vec<(String, Log)>) {
     let tx_hash: String = format!("{:?}", tx.hash);
     println!("tx_hash: {}", tx_hash);
 
-    let (_, log): &(String, Log) = sync_log.unwrap();
+    let (address, log): &(Address, Log) = sync_log.unwrap();
+    println!("address: {}", to_checksum(address, None));
     println!("sync_log: {:#?}", log);
 }
 
@@ -55,9 +56,8 @@ impl BackRunnerStragegy {
 
         let mut map: HashMap<Arc<CryptoToken>, Vec<Vec<PoolPathItem>>> = HashMap::new();
         for start_token in start_tokens {
-            let paths: Vec<Vec<PoolPathItem>> =
-                PoolPathFinder::generate_paths(&pools, start_token.clone(), start_token.clone(), max_hops);
-            map.insert(start_token.clone(), paths);
+            let paths: Vec<Vec<PoolPathItem>> = generate_pool_paths(&pools, &start_token, &start_token, max_hops);
+            map.insert(start_token, paths);
         }
 
         Self {
@@ -104,7 +104,7 @@ impl BackRunnerStragegy {
 
                     // TODO: Use to_address to determine which dex to `decode_pair_trace_logs`
                     for trace_log in trace_logs {
-                        on_new_pending_tx(tx, UniswapV2Protocol::decode_pair_trace_logs(trace_log));
+                        on_new_pending_tx(tx, &UniswapV2Protocol::decode_pair_trace_logs(&trace_log));
                     }
                 }
             }

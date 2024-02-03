@@ -5,7 +5,7 @@ use ethers_core::{
     types::Address,
 };
 use shared::trace::TraceLogData;
-use std::{str::FromStr, sync::Arc};
+use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use crate::AmmProtocol;
 
@@ -36,21 +36,19 @@ impl UniswapV2Protocol {
         })
     }
 
-    pub fn decode_pair_trace_logs(trace_log: TraceLogData) -> Vec<(String, Log)> {
-        let mut ret: Vec<(String, Log)> = Vec::new();
+    pub fn decode_pair_trace_logs(trace_log: &TraceLogData) -> HashMap<String, (Address, Log)> {
+        let mut ret: HashMap<String, (Address, Log)> = HashMap::new();
 
         for ev in UNISWAPV2PAIRABI_ABI.events() {
-            if ev.signature() != trace_log.topics()[0] {
+            let raw_log: &RawLog = trace_log.raw_log();
+            if ev.signature() != raw_log.topics[0] {
                 continue;
             }
 
-            let log_result: Result<Log, ethers_core::abi::Error> = ev.parse_log(RawLog {
-                topics: trace_log.topics(),
-                data: trace_log.data().to_vec(),
-            });
+            let log_result: Result<Log, ethers_core::abi::Error> = ev.parse_log(raw_log.clone());
 
             if let Ok(log) = log_result {
-                ret.push((ev.name.clone(), log));
+                ret.insert(ev.name.clone(), (trace_log.address(), log));
             }
         }
 

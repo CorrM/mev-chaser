@@ -170,12 +170,10 @@ async fn get_amms(
                         let db_token1_network: DbTokenNetwork =
                             db.get_token_network_by_token(token1.unwrap().id, network)?.unwrap();
 
-                        let token0: Arc<CryptoToken> = token_manager
-                            .get_token_by_address_str(&db_token0_network.address)
-                            .unwrap();
-                        let token1: Arc<CryptoToken> = token_manager
-                            .get_token_by_address_str(&db_token1_network.address)
-                            .unwrap();
+                        let token0: Arc<CryptoToken> =
+                            token_manager.get_by_address_str(&db_token0_network.address).unwrap();
+                        let token1: Arc<CryptoToken> =
+                            token_manager.get_by_address_str(&db_token1_network.address).unwrap();
 
                         uniswap_v2.add_pool(UniswapV2Pool::new(
                             pool_address,
@@ -205,8 +203,8 @@ async fn get_amms(
                     let token0: Address = pair_contract.token_0().call_raw().await?;
                     let token1: Address = pair_contract.token_1().call_raw().await?;
 
-                    let token0: Arc<CryptoToken> = token_manager.get_token_by_address(&token0).unwrap();
-                    let token1: Arc<CryptoToken> = token_manager.get_token_by_address(&token1).unwrap();
+                    let token0: Arc<CryptoToken> = token_manager.get_by_address(&token0).unwrap();
+                    let token1: Arc<CryptoToken> = token_manager.get_by_address(&token1).unwrap();
 
                     let pool: UniswapV2Pool =
                         UniswapV2Pool::new(pool_address, Arc::new(uniswap_v2.clone()), *network, token0, token1)?;
@@ -242,8 +240,16 @@ async fn main() -> Result<()> {
     )
     .await?;
 
+    let start_tokens: Vec<Arc<CryptoToken>> = vec![
+        token_manager.get_by_symbol("WETH").unwrap(),
+        token_manager.get_by_symbol("WMATIC").unwrap(),
+        token_manager.get_by_symbol("USDT").unwrap(),
+        token_manager.get_by_symbol("USDC").unwrap(),
+        token_manager.get_by_symbol("DAI").unwrap(),
+    ];
+
     // 2 are traingle arbitrage
-    let strategy = BackRunnerStragegy::new(provider_manager, amms, 2, vec![]);
+    let strategy = BackRunnerStragegy::new(provider_manager, amms, 2, start_tokens);
     strategy.run().await?;
 
     Ok(())

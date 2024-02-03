@@ -1,23 +1,21 @@
-use ethers_core::types::{Address, Bytes, CallFrame, GethTrace, GethTraceFrame, H256};
+use ethers_core::{
+    abi::RawLog,
+    types::{Address, CallFrame, GethTrace, GethTraceFrame},
+};
 
 #[derive(Debug, Clone)]
 pub struct TraceLogData {
     address: Address,
-    topics: Vec<H256>,
-    data: Bytes,
+    raw_log: RawLog,
 }
 
 impl TraceLogData {
-    pub fn topics(&self) -> Vec<H256> {
-        self.topics.clone()
-    }
-
-    pub fn data(&self) -> Bytes {
-        self.data.clone()
-    }
-
     pub fn address(&self) -> Address {
         self.address
+    }
+
+    pub fn raw_log(&self) -> &RawLog {
+        &self.raw_log
     }
 }
 
@@ -27,8 +25,10 @@ fn get_logs_on_frame(call_frame: CallFrame, mylogs: &mut Vec<TraceLogData>) {
             if let Some(topics) = call_log_frame.topics {
                 mylogs.push(TraceLogData {
                     address: call_log_frame.address.unwrap(),
-                    topics,
-                    data: call_log_frame.data.unwrap(),
+                    raw_log: RawLog {
+                        topics,
+                        data: call_log_frame.data.unwrap().to_vec(),
+                    },
                 })
             }
         }
