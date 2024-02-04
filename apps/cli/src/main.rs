@@ -249,7 +249,7 @@ async fn main() -> Result<()> {
     ];
 
     // 2 are traingle arbitrage
-    let strategy = BackRunnerStrategy::new(provider_manager, amms, 2, start_tokens);
+    let strategy = BackRunnerStrategy::new(provider_manager, amms, 2, start_tokens).await;
     strategy.run().await?;
 
     Ok(())

@@ -1,4 +1,4 @@
-use amm::{AmmPool, AmmProtocol, AmmProtocolKind, UniswapV2Protocol};
+use amm::{uniswap_v2_utils::batch_update_uniswap_v2_pools, AmmPool, AmmProtocol, AmmProtocolKind, UniswapV2Protocol};
 use anyhow::Result;
 use ethers_core::{
     abi::Log,
@@ -25,16 +25,20 @@ pub struct BackRunnerStrategy {
 }
 
 impl BackRunnerStrategy {
-    pub fn new(
+    pub async fn new(
         provider_manager: NodeProviderManager,
         dexes: Vec<Arc<dyn AmmProtocol>>,
         max_hops: i32,
         start_tokens: Vec<Arc<CryptoToken>>,
     ) -> Self {
+        // Collect pools
         let mut pools: Vec<Arc<RwLock<dyn AmmPool>>> = Vec::new();
         for dex in &dexes {
             pools.extend(dex.pools())
         }
+
+        // Update pools
+        batch_update_uniswap_v2_pools(provider_manager.get_next(), &pools).await;
 
         let mut paths_container = PoolPathsContainer::new();
         for start_token in start_tokens {
@@ -82,12 +86,11 @@ impl BackRunnerStrategy {
 
         local_pool.write().unwrap().update_reserve(reserve0, reserve1);
 
-        // Test if i can read after acuier write lock
-        let test = self.pools.get(pool_address).unwrap().read().unwrap().address();
-
         // Get paths
         let paths: &Vec<Arc<PoolPath>> = self.paths_container.get_paths_containing_pool(pool_address).unwrap();
-        println!("paths: {:#?}", paths);
+        for path in paths {
+            
+        }
     }
 
     pub async fn run(&self) -> Result<()> {
@@ -119,8 +122,8 @@ impl BackRunnerStrategy {
             let NetworkEvent::PendingTx(tx) = &event else { continue };
             let Some(to) = tx.to else { continue };
 
-            let to_address: Option<&Address> = router_addresses.iter().find(|&&f| f == to);
-            if to_address.is_none() {
+            let is_router_address: bool = router_addresses.iter().any(|&f| f == to);
+            if !is_router_address {
                 continue;
             }
 
