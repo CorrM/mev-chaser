@@ -17,6 +17,7 @@ impl PoolPathsContainer {
 
     pub fn add_path(&mut self, path: PoolPath) {
         let arc_path: Arc<PoolPath> = Arc::new(path);
+        
         for path_item in arc_path.path().iter() {
             self.address_to_paths
                 .entry(*path_item.pool.read().unwrap().address())

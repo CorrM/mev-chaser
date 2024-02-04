@@ -8,7 +8,7 @@ use ethers_core::{
 use shared::{
     network_streams::{NetworkEvent, NetworkStreamManagerBuilder, NetworkStreamsManager},
     provider::{NodeProviderKind, NodeProviderManager, NormalNodeProvider},
-    token::CryptoToken,
+    token::{CryptoToken, TokenManager},
     trace::{get_trace_all_logs, TraceLogData},
 };
 use std::sync::RwLock;
@@ -18,14 +18,17 @@ use tokio::sync::broadcast::Receiver;
 use crate::pool::{generate_pool_paths, PoolPath, PoolPathsContainer};
 
 pub struct BackRunnerStrategy {
+    token_manager: TokenManager,
     provider_manager: NodeProviderManager,
     dexes: Vec<Arc<dyn AmmProtocol>>,
     pools: HashMap<Address, Arc<RwLock<dyn AmmPool>>>,
     paths_container: PoolPathsContainer,
+    next_block_base_fee: U256, // TODO: Should be a service that manages gas_price
 }
 
 impl BackRunnerStrategy {
     pub async fn new(
+        token_manager: TokenManager,
         provider_manager: NodeProviderManager,
         dexes: Vec<Arc<dyn AmmProtocol>>,
         max_hops: i32,
@@ -40,13 +43,41 @@ impl BackRunnerStrategy {
         // Update pools
         batch_update_uniswap_v2_pools(provider_manager.get_next(), &pools).await;
 
+        // Remove empty pools
+        let mut pools_to_remove: Vec<usize> = Vec::new();
+        for (idx, pool) in pools.iter().enumerate() {
+            let pool_read_lock = pool.read().unwrap();
+
+            if pool_read_lock.reserve0().is_zero() || pool_read_lock.reserve1().is_zero() {
+                pools_to_remove.push(idx);
+            }
+        }
+
+        for idx in pools_to_remove {
+            pools.remove(idx);
+        }
+
+        for pool in &pools {
+            let pool_read_lock = pool.read().unwrap();
+
+            if pool_read_lock.reserve0().is_zero() || pool_read_lock.reserve1().is_zero() {
+                panic!("Pool {} is empty", to_checksum(pool_read_lock.address(), None));
+            }
+        }
+        
+        // Generate paths
         let mut paths_container = PoolPathsContainer::new();
         for start_token in start_tokens {
             let paths: Vec<PoolPath> = generate_pool_paths(&pools, &start_token, &start_token, max_hops);
             paths_container.add_multi_path(paths);
         }
 
+        // No path test
+        //let pool_address: Address = Address::from_str("0xDF9549017071B88a5B9a7252f875632bfdbb7fc7").unwrap();
+        //paths_container.get_paths_containing_pool(&pool_address).unwrap();
+
         Self {
+            token_manager,
             provider_manager,
             dexes,
             pools: pools
@@ -57,10 +88,11 @@ impl BackRunnerStrategy {
                 })
                 .collect::<HashMap<_, _>>(),
             paths_container,
+            next_block_base_fee: U256::zero(),
         }
     }
 
-    async fn on_new_pending_tx(&self, tx: &Transaction, decoded_log: &HashMap<String, (Address, Log)>) {
+    fn on_new_pending_tx(&self, tx: &Transaction, decoded_log: &HashMap<String, (Address, Log)>) {
         let sync_log: Option<&(Address, Log)> = decoded_log.get("Sync");
         if sync_log.is_none() {
             return;
@@ -83,36 +115,62 @@ impl BackRunnerStrategy {
         let ethers_core::abi::Token::Uint(reserve1) = log.params[1].value else {
             panic!("reserve1 is not uint")
         };
-
         local_pool.write().unwrap().update_reserve(reserve0, reserve1);
 
-        // TODO: MAYBE add tokio::spawn for paths
         // Get paths
-        let paths: &Vec<Arc<PoolPath>> = self.paths_container.get_paths_containing_pool(pool_address).unwrap();
+        let touched_paths: Option<&Vec<Arc<PoolPath>>> = self.paths_container.get_paths_containing_pool(pool_address);
+        let Some(touched_paths) = touched_paths else { return; }; // No path with this pool
 
         // Get spreads
-        for path in paths {
-            let one_token_in: U256 = U256::from(1);
-            let simulated: Option<U256> = path.simulate_v2_path(one_token_in);
+        let mut spreads: HashMap<usize, i128> = HashMap::new();
+        for (idx, path) in touched_paths.iter().enumerate() {
+            let amount_in: U256 = path.get_input_token().convert_to_amount(1_f64);
+            let amount_out: Option<U256> = path.get_amount_out_v2(amount_in); // TODO: Fix fees in this function
 
-            match simulated {
-                Some(price_quote) => {
-                    let one_usdc_in = one_token_in * U256::from(6); // usdc_decimals
-                    let _out = price_quote.as_u128() as i128;
-                    let _in = one_usdc_in.as_u128() as i128;
-                    let spread = _out - _in;
+            let Some(amount_out) = amount_out else { continue };
+            let _in: i128 = amount_in.as_u128() as i128;
+            let _out: i128 = amount_out.as_u128() as i128;
+            let spread: i128 = _out - _in;
 
-                    if spread > 0 {
-                        println!("spread: {}", spread);
-                        //spreads.insert(idx, spread);
-                    }
-                }
-                None => {}
+            if spread > 0 {
+                spreads.insert(idx, spread);
+            }
+        }
+
+        if spreads.is_empty() {
+            return;
+        }
+
+        // Get gas cost
+        let base_fee: U256 = self.next_block_base_fee;
+        let estimated_gas_usage: U256 = U256::from(550000);
+        let gas_cost_in_wei_native: U256 = base_fee * estimated_gas_usage;
+
+        // Sort by spread
+        let mut sorted_spreads: Vec<_> = spreads.iter().collect();
+        sorted_spreads.sort_by_key(|x| x.1);
+        sorted_spreads.reverse();
+
+        // Run
+        for spread in sorted_spreads {
+            let path_idx: &usize = spread.0;
+            let path: &Arc<PoolPath> = &touched_paths[*path_idx];
+            let (optimized_in, profit) = path.optimize_amount_in(1000, 10);
+            let excess_profit: i128 = (profit.as_u128() as i128) - (gas_cost_in_wei_native.as_u128() as i128);
+
+            println!("path: {:?}", path.path());
+            println!("optimized_in: {optimized_in:?}");
+            println!("profit: {profit}");
+            println!("net_profit: {excess_profit}");
+
+            // TODO
+            if excess_profit > 0 {
+                println!("Profiiiiiiiiiiiiiiiiiiiiiit: {}: {}", path_idx, excess_profit);
             }
         }
     }
 
-    pub async fn run(&self) -> Result<()> {
+    pub async fn run(&mut self) -> Result<()> {
         let router_addresses: Vec<Address> = self
             .dexes
             .iter()
@@ -133,30 +191,34 @@ impl BackRunnerStrategy {
         let provider_kind: &Arc<NodeProviderKind> = &Arc::new(NodeProviderKind::Normal(provider.deref().clone()));
 
         let ns: NetworkStreamsManager = NetworkStreamManagerBuilder::new(provider_kind.clone())
+            .watch_new_blocks()
             .watch_pending_transactions(Some(filters.clone()))
             .build();
 
         let mut event_receiver: Receiver<NetworkEvent> = ns.subscribe();
         while let Ok(event) = event_receiver.recv().await {
-            let NetworkEvent::PendingTx(tx) = &event else { continue };
-            let Some(to) = tx.to else { continue };
+            if let NetworkEvent::PendingTx(tx) = &event {
+                let Some(to) = tx.to else { continue };
 
-            let is_router_address: bool = router_addresses.iter().any(|&f| f == to);
-            if !is_router_address {
-                continue;
-            }
+                let is_router_address: bool = router_addresses.iter().any(|&f| f == to);
+                if !is_router_address {
+                    continue;
+                }
 
-            let frame: GethTrace = self
-                .provider_manager
-                .get_next_debug_trace_call()
-                .debug_trace_call(tx, None)
-                .await?;
-            let trace_logs: Vec<TraceLogData> = get_trace_all_logs(frame);
+                let frame: GethTrace = self
+                    .provider_manager
+                    .get_next_debug_trace_call()
+                    .debug_trace_call(tx, None)
+                    .await?;
+                let trace_logs: Vec<TraceLogData> = get_trace_all_logs(frame);
 
-            // TODO: Use to_address to determine which dex to `decode_pair_trace_logs`
-            for trace_log in trace_logs {
-                let logs: HashMap<String, (Address, Log)> = UniswapV2Protocol::decode_pair_trace_logs(&trace_log);
-                self.on_new_pending_tx(tx, &logs).await;
+                // TODO: Use to_address to determine which dex to `decode_pair_trace_logs`
+                for trace_log in trace_logs {
+                    let logs: HashMap<String, (Address, Log)> = UniswapV2Protocol::decode_pair_trace_logs(&trace_log);
+                    self.on_new_pending_tx(tx, &logs);
+                }
+            } else if let NetworkEvent::Block(block) = &event {
+                self.next_block_base_fee = block.next_base_fee;
             }
         }
 

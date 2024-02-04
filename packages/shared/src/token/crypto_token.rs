@@ -28,7 +28,7 @@ impl CryptoToken {
             name: name.into(),
             symbol: symbol.into(),
             decimals,
-            decimals_pow: U256::exp10(decimals as usize),
+            decimals_pow: U256::from(10).pow(U256::from(decimals)),
         })
     }
 
@@ -52,14 +52,11 @@ impl CryptoToken {
         self.decimals
     }
 
-    fn convert_to_decimal(&self, value: U256) -> String {
-        panic!("Not implemented");
-        let integer = value / self.decimals_pow;
-        (value % self.decimals_pow).to_string()
+    pub fn convert_to_decimal(&self, value: U256) -> f64 {
+        (value.as_u64() as f64) / (self.decimals_pow.as_u64() as f64)
     }
 
-    fn convert_to_amount(&self, value: f64) -> U256 {
-        panic!("Not implemented");
-        //(value * self.decimals_pow)
+    pub fn convert_to_amount(&self, value: f64) -> U256 {
+        U256::from((value.powi(self.decimals as i32)) as u64) * self.decimals_pow
     }
 }

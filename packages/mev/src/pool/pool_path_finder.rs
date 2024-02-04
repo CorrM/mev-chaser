@@ -1,4 +1,4 @@
-use std::sync::{Arc, RwLock};
+use std::{collections::HashSet, sync::{Arc, RwLock}};
 
 use amm::AmmPool;
 use shared::token::CryptoToken;
@@ -9,7 +9,7 @@ fn dfs(
     token_pools: &Vec<Arc<RwLock<dyn AmmPool>>>,
     current_token: &Arc<CryptoToken>,
     output_token: &Arc<CryptoToken>,
-    visited_pairs: &mut Vec<Arc<RwLock<dyn AmmPool>>>,
+    visited_pairs: &mut HashSet<usize>,
     route: &mut Vec<PoolPathItem>,
     hop_count: i32,
     max_multi_hop: i32,
@@ -19,14 +19,14 @@ fn dfs(
         return;
     }
 
-    for next_pool in token_pools {
+    for (idx, next_pool) in token_pools.iter().enumerate() {
         let next_pool_read_lock = next_pool.read().unwrap();
 
         let token0: &Arc<CryptoToken> = next_pool_read_lock.token0();
         let token1: &Arc<CryptoToken> = next_pool_read_lock.token1();
 
         if !Arc::ptr_eq(current_token, token0) && !Arc::ptr_eq(current_token, token1)
-            || visited_pairs.iter().any(|x| Arc::ptr_eq(next_pool, x))
+            || visited_pairs.iter().any(|&x| idx == x)
         {
             continue;
         }
@@ -41,7 +41,7 @@ fn dfs(
             Arc::clone(next_pool),
             Arc::ptr_eq(token0, current_token),
         ));
-        visited_pairs.push(Arc::clone(next_pool));
+        visited_pairs.insert(idx);
 
         if Arc::ptr_eq(next_token, output_token) && route.len() > 1 {
             arbitrage_paths.push(PoolPath::new(route.to_vec()));
@@ -59,7 +59,7 @@ fn dfs(
         }
 
         route.pop();
-        visited_pairs.pop();
+        visited_pairs.remove(&idx);
     }
 }
 
@@ -70,7 +70,7 @@ pub fn generate_pool_paths(
     max_multi_hop: i32,
 ) -> Vec<PoolPath> {
     let mut arbitrage_paths: Vec<PoolPath> = Vec::new();
-    let mut visited_pairs: Vec<Arc<RwLock<dyn AmmPool>>> = Vec::new();
+    let mut visited_pairs: HashSet<usize> = HashSet::new();
     let mut initial_route: Vec<PoolPathItem> = Vec::new();
 
     dfs(

@@ -1,16 +1,19 @@
-use amm::{AmmPool, AmmProtocol, UniswapV2Pool, UniswapV2Protocol};
+use amm::{AmmPool, AmmPoolKind, AmmProtocol, UniswapV2Pool, UniswapV2Protocol};
 use anyhow::{anyhow, Result};
-use contracts::{UniswapV2FactoryAbi, UniswapV2PairAbi};
-use database::{Database, DbDex, DbDexNetwork, DbDexPool, DbDexProtocol, DbToken, DbTokenNetwork};
 use ethers_core::types::Address;
-
 use ethers_core::utils::to_checksum;
-use mev::BackRunnerStrategy;
-use shared::provider::NodeProvider;
+use ethers_providers::{Http, Provider};
+use std::env;
+use std::io::Write;
 use std::ops::Deref;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::{env::VarError, path::Path};
 
+use contracts::{ERC20TokenAbi, UniswapV2FactoryAbi, UniswapV2PairAbi};
+use database::{Database, DbDex, DbDexNetwork, DbDexPool, DbDexProtocol, DbToken, DbTokenNetwork};
+use mev::BackRunnerStrategy;
+use shared::provider::NodeProvider;
 use shared::token::{CryptoToken, TokenManager};
 use shared::{
     network::NetworkKind,
@@ -32,7 +35,7 @@ fn generate_pairs<T>(list: &[T]) -> Vec<(&T, &T)> {
     pairs
 }
 
-fn get_env() -> Result<Env> {
+fn read_env_file() -> Result<Env> {
     // Env
     if dotenv::dotenv().is_err() {
         return Err(anyhow!("No .env file found"));
@@ -133,8 +136,8 @@ async fn get_amms(
         if db_dex_protocol.is_none() {
             continue;
         }
-        let db_dex_protocol: DbDexProtocol = db_dex_protocol.unwrap();
 
+        let db_dex_protocol: DbDexProtocol = db_dex_protocol.unwrap();
         match db_dex_protocol.name.as_str() {
             "UniswapV2" => {
                 let db_dex_network = db.get_dex_network(db_dex.id, network)?;
@@ -155,9 +158,13 @@ async fn get_amms(
                     UniswapV2FactoryAbi::new(*uniswap_v2.factory(), provider.raw_http_provider().clone());
 
                 for (token_a, token_b) in &pairs {
-                    let db_pool: Option<DbDexPool> = db.get_dex_pool_by_tokens(db_dex.id, network, token_a, token_b)?;
+                    let db_pool: Option<DbDexPool> =
+                        db.get_dex_pool_by_tokens(db_dex.id, network, token_a.address(), token_b.address())?;
                     if let Some(db_pool) = db_pool {
                         let pool_address: Address = db_pool.address.parse::<Address>()?;
+                        if pool_address.is_zero() {
+                            continue;
+                        }
 
                         let token0: Option<DbToken> = db.get_token_by_id(db_pool.token0_id)?;
                         let token1: Option<DbToken> = db.get_token_by_id(db_pool.token1_id)?;
@@ -190,10 +197,15 @@ async fn get_amms(
                         .call_raw()
                         .await?;
 
+                    println!("[+] Adding pool {}", to_checksum(&pool_address, None));
+
                     if pool_address.is_zero() {
                         let db_dex: DbDex = db.get_dex_by_name(uniswap_v2.name())?.unwrap();
 
-                        if db.add_dex_pool_empty(db_dex.id, network, token_a, token_b).is_err() {
+                        if db
+                            .add_dex_pool_empty(db_dex.id, network, token_a.address(), token_b.address())
+                            .is_err()
+                        {
                             panic!("Failed to add dex empty pool");
                         };
                         continue;
@@ -226,12 +238,87 @@ async fn get_amms(
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let env: Env = get_env()?;
+    let env: Env = read_env_file()?;
     let db = Database::new(Path::new("./Main.db"))?;
     let target_network: NetworkKind = unsafe { std::mem::transmute(env.chain_id) };
     let provider_manager: NodeProviderManager = create_node_provider_manager(&env, &target_network).await?;
-    let token_manager: TokenManager = TokenManager::new(get_tokens(&db, &target_network)?);
 
+    let args: Vec<String> = env::args().collect();
+
+    // Add_pool command
+    if args.len() > 1 && args[1] == "add_pool" {
+        let pool_type: AmmPoolKind = match args[2].as_str() {
+            "uniswapv2" => AmmPoolKind::UniswapV2,
+            _ => panic!("Unsupported pool type"),
+        };
+        let file_name: &String = &args[3];
+        let pools: String = std::fs::read_to_string(file_name).expect("Something went wrong reading the file");
+        let pools: Vec<&str> = pools.split('\n').collect::<Vec<&str>>();
+
+        let provider: Arc<Provider<Http>> = provider_manager.get_next().raw_http_provider().clone();
+        for pool in pools {
+            if db.get_dex_pool(&target_network, pool)?.is_some() {
+                continue;
+            }
+
+            println!("Adding pool {}", pool);
+            match pool_type {
+                AmmPoolKind::UniswapV2 => {
+                    let pair_contract = UniswapV2PairAbi::new(pool.parse::<Address>()?, provider.clone());
+
+                    let token0: Address = pair_contract.token_0().call_raw().await?;
+                    let token0_str: String = to_checksum(&token0, None);
+                    let token1: Address = pair_contract.token_1().call_raw().await?;
+                    let token1_str: String = to_checksum(&token1, None);
+
+                    if db.get_token_by_address(&token0_str, &target_network).is_err() {
+                        let token_contract = ERC20TokenAbi::new(token0, provider.clone());
+                        let token_name: String = token_contract.name().call_raw().await?;
+                        let token_symbol: String = token_contract.symbol().call_raw().await?;
+                        let token_decimals: u8 = token_contract.decimals().call_raw().await?.as_u64() as u8;
+
+                        println!("Adding token0 {} '{}'", token_symbol, &token0_str);
+                        let token_add = db.add_token(&CryptoToken::new(
+                            &target_network,
+                            &token0_str,
+                            token_name,
+                            token_symbol,
+                            token_decimals,
+                        )?);
+                        if token_add.is_err() {
+                            println!("Token {} already exists", &token0_str);
+                        }
+                    }
+
+                    if db.get_token_by_address(&token1_str, &target_network).is_err() {
+                        let token_contract = ERC20TokenAbi::new(token1, provider.clone());
+                        let token_name: String = token_contract.name().call_raw().await?;
+                        let token_symbol: String = token_contract.symbol().call_raw().await?;
+                        let token_decimals: u8 = token_contract.decimals().call_raw().await?.as_u64() as u8;
+
+                        println!("Adding token1 {} {}", token_symbol, token1_str);
+                        let token_add = db.add_token(&CryptoToken::new(
+                            &target_network,
+                            &token1_str,
+                            token_name,
+                            token_symbol,
+                            token_decimals,
+                        )?);
+                        if token_add.is_err() {
+                            println!("Token {} already exists", &token1_str);
+                        }
+                    }
+                }
+            }
+        }
+
+        return Ok(());
+    }
+
+    let token_manager: TokenManager = TokenManager::new(get_tokens(&db, &target_network)?, &target_network);
+
+    print!("[-] Get amms ... ");
+    std::io::stdout().flush().unwrap();
     let amms: Vec<Arc<dyn AmmProtocol>> = get_amms(
         &db,
         &target_network,
@@ -239,9 +326,9 @@ async fn main() -> Result<()> {
         &token_manager,
     )
     .await?;
+    println!("Done");
 
     let start_tokens: Vec<Arc<CryptoToken>> = vec![
-        token_manager.get_by_symbol("WETH").unwrap(),
         token_manager.get_by_symbol("WMATIC").unwrap(),
         token_manager.get_by_symbol("USDT").unwrap(),
         token_manager.get_by_symbol("USDC").unwrap(),
@@ -249,7 +336,11 @@ async fn main() -> Result<()> {
     ];
 
     // 2 are traingle arbitrage
-    let strategy = BackRunnerStrategy::new(provider_manager, amms, 2, start_tokens).await;
+    print!("[-] Prepare strategy ... ");
+    std::io::stdout().flush().unwrap();
+    let mut strategy = BackRunnerStrategy::new(token_manager, provider_manager, amms, 2, start_tokens).await;
+    println!("Done");
+
     strategy.run().await?;
 
     Ok(())
