@@ -8,7 +8,6 @@ use ethers::{
     types::Bytes,
 };
 use ethers_contract::Multicall;
-use tokio::task::JoinHandle;
 
 use shared::provider::{NodeProvider, NormalNodeProvider};
 

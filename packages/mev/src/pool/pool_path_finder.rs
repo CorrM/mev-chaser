@@ -10,7 +10,7 @@ fn dfs(
     current_token: &Arc<CryptoToken>,
     output_token: &Arc<CryptoToken>,
     visited_pairs: &mut Vec<Arc<RwLock<dyn AmmPool>>>,
-    route: &mut PoolPath,
+    route: &mut Vec<PoolPathItem>,
     hop_count: i32,
     max_multi_hop: i32,
     arbitrage_paths: &mut Vec<PoolPath>,
@@ -44,7 +44,7 @@ fn dfs(
         visited_pairs.push(Arc::clone(next_pool));
 
         if Arc::ptr_eq(next_token, output_token) && route.len() > 1 {
-            arbitrage_paths.push(route.to_vec());
+            arbitrage_paths.push(PoolPath::new(route.to_vec()));
         } else {
             dfs(
                 token_pools,
@@ -71,7 +71,7 @@ pub fn generate_pool_paths(
 ) -> Vec<PoolPath> {
     let mut arbitrage_paths: Vec<PoolPath> = Vec::new();
     let mut visited_pairs: Vec<Arc<RwLock<dyn AmmPool>>> = Vec::new();
-    let mut initial_route: PoolPath = Vec::new();
+    let mut initial_route: Vec<PoolPathItem> = Vec::new();
 
     dfs(
         pools,

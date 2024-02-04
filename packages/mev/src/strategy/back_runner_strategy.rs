@@ -2,7 +2,7 @@ use amm::{uniswap_v2_utils::batch_update_uniswap_v2_pools, AmmPool, AmmProtocol,
 use anyhow::Result;
 use ethers_core::{
     abi::Log,
-    types::{Address, GethTrace, Transaction},
+    types::{Address, GethTrace, Transaction, U256},
     utils::to_checksum,
 };
 use shared::{
@@ -86,10 +86,29 @@ impl BackRunnerStrategy {
 
         local_pool.write().unwrap().update_reserve(reserve0, reserve1);
 
+        // TODO: MAYBE add tokio::spawn for paths
         // Get paths
         let paths: &Vec<Arc<PoolPath>> = self.paths_container.get_paths_containing_pool(pool_address).unwrap();
+
+        // Get spreads
         for path in paths {
-            
+            let one_token_in: U256 = U256::from(1);
+            let simulated: Option<U256> = path.simulate_v2_path(one_token_in);
+
+            match simulated {
+                Some(price_quote) => {
+                    let one_usdc_in = one_token_in * U256::from(6); // usdc_decimals
+                    let _out = price_quote.as_u128() as i128;
+                    let _in = one_usdc_in.as_u128() as i128;
+                    let spread = _out - _in;
+
+                    if spread > 0 {
+                        println!("spread: {}", spread);
+                        //spreads.insert(idx, spread);
+                    }
+                }
+                None => {}
+            }
         }
     }
 
