@@ -1,17 +1,15 @@
 use std::sync::Arc;
 
-use anyhow::{Ok, Result};
+use anyhow::Result;
 use ethers::{
-    providers::{Http, Provider, Ws},
+    providers::Provider,
     types::{
-        transaction::eip2718::TypedTransaction, BlockId, BlockNumber, CallConfig,
-        Eip1559TransactionRequest, GethDebugBuiltInTracerConfig, GethDebugBuiltInTracerType,
-        GethDebugTracerConfig, GethDebugTracerType, GethDebugTracingCallOptions,
-        GethDebugTracingOptions, GethTrace, Transaction, TransactionRequest, U256, U64,
+        CallConfig, GethDebugBuiltInTracerConfig, GethDebugBuiltInTracerType, GethDebugTracerConfig, GethDebugTracerType,
+        GethDebugTracingCallOptions, GethDebugTracingOptions, GethTrace, Transaction, U64,
     },
 };
-use ethers_core::utils::parse_units;
-use ethers_providers::Middleware;
+use ethers_core::types::{CallFrame, CallLogFrame, GethTraceFrame};
+use ethers_providers::{Middleware, Ws, Http};
 
 use crate::network::NetworkKind;
 
@@ -50,66 +48,58 @@ pub struct DebugTraceCallNodeProvider {
 }
 
 impl DebugTraceCallNodeProvider {
-    pub async fn new(
-        name: impl Into<String>,
-        network_info: NodeProviderNetworkInfo,
-    ) -> Result<Self> {
+    pub async fn new(name: impl Into<String>, network_info: NodeProviderNetworkInfo) -> Result<Self> {
         Ok(Self {
             data: NormalNodeProvider::new(name, network_info).await?,
         })
     }
 
-    pub async fn debug_trace_call(
-        &self,
-        tx: &Transaction,
-        block_number: Option<U64>,
-    ) -> Result<GethTrace> {
-        // TODO: test if passing BlockId::Hash is faster
-        let legacy: bool = tx.max_fee_per_gas.is_none() && tx.max_fee_per_gas.is_none();
-        let chain_id: U64 = U64::from(tx.chain_id.unwrap_or(U256::from(1)).as_u64());
+    pub fn extract_trace_logs(call_frame: &CallFrame, logs: &mut Vec<CallLogFrame>) {
+        if let Some(ref logs_vec) = call_frame.logs {
+            logs.extend(logs_vec.iter().cloned());
+        }
+    
+        if let Some(ref calls_vec) = call_frame.calls {
+            for call in calls_vec {
+                DebugTraceCallNodeProvider::extract_trace_logs(call, logs);
+            }
+        }
+    }
 
-        let tx: TypedTransaction = match legacy {
-            true => TransactionRequest::new()
-                .from(tx.from)
-                .to(tx.to.unwrap())
-                .value(tx.value)
-                .data(tx.input.clone())
-                .chain_id(chain_id)
-                .nonce(tx.nonce)
-                .gas(tx.gas)
-                .gas_price(
-                    tx.gas_price
-                        .unwrap_or(parse_units(40, "gwei").unwrap().into()),
-                )
-                .into(),
-            false => Eip1559TransactionRequest::new()
-                .from(tx.from)
-                .to(tx.to.unwrap())
-                .value(tx.value)
-                .data(tx.input.clone())
-                .chain_id(chain_id)
-                .nonce(tx.nonce)
-                .gas(tx.gas)
-                .max_fee_per_gas(
-                    tx.max_fee_per_gas
-                        .unwrap_or(parse_units(40, "gwei").unwrap().into()),
-                )
-                .max_priority_fee_per_gas(
-                    tx.max_priority_fee_per_gas
-                        .unwrap_or(parse_units(40, "gwei").unwrap().into()),
-                )
-                .into(),
+    pub async fn debug_trace_call(&self, tx: &Transaction, block_number: U64) -> Result<Option<CallFrame>> {
+        let call_config = CallConfig {
+            with_log: Some(true), // 👈 make sure we are getting logs
+            ..Default::default()
         };
-        let block_number: Option<BlockId> =
-            block_number.map(|b_number| BlockId::Number(BlockNumber::Number(b_number)));
+        
+        let mut opts = GethDebugTracingCallOptions::default();
+        opts.tracing_options.tracer = Some(GethDebugTracerType::BuiltInTracer(
+            GethDebugBuiltInTracerType::CallTracer,
+        ));
+        opts.tracing_options.tracer_config = Some(GethDebugTracerConfig::BuiltInTracer(
+            GethDebugBuiltInTracerConfig::CallTracer(call_config),
+        ));
 
-        let trace: GethTrace = self
-            .data
+        let provider: &Arc<Provider<Ws>> = self.raw_ws_provider();
+        let mut tx: Transaction = tx.clone();
+
+        let nonce = self
             .raw_ws_provider()
-            .debug_trace_call(tx, block_number, get_trace_options())
-            .await?;
+            .get_transaction_count(tx.from, Some(block_number.into()))
+            .await
+            .unwrap_or_default();
+        tx.nonce = nonce;
 
-        Ok(trace)
+        let trace = provider.debug_trace_call(&tx, Some(block_number.into()), opts).await;
+        if trace.is_err() {
+            return Ok(None);
+        }
+
+        let trace: GethTrace = trace.unwrap();
+        let GethTrace::Known(call_tracer) = trace else { return Ok(None); };
+        let GethTraceFrame::CallTracer(frame) = call_tracer else { return Ok(None); };
+
+        Ok(Some(frame))
     }
 }
 

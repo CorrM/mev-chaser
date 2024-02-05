@@ -2,10 +2,14 @@ use anyhow::Result;
 use contracts::UNISWAPV2PAIRABI_ABI;
 use ethers_core::{
     abi::{Log, RawLog},
-    types::Address,
+    types::{Address, CallLogFrame, H256},
 };
 use shared::trace::TraceLogData;
-use std::{collections::HashMap, str::FromStr, sync::{Arc, Mutex, RwLock}};
+use std::{
+    collections::HashMap,
+    str::FromStr,
+    sync::{Arc, Mutex, RwLock},
+};
 
 use crate::{AmmPool, AmmProtocol, AmmProtocolKind};
 
@@ -36,23 +40,33 @@ impl UniswapV2Protocol {
         })
     }
 
-    pub fn decode_pair_trace_logs(trace_log: &TraceLogData) -> HashMap<String, (Address, Log)> {
+    pub fn decode_pair_trace_logs(trace_log: &CallLogFrame) -> Option<HashMap<String, (Address, Log)>> {
         let mut ret: HashMap<String, (Address, Log)> = HashMap::new();
 
+        let Some(ref topics) = trace_log.topics else {
+            return None;
+        };
+
+        if topics.is_empty() {
+            return None;
+        }
+
         for ev in UNISWAPV2PAIRABI_ABI.events() {
-            let raw_log: &RawLog = trace_log.raw_log();
-            if ev.signature() != raw_log.topics[0] {
+            if ev.signature() != topics[0] {
                 continue;
             }
 
-            let log_result: Result<Log, ethers_core::abi::Error> = ev.parse_log(raw_log.clone());
-
+            // TODO: Need to change this
+            let log_result: Result<Log, ethers_core::abi::Error> = ev.parse_log(RawLog {
+                topics: topics.clone(),
+                data: trace_log.data.as_ref().unwrap().to_vec(),
+            });
             if let Ok(log) = log_result {
-                ret.insert(ev.name.clone(), (trace_log.address(), log));
+                ret.insert(ev.name.clone(), (trace_log.address.unwrap(), log));
             }
         }
 
-        ret
+        Some(ret)
     }
 
     pub fn factory(&self) -> &Address {
@@ -78,6 +92,9 @@ impl AmmProtocol for UniswapV2Protocol {
     }
 
     fn pools(&self) -> Vec<Arc<RwLock<dyn AmmPool>>> {
-        self.pools.iter().map(|p| Arc::clone(p) as Arc<RwLock<dyn AmmPool>>).collect()
+        self.pools
+            .iter()
+            .map(|p| Arc::clone(p) as Arc<RwLock<dyn AmmPool>>)
+            .collect()
     }
 }

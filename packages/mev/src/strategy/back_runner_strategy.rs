@@ -1,15 +1,20 @@
-use amm::{uniswap_v2_utils::batch_update_uniswap_v2_pools, update_touched_pool_reserves, AmmPool, AmmProtocol, AmmProtocolKind, UniswapV2Protocol};
+use amm::{
+    uniswap_v2_utils::batch_update_uniswap_v2_pools, update_touched_pool_reserves, AmmPool, AmmProtocol,
+    AmmProtocolKind, UniswapV2Protocol,
+};
 use anyhow::Result;
 use ethers_core::{
     abi::Log,
-    types::{Address, GethTrace, Transaction, U256},
+    types::{Address, Block, BlockNumber, CallFrame, CallLogFrame, GethTrace, Transaction, H256, U256},
     utils::to_checksum,
 };
+use ethers_providers::Middleware;
 use shared::{
     network_streams::{NetworkEvent, NetworkStreamManagerBuilder, NetworkStreamsManager, NewBlock},
-    provider::{NodeProvider, NodeProviderKind, NodeProviderManager, NormalNodeProvider},
+    provider::{DebugTraceCallNodeProvider, NodeProvider, NodeProviderKind, NodeProviderManager, NormalNodeProvider},
     token::{CryptoToken, TokenManager},
     trace::{get_trace_all_logs, TraceLogData},
+    utils::calculate_next_block_base_fee,
 };
 use std::sync::RwLock;
 use std::{collections::HashMap, ops::Deref, sync::Arc};
@@ -211,6 +216,22 @@ impl BackRunnerStrategy {
             .watch_pending_transactions(Some(filters.clone()))
             .build();
 
+        let block: Block<H256> = provider
+            .raw_ws_provider()
+            .get_block(BlockNumber::Latest)
+            .await
+            .unwrap()
+            .unwrap();
+        let mut new_block = NewBlock {
+            block_number: block.number.unwrap(),
+            base_fee: block.base_fee_per_gas.unwrap(),
+            next_base_fee: calculate_next_block_base_fee(
+                block.gas_used,
+                block.gas_limit,
+                block.base_fee_per_gas.unwrap(),
+            ),
+        };
+
         let mut event_receiver: Receiver<NetworkEvent> = ns.subscribe();
         while let Ok(event) = event_receiver.recv().await {
             if let NetworkEvent::PendingTx(tx) = &event {
@@ -221,27 +242,34 @@ impl BackRunnerStrategy {
                     continue;
                 }
 
-                let frame: Result<GethTrace> = self
-                    .provider_manager
-                    .get_next_debug_trace_call()
-                    .debug_trace_call(tx, None)
-                    .await;
+                let debug_provider: &Arc<DebugTraceCallNodeProvider> =
+                    self.provider_manager.get_next_debug_trace_call();
+                let frame: Result<Option<CallFrame>> =
+                    debug_provider.debug_trace_call(tx, new_block.block_number).await;
                 if frame.is_err() {
-                    println!("[?] Error from get_debug_trace_call: {:?}", frame);
+                    println!("[?] Error from debug_trace_call: {:?}", frame.unwrap_err());
                     continue;
                 }
 
-                let frame: GethTrace = frame.unwrap();
-                let trace_logs: Vec<TraceLogData> = get_trace_all_logs(frame);
+                let Some(frame) = frame.unwrap() else {
+                    continue;
+                };
+
+                let mut trace_logs: Vec<CallLogFrame> = Vec::new();
+                DebugTraceCallNodeProvider::extract_trace_logs(&frame, &mut trace_logs);
 
                 // TODO: Use to_address to determine which dex to `decode_pair_trace_logs`
                 for trace_log in trace_logs {
-                    let logs: HashMap<String, (Address, Log)> = UniswapV2Protocol::decode_pair_trace_logs(&trace_log);
+                    let logs: Option<HashMap<String, (Address, Log)>> = UniswapV2Protocol::decode_pair_trace_logs(&trace_log);
+                    let Some(logs) = logs else { continue };
+                    
                     self.on_new_pending_tx(tx, &logs);
                 }
-            } else if let NetworkEvent::Block(block) = &event {
-                self.next_block_base_fee = block.next_base_fee;
-                self.on_new_block(block).await;
+            } else if let NetworkEvent::Block(block) = event {
+                new_block = block;
+                self.next_block_base_fee = new_block.next_base_fee;
+
+                self.on_new_block(&new_block).await;
             }
         }
 
