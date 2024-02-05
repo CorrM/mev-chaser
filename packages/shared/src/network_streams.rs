@@ -1,6 +1,7 @@
 pub use network_event::*;
 pub use network_streams_builder::*;
 pub use network_streams_manager::*;
+pub use new_block_stream::NewBlock;
 
 mod log_stream;
 pub mod network_event;

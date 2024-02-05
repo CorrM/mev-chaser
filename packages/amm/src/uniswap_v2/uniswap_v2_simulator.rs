@@ -28,11 +28,6 @@ impl UniswapV2Simulator {
         let numerator: U256 = amount_in_with_fee * reserve_out;
         let denominator: U256 = (reserve_in * 1000) + amount_in_with_fee;
         let ret: Option<U256> = numerator.checked_div(denominator);
-
-        if ret.unwrap_or_default().is_zero() {
-            println!("get_amount_out => amount_in: {}, fee: {}, amount_in_with_fee: {}, numerator: {}, denominator: {}, ret: {:?}", amount_in, fee, amount_in_with_fee, numerator, denominator, ret);
-        }
-        
         ret
     }
 }

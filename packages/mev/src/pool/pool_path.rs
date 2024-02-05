@@ -1,4 +1,4 @@
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 use amm::{AmmPool, UniswapV2Simulator};
 use ethers_core::{
@@ -93,7 +93,7 @@ impl PoolPath {
             };
 
             let amount_out_i128: i128 = amount_out.as_u128() as i128;
-            let amount_in_i128: i128 = (amount_in * input_token_unit).as_u128() as i128;
+            let amount_in_i128: i128 = amount_in.as_u128() as i128;
             let this_profit: i128 = amount_out_i128 - amount_in_i128;
 
             if this_profit >= profit {

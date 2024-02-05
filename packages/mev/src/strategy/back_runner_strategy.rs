@@ -1,4 +1,4 @@
-use amm::{uniswap_v2_utils::batch_update_uniswap_v2_pools, AmmPool, AmmProtocol, AmmProtocolKind, UniswapV2Protocol};
+use amm::{uniswap_v2_utils::batch_update_uniswap_v2_pools, update_touched_pool_reserves, AmmPool, AmmProtocol, AmmProtocolKind, UniswapV2Protocol};
 use anyhow::Result;
 use ethers_core::{
     abi::Log,
@@ -6,8 +6,8 @@ use ethers_core::{
     utils::to_checksum,
 };
 use shared::{
-    network_streams::{NetworkEvent, NetworkStreamManagerBuilder, NetworkStreamsManager},
-    provider::{NodeProviderKind, NodeProviderManager, NormalNodeProvider},
+    network_streams::{NetworkEvent, NetworkStreamManagerBuilder, NetworkStreamsManager, NewBlock},
+    provider::{NodeProvider, NodeProviderKind, NodeProviderManager, NormalNodeProvider},
     token::{CryptoToken, TokenManager},
     trace::{get_trace_all_logs, TraceLogData},
 };
@@ -64,7 +64,7 @@ impl BackRunnerStrategy {
                 panic!("Pool {} is empty", to_checksum(pool_read_lock.address(), None));
             }
         }
-        
+
         // Generate paths
         let mut paths_container = PoolPathsContainer::new();
         for start_token in start_tokens {
@@ -119,7 +119,9 @@ impl BackRunnerStrategy {
 
         // Get paths
         let touched_paths: Option<&Vec<Arc<PoolPath>>> = self.paths_container.get_paths_containing_pool(pool_address);
-        let Some(touched_paths) = touched_paths else { return; }; // No path with this pool
+        let Some(touched_paths) = touched_paths else {
+            return;
+        }; // No path with this pool
 
         // Get spreads
         let mut spreads: HashMap<usize, i128> = HashMap::new();
@@ -156,11 +158,16 @@ impl BackRunnerStrategy {
             let path_idx: &usize = spread.0;
             let path: &Arc<PoolPath> = &touched_paths[*path_idx];
             let (optimized_in, profit) = path.optimize_amount_in(1000, 10);
-            let excess_profit: i128 = (profit.as_u128() as i128) - (gas_cost_in_wei_native.as_u128() as i128);
 
             println!("path: {:?}", path.path());
             println!("optimized_in: {optimized_in:?}");
+            if optimized_in.is_zero() {
+                continue;
+            }
+
+            let excess_profit: i128 = (profit.as_u128() as i128) - (gas_cost_in_wei_native.as_u128() as i128);
             println!("profit: {profit}");
+            println!("cost: {gas_cost_in_wei_native}");
             println!("net_profit: {excess_profit}");
 
             // TODO
@@ -168,6 +175,15 @@ impl BackRunnerStrategy {
                 println!("Profiiiiiiiiiiiiiiiiiiiiiit: {}: {}", path_idx, excess_profit);
             }
         }
+    }
+
+    async fn on_new_block(&mut self, block: &NewBlock) {
+        let provider = self.provider_manager.get_next().raw_ws_provider();
+        update_touched_pool_reserves(provider, block.block_number, &mut self.pools)
+            .await
+            .unwrap_or_else(|e| {
+                println!("[?] Error from get_touched_pool_reserves: {:?}", e);
+            });
     }
 
     pub async fn run(&mut self) -> Result<()> {
@@ -205,11 +221,17 @@ impl BackRunnerStrategy {
                     continue;
                 }
 
-                let frame: GethTrace = self
+                let frame: Result<GethTrace> = self
                     .provider_manager
                     .get_next_debug_trace_call()
                     .debug_trace_call(tx, None)
-                    .await?;
+                    .await;
+                if frame.is_err() {
+                    println!("[?] Error from get_debug_trace_call: {:?}", frame);
+                    continue;
+                }
+
+                let frame: GethTrace = frame.unwrap();
                 let trace_logs: Vec<TraceLogData> = get_trace_all_logs(frame);
 
                 // TODO: Use to_address to determine which dex to `decode_pair_trace_logs`
@@ -219,6 +241,7 @@ impl BackRunnerStrategy {
                 }
             } else if let NetworkEvent::Block(block) = &event {
                 self.next_block_base_fee = block.next_base_fee;
+                self.on_new_block(block).await;
             }
         }
 
