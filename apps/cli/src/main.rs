@@ -320,7 +320,8 @@ async fn main() -> Result<()> {
     let solidity_bridge = SolidityBridge::new(
         Address::from_str(&env.bot_address).unwrap(),
         Arc::clone(provider_manager.get_next().raw_ws_provider()),
-    );
+        env.private_key,
+    ).await?;
 
     print!("[-] Get amms ... ");
     std::io::stdout().flush().unwrap();

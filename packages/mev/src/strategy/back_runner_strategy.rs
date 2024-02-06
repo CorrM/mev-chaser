@@ -21,7 +21,7 @@ use std::sync::RwLock;
 use std::{collections::HashMap, ops::Deref, sync::Arc};
 use tokio::sync::broadcast::Receiver;
 
-use crate::pool::{generate_pool_paths, PoolPath, PoolPathItem, PoolPathsContainer};
+use crate::pool::{generate_pool_paths, PoolPath, PoolPathsContainer};
 
 pub struct BackRunnerStrategy {
     solidity_bridge: SolidityBridge,
@@ -154,9 +154,14 @@ impl BackRunnerStrategy {
         }
 
         // Get gas cost
-        let base_fee: U256 = self.next_block_base_fee;
+        let legacy_tx: bool = tx.max_fee_per_gas.is_none() && tx.max_priority_fee_per_gas.is_none();
+        let gas_price: (U256, U256) = if legacy_tx {
+            (tx.gas_price.unwrap(), U256::from(0))
+        } else {
+            (tx.max_fee_per_gas.unwrap(), tx.max_priority_fee_per_gas.unwrap())
+        };
         let estimated_gas_usage: U256 = U256::from(550000);
-        let gas_cost_in_wei_native: U256 = base_fee * estimated_gas_usage;
+        let gas_cost_in_wei_native: U256 = (gas_price.0 + gas_price.1) * estimated_gas_usage;
 
         // Sort by spread
         let mut sorted_spreads: Vec<_> = spreads.iter().collect();
@@ -170,14 +175,12 @@ impl BackRunnerStrategy {
             let path: &Arc<PoolPath> = &touched_paths[*path_idx];
             let (optimized_in, amount_min_out, profit) = path.optimize_amount_in(1000, 10);
 
-            println!("path: {:?}", path.path());
             println!("optimized_in: {optimized_in:?}");
             if optimized_in.is_zero() {
                 continue;
             }
 
             let excess_profit: i128 = (profit.as_u128() as i128) - (gas_cost_in_wei_native.as_u128() as i128);
-            println!("profit: {profit}");
             println!("cost: {gas_cost_in_wei_native}");
             println!("net_profit: {excess_profit}");
 
@@ -216,10 +219,18 @@ impl BackRunnerStrategy {
             swaps_are_chained, swaps_to_execute
         );
 
-        //let tx_hash: Result<H256> = self
-        //    .solidity_bridge
-        //    .get_loan_then_swap_chain(swaps.0, swaps.1, tx.gas_price)
-        //    .await;
+        let tx_hash: Result<H256> = self
+            .solidity_bridge
+            .get_loan_then_swap_chain(
+                swaps_to_execute,
+                swaps.1,
+                false,
+                tx.gas_price,
+                tx.max_fee_per_gas,
+                tx.max_priority_fee_per_gas,
+            )
+            .await;
+        println!("back_running_tx_hash: {:?}", tx_hash);
     }
 
     async fn on_new_block(&mut self, block: &NewBlock) {
