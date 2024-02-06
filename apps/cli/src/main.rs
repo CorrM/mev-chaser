@@ -3,6 +3,7 @@ use anyhow::{anyhow, Result};
 use ethers_core::types::Address;
 use ethers_core::utils::to_checksum;
 use ethers_providers::{Http, Provider};
+use shared::solidity_bridge::SolidityBridge;
 use std::env;
 use std::io::Write;
 use std::ops::Deref;
@@ -155,7 +156,7 @@ async fn get_amms(
                     network_options["router"].as_str().unwrap(),
                 )?;
                 let factory_contract =
-                    UniswapV2FactoryAbi::new(*uniswap_v2.factory(), provider.raw_http_provider().clone());
+                    UniswapV2FactoryAbi::new(*uniswap_v2.factory(), Arc::clone(provider.raw_http_provider()));
 
                 for (token_a, token_b) in &pairs {
                     let db_pool: Option<DbDexPool> =
@@ -315,7 +316,11 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
-    let token_manager: TokenManager = TokenManager::new(get_tokens(&db, &target_network)?, &target_network);
+    let token_manager = TokenManager::new(get_tokens(&db, &target_network)?, &target_network);
+    let solidity_bridge = SolidityBridge::new(
+        Address::from_str(&env.bot_address).unwrap(),
+        Arc::clone(provider_manager.get_next().raw_ws_provider()),
+    );
 
     print!("[-] Get amms ... ");
     std::io::stdout().flush().unwrap();
@@ -338,7 +343,8 @@ async fn main() -> Result<()> {
     // 2 are traingle arbitrage
     print!("[-] Prepare strategy ... ");
     std::io::stdout().flush().unwrap();
-    let mut strategy = BackRunnerStrategy::new(token_manager, provider_manager, amms, 2, start_tokens).await;
+    let mut strategy =
+        BackRunnerStrategy::new(solidity_bridge, token_manager, provider_manager, amms, 2, start_tokens).await;
     println!("Done");
 
     strategy.run().await?;

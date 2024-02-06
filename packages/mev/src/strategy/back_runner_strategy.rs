@@ -3,26 +3,28 @@ use amm::{
     AmmProtocolKind, UniswapV2Protocol,
 };
 use anyhow::Result;
+use contracts::OneSwapInfo;
 use ethers_core::{
     abi::Log,
-    types::{Address, Block, BlockNumber, CallFrame, CallLogFrame, GethTrace, Transaction, H256, U256},
+    types::{Address, Block, BlockNumber, CallFrame, CallLogFrame, Transaction, H256, U256},
     utils::to_checksum,
 };
 use ethers_providers::Middleware;
 use shared::{
     network_streams::{NetworkEvent, NetworkStreamManagerBuilder, NetworkStreamsManager, NewBlock},
     provider::{DebugTraceCallNodeProvider, NodeProvider, NodeProviderKind, NodeProviderManager, NormalNodeProvider},
+    solidity_bridge::SolidityBridge,
     token::{CryptoToken, TokenManager},
-    trace::{get_trace_all_logs, TraceLogData},
     utils::calculate_next_block_base_fee,
 };
 use std::sync::RwLock;
 use std::{collections::HashMap, ops::Deref, sync::Arc};
 use tokio::sync::broadcast::Receiver;
 
-use crate::pool::{generate_pool_paths, PoolPath, PoolPathsContainer};
+use crate::pool::{generate_pool_paths, PoolPath, PoolPathItem, PoolPathsContainer};
 
 pub struct BackRunnerStrategy {
+    solidity_bridge: SolidityBridge,
     token_manager: TokenManager,
     provider_manager: NodeProviderManager,
     dexes: Vec<Arc<dyn AmmProtocol>>,
@@ -33,6 +35,7 @@ pub struct BackRunnerStrategy {
 
 impl BackRunnerStrategy {
     pub async fn new(
+        solidity_bridge: SolidityBridge,
         token_manager: TokenManager,
         provider_manager: NodeProviderManager,
         dexes: Vec<Arc<dyn AmmProtocol>>,
@@ -82,6 +85,7 @@ impl BackRunnerStrategy {
         //paths_container.get_paths_containing_pool(&pool_address).unwrap();
 
         Self {
+            solidity_bridge,
             token_manager,
             provider_manager,
             dexes,
@@ -97,7 +101,7 @@ impl BackRunnerStrategy {
         }
     }
 
-    fn on_new_pending_tx(&self, tx: &Transaction, decoded_log: &HashMap<String, (Address, Log)>) {
+    async fn on_new_pending_tx(&self, tx: &Transaction, decoded_log: &HashMap<String, (Address, Log)>) {
         let sync_log: Option<&(Address, Log)> = decoded_log.get("Sync");
         if sync_log.is_none() {
             return;
@@ -125,8 +129,9 @@ impl BackRunnerStrategy {
         // Get paths
         let touched_paths: Option<&Vec<Arc<PoolPath>>> = self.paths_container.get_paths_containing_pool(pool_address);
         let Some(touched_paths) = touched_paths else {
+            // No path with this pool
             return;
-        }; // No path with this pool
+        };
 
         // Get spreads
         let mut spreads: HashMap<usize, i128> = HashMap::new();
@@ -158,11 +163,12 @@ impl BackRunnerStrategy {
         sorted_spreads.sort_by_key(|x| x.1);
         sorted_spreads.reverse();
 
-        // Run
+        // Get most profitable path
+        let mut best_path: Option<(&Arc<PoolPath>, U256, U256)> = None;
         for spread in sorted_spreads {
             let path_idx: &usize = spread.0;
             let path: &Arc<PoolPath> = &touched_paths[*path_idx];
-            let (optimized_in, profit) = path.optimize_amount_in(1000, 10);
+            let (optimized_in, amount_min_out, profit) = path.optimize_amount_in(1000, 10);
 
             println!("path: {:?}", path.path());
             println!("optimized_in: {optimized_in:?}");
@@ -175,11 +181,45 @@ impl BackRunnerStrategy {
             println!("cost: {gas_cost_in_wei_native}");
             println!("net_profit: {excess_profit}");
 
-            // TODO
-            if excess_profit > 0 {
-                println!("Profiiiiiiiiiiiiiiiiiiiiiit: {}: {}", path_idx, excess_profit);
+            if excess_profit <= 0 {
+                continue;
             }
+
+            // Check amount_min_out
+            if best_path.is_some_and(|x| x.2 >= amount_min_out) {
+                continue;
+            }
+
+            best_path = Some((path, optimized_in, amount_min_out));
         }
+
+        let Some(best_path) = best_path else {
+            return;
+        };
+
+        // Execute swap
+        let swap_path: &Arc<PoolPath> = best_path.0;
+        let swap_input_amount: U256 = best_path.1;
+        let swap_output_amount: U256 = best_path.2;
+
+        let swaps: Result<(Vec<OneSwapInfo>, bool)> = swap_path.make_swaps(swap_input_amount, swap_output_amount);
+        let Ok(swaps) = swaps else {
+            println!("Failed to make swap information: {:?}", swaps.unwrap_err());
+            return;
+        };
+
+        let swaps_to_execute: Vec<OneSwapInfo> = swaps.0;
+        let swaps_are_chained: bool = swaps.1;
+
+        println!(
+            "swaps_are_chained: {}, swaps: {:?}",
+            swaps_are_chained, swaps_to_execute
+        );
+
+        //let tx_hash: Result<H256> = self
+        //    .solidity_bridge
+        //    .get_loan_then_swap_chain(swaps.0, swaps.1, tx.gas_price)
+        //    .await;
     }
 
     async fn on_new_block(&mut self, block: &NewBlock) {
@@ -260,10 +300,11 @@ impl BackRunnerStrategy {
 
                 // TODO: Use to_address to determine which dex to `decode_pair_trace_logs`
                 for trace_log in trace_logs {
-                    let logs: Option<HashMap<String, (Address, Log)>> = UniswapV2Protocol::decode_pair_trace_logs(&trace_log);
+                    let logs: Option<HashMap<String, (Address, Log)>> =
+                        UniswapV2Protocol::decode_pair_trace_logs(&trace_log);
                     let Some(logs) = logs else { continue };
-                    
-                    self.on_new_pending_tx(tx, &logs);
+
+                    self.on_new_pending_tx(tx, &logs).await;
                 }
             } else if let NetworkEvent::Block(block) = event {
                 new_block = block;

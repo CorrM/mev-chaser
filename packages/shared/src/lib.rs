@@ -1,3 +1,4 @@
+pub mod solidity_bridge;
 pub mod network;
 pub mod network_streams;
 pub mod provider;

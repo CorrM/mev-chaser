@@ -20,4 +20,5 @@ fn main() {
     gen_abi("UniswapV2FactoryAbi", "UniswapV2Factory.json", "uniswap_v2_factory.rs");
     gen_abi("UniswapV2PairAbi", "UniswapV2Pair.json", "uniswap_v2_pair.rs");
     gen_abi("UniswapV2RouterAbi", "UniswapV2Router.json", "uniswap_v2_router.rs");
+    gen_abi("BalancerFlashLoanRecipientAbi", "BalancerFlashLoanRecipient.json", "balancer_flash_loan_recipient.rs");
 }

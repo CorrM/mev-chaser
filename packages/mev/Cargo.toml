@@ -4,8 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-shared = { path = "../../packages/shared" }
-amm = { path = "../../packages/amm" }
+shared = { path = "../shared" }
+amm = { path = "../amm" }
+contracts = { path = "../contracts" }
 
 anyhow = { workspace = true }
 tokio = { workspace = true }
