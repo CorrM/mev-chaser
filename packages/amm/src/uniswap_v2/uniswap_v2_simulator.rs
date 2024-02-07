@@ -1,13 +1,15 @@
 use ethers::types::U256;
 
+use crate::AmmPool;
+
 pub struct UniswapV2Simulator;
 
 impl UniswapV2Simulator {
-    pub fn reserves_to_price(reserve0: U256, reserve1: U256, decimals0: u8, decimals1: u8, token0_in: bool) -> f64 {
-        let r0 = reserve0.as_u128() as f64;
-        let r1 = reserve1.as_u128() as f64;
-        let d0 = decimals0 as i32;
-        let d1 = decimals1 as i32;
+    pub fn reserves_to_price(pool: &dyn AmmPool, token0_in: bool) -> f64 {
+        let r0 = pool.reserve0().as_u128() as f64;
+        let r1 = pool.reserve1().as_u128() as f64;
+        let d0 = pool.token0().decimals() as i32;
+        let d1 = pool.token1().decimals() as i32;
         let mult = (10.0_f64).powi(d0 - d1);
 
         if r1 == 0.0 || r0 == 0.0 {

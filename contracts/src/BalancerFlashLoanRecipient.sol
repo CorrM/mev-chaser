@@ -52,7 +52,6 @@ error MultiSwapInsufficientFundsToSwapError(
 // TODO: Split into multiple contracts, dont do every thing in one contract, as this contract are only a "Balancer" FlashLoanRecipient
 //       Use another contract to handle more that one provider, with passing callback to the main contract, Don't forget to change the token recipient
 //       to main contract not to that contract
-
 library SwapUtils {
     /**
      * Don't call this function before make sure `router` approved to swap `amountIn`
@@ -67,6 +66,7 @@ library SwapUtils {
         uint256 deadline
     ) internal returns (uint256, bool, string memory) {
         IUniswapV2Router02 routerV2 = IUniswapV2Router02(router);
+
         try
             routerV2.swapExactTokensForTokens(
                 amountIn,
@@ -80,9 +80,9 @@ library SwapUtils {
             return (amounts[1], false, "");
         } catch Error(string memory reason) {
             return (0, true, reason);
+        } catch (bytes memory reason) {
+            revert("Mostly UniswapV2 pair not found");
         }
-
-        // return (0, "Unkown error");
     }
 
     /**
@@ -207,10 +207,7 @@ contract BalancerFlashLoanRecipient is IFlashLoanRecipient {
 
         bool hasError = false;
         string memory errorReason;
-
-        if (returnOutput) {
-            amountsOut = new uint256[](swaps.length);
-        }
+        amountsOut = new uint256[](returnOutput ? swaps.length : 1);
 
         uint256 curAmountIn;
         uint256 curAmountOut;
@@ -237,7 +234,7 @@ contract BalancerFlashLoanRecipient is IFlashLoanRecipient {
             tIn20.safeIncreaseAllowance(curSwap.Router, curSwap.AmountIn);
 
             if (curSwap.Deadline == 0) {
-                curSwap.Deadline = block.timestamp;
+                curSwap.Deadline = block.timestamp + 60;
             }
 
             if (chainSwaps) {
@@ -286,6 +283,9 @@ contract BalancerFlashLoanRecipient is IFlashLoanRecipient {
                 revert NotSupportedAmmProtocolError(curSwap.Protocol);
             }
 
+            // no need for `safeDecreaseAllowance` as it is done when the router do the swap
+            //tIn20.safeDecreaseAllowance(curSwap.Router, curAmountIn);
+
             if (hasError) {
                 revert MultiSwapError(i, errorReason);
             }
@@ -293,6 +293,10 @@ contract BalancerFlashLoanRecipient is IFlashLoanRecipient {
             if (returnOutput) {
                 amountsOut[i] = curAmountOut;
             }
+        }
+
+        if (!returnOutput) {
+            amountsOut[0] = curAmountOut;
         }
 
         return amountsOut;
@@ -334,13 +338,15 @@ contract BalancerFlashLoanRecipient is IFlashLoanRecipient {
         require(tokens.length == 1, "Only support one to one loan");
         require(amounts.length == 1, "Only support one to one loan");
 
-        (OneSwapInfo[] memory swaps, bool chainSwaps, bool returnOutput) = abi.decode(
-            userData,
-            (OneSwapInfo[], bool, bool)
-        );
+        (OneSwapInfo[] memory swaps, bool chainSwaps, bool returnOutput) = abi
+            .decode(userData, (OneSwapInfo[], bool, bool));
 
         // Do swaps
-        uint256[] memory amountsOut = doMultiSwap(swaps, chainSwaps, returnOutput);
+        uint256[] memory amountsOut = doMultiSwap(
+            swaps,
+            chainSwaps,
+            returnOutput
+        );
 
         // Repay
         uint256 amountToPayback = amounts[0] + feeAmounts[0];

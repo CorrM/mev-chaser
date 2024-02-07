@@ -4,14 +4,14 @@ use std::str::FromStr;
 
 use crate::network::NetworkKind;
 
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq)]
 pub struct CryptoToken {
     network: NetworkKind,
     address: Address,
     name: String,
     symbol: String,
     decimals: u8,
-    decimals_pow: U256,
+    decimals_pow: f64,
 }
 
 impl CryptoToken {
@@ -28,7 +28,7 @@ impl CryptoToken {
             name: name.into(),
             symbol: symbol.into(),
             decimals,
-            decimals_pow: U256::from(10).pow(U256::from(decimals)),
+            decimals_pow: (10 as f64).powi(decimals as i32),
         })
     }
 
@@ -53,10 +53,10 @@ impl CryptoToken {
     }
 
     pub fn convert_to_decimal(&self, value: U256) -> f64 {
-        (value.as_u64() as f64) / (self.decimals_pow.as_u64() as f64)
+        (value.as_u64() as f64) / self.decimals_pow
     }
 
     pub fn convert_to_amount(&self, value: f64) -> U256 {
-        U256::from((value.powi(self.decimals as i32)) as u64) * self.decimals_pow
+        U256::from((value * self.decimals_pow) as u64)
     }
 }

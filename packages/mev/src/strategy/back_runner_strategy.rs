@@ -1,13 +1,13 @@
 use amm::{
     uniswap_v2_utils::batch_update_uniswap_v2_pools, update_touched_pool_reserves, AmmPool, AmmProtocol,
-    AmmProtocolKind, UniswapV2Protocol,
+    AmmProtocolKind, UniswapV2Protocol, UniswapV2Simulator,
 };
 use anyhow::Result;
 use contracts::OneSwapInfo;
 use ethers_core::{
     abi::Log,
     types::{Address, Block, BlockNumber, CallFrame, CallLogFrame, Transaction, H256, U256},
-    utils::to_checksum,
+    utils::{parse_units, to_checksum},
 };
 use ethers_providers::Middleware;
 use shared::{
@@ -29,6 +29,7 @@ pub struct BackRunnerStrategy {
     provider_manager: NodeProviderManager,
     dexes: Vec<Arc<dyn AmmProtocol>>,
     pools: HashMap<Address, Arc<RwLock<dyn AmmPool>>>,
+    price_calc_pools: HashMap<Address, Arc<RwLock<dyn AmmPool>>>,
     paths_container: PoolPathsContainer,
     next_block_base_fee: U256, // TODO: Should be a service that manages gas_price
 }
@@ -75,14 +76,57 @@ impl BackRunnerStrategy {
 
         // Generate paths
         let mut paths_container = PoolPathsContainer::new();
-        for start_token in start_tokens {
-            let paths: Vec<PoolPath> = generate_pool_paths(&pools, &start_token, &start_token, max_hops);
+        for start_token in &start_tokens {
+            let paths: Vec<PoolPath> = generate_pool_paths(&pools, start_token, start_token, max_hops);
             paths_container.add_multi_path(paths);
         }
 
-        // No path test
-        //let pool_address: Address = Address::from_str("0xDF9549017071B88a5B9a7252f875632bfdbb7fc7").unwrap();
-        //paths_container.get_paths_containing_pool(&pool_address).unwrap();
+        // => Test
+        //let pool_address: Address = Address::from_str("0x2cF7252e74036d1Da831d11089D326296e64a728").unwrap();
+        //let gffsdg = &paths_container.get_paths_containing_pool(&pool_address).unwrap()[0];
+        //let swaps = gffsdg.make_swaps(
+        //    parse_units("1", "ether").unwrap().into(),
+        //    parse_units("0.5", "ether").unwrap().into(),
+        //).unwrap();
+
+        //let gg = solidity_bridge
+        //    .get_loan_then_swap_chain(swaps.0, swaps.1, false, None, None, None)
+        //    .await;
+        //let err = gg.unwrap_err();
+        //println!("Error 0: {:?}", err);
+        //println!("Error 1: {:?}", err.decode_revert::<String>());
+        // => Test
+
+        let native_token: &Arc<CryptoToken> = token_manager.native_token();
+        let price_calc_pools: HashMap<Address, Arc<RwLock<dyn AmmPool>>> = start_tokens
+            .iter()
+            .map(|t| {
+                for pool in &pools {
+                    let pool_read_lock = pool.read().unwrap();
+
+                    if !Arc::ptr_eq(pool_read_lock.token0(), native_token)
+                        && !Arc::ptr_eq(pool_read_lock.token1(), native_token)
+                    {
+                        continue;
+                    }
+
+                    if !Arc::ptr_eq(pool_read_lock.token0(), t) && !Arc::ptr_eq(pool_read_lock.token1(), t) {
+                        continue;
+                    }
+
+                    return (*t.address(), Arc::clone(pool));
+                }
+
+                panic!(
+                    "Could not find pool for native token({}) with token({})",
+                    native_token.name(),
+                    t.name()
+                );
+            })
+            .collect();
+
+        // Update pools again before starts
+        batch_update_uniswap_v2_pools(provider_manager.get_next(), &pools).await;
 
         Self {
             solidity_bridge,
@@ -96,6 +140,7 @@ impl BackRunnerStrategy {
                     (address, p)
                 })
                 .collect::<HashMap<_, _>>(),
+            price_calc_pools,
             paths_container,
             next_block_base_fee: U256::zero(),
         }
@@ -169,6 +214,7 @@ impl BackRunnerStrategy {
         sorted_spreads.reverse();
 
         // Get most profitable path
+        let native_token: &Arc<CryptoToken> = self.token_manager.native_token();
         let mut best_path: Option<(&Arc<PoolPath>, U256, U256)> = None;
         for spread in sorted_spreads {
             let path_idx: &usize = spread.0;
@@ -180,8 +226,22 @@ impl BackRunnerStrategy {
                 continue;
             }
 
-            let excess_profit: i128 = (profit.as_u128() as i128) - (gas_cost_in_wei_native.as_u128() as i128);
+            let input_token: Arc<CryptoToken> = path.get_input_token();
+            println!("input_token: {}", input_token.symbol());
+
+            // Convert profit to native token price first, so i can calculate the net profit (profit - gas_cost_in_wei_native)
+            let price_pool: &Arc<RwLock<dyn AmmPool>> = self.price_calc_pools.get(input_token.address()).unwrap();
+            let price_pool: &dyn AmmPool = &*price_pool.read().unwrap();
+            let native_token_price: f64 = UniswapV2Simulator::reserves_to_price(
+                price_pool,
+                Arc::ptr_eq(price_pool.token1(), native_token),
+            );
+            let profit_in_native: f64 = input_token.convert_to_decimal(profit) * native_token_price;
+            let profit_in_native: U256 = native_token.convert_to_amount(profit_in_native);
+
+            let excess_profit: i128 = (profit_in_native.as_u128() as i128) - (gas_cost_in_wei_native.as_u128() as i128);
             println!("cost: {gas_cost_in_wei_native}");
+            println!("profit: {profit}");
             println!("net_profit: {excess_profit}");
 
             if excess_profit <= 0 {
@@ -219,11 +279,11 @@ impl BackRunnerStrategy {
             swaps_are_chained, swaps_to_execute
         );
 
-        let tx_hash: Result<H256> = self
+        let tx_hash = self
             .solidity_bridge
             .get_loan_then_swap_chain(
                 swaps_to_execute,
-                swaps.1,
+                swaps_are_chained,
                 false,
                 tx.gas_price,
                 tx.max_fee_per_gas,

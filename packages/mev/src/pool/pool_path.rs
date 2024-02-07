@@ -103,8 +103,7 @@ impl PoolPath {
                 optimized_in = amount_in;
                 amount_min_out = amount_out;
                 profit = this_profit;
-            } else if amount_out_i128 == 0 && amount_in_i128 == 0 {
-                // mostly one of pools in the path is not enough liquidity
+            } else {
                 break;
             }
         }

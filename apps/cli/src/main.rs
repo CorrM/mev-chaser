@@ -1,7 +1,7 @@
 use amm::{AmmPool, AmmPoolKind, AmmProtocol, UniswapV2Pool, UniswapV2Protocol};
 use anyhow::{anyhow, Result};
 use ethers_core::types::Address;
-use ethers_core::utils::to_checksum;
+use ethers_core::utils::{parse_units, to_checksum};
 use ethers_providers::{Http, Provider};
 use shared::solidity_bridge::SolidityBridge;
 use std::env;
@@ -11,7 +11,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::{env::VarError, path::Path};
 
-use contracts::{ERC20TokenAbi, UniswapV2FactoryAbi, UniswapV2PairAbi};
+use contracts::{ERC20TokenAbi, OneSwapInfo, UniswapV2FactoryAbi, UniswapV2PairAbi};
 use database::{Database, DbDex, DbDexNetwork, DbDexPool, DbDexProtocol, DbToken, DbTokenNetwork};
 use mev::BackRunnerStrategy;
 use shared::provider::NodeProvider;
@@ -319,11 +319,12 @@ async fn main() -> Result<()> {
     let token_manager = TokenManager::new(get_tokens(&db, &target_network)?, &target_network);
     let solidity_bridge = SolidityBridge::new(
         Address::from_str(&env.bot_address).unwrap(),
-        Arc::clone(provider_manager.get_next().raw_ws_provider()),
+        Arc::clone(provider_manager.get_next().raw_http_provider()),
         env.private_key,
-    ).await?;
+    )
+    .await?;
 
-    print!("[-] Get amms ... ");
+    println!("[-] Geting amms");
     std::io::stdout().flush().unwrap();
     let amms: Vec<Arc<dyn AmmProtocol>> = get_amms(
         &db,
@@ -332,22 +333,21 @@ async fn main() -> Result<()> {
         &token_manager,
     )
     .await?;
-    println!("Done");
 
     let start_tokens: Vec<Arc<CryptoToken>> = vec![
-        token_manager.get_by_symbol("WMATIC").unwrap(),
+        //token_manager.get_by_symbol("WMATIC").unwrap(), // TODO: Test => IDK but mostly it needs swapTokenForEth v2 function
         token_manager.get_by_symbol("USDT").unwrap(),
         token_manager.get_by_symbol("USDC").unwrap(),
         token_manager.get_by_symbol("DAI").unwrap(),
     ];
 
     // 2 are traingle arbitrage
-    print!("[-] Prepare strategy ... ");
+    println!("[-] Prepare strategy");
     std::io::stdout().flush().unwrap();
     let mut strategy =
-        BackRunnerStrategy::new(solidity_bridge, token_manager, provider_manager, amms, 2, start_tokens).await;
-    println!("Done");
+        BackRunnerStrategy::new(solidity_bridge, token_manager, provider_manager, amms, 3, start_tokens).await;
 
+    println!("[+] Start strategy");
     strategy.run().await?;
 
     Ok(())

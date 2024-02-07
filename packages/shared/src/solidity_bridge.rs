@@ -5,20 +5,22 @@ use ethers::{
     middleware::SignerMiddleware,
     signers::{LocalWallet, Signer, Wallet},
 };
+use ethers_contract::ContractError;
 use ethers_core::{
     abi::Token,
     k256::ecdsa::SigningKey,
-    types::{Address, Bytes, U256, TxHash},
+    types::{Address, Bytes, TxHash, U256}, utils::parse_units,
 };
-use ethers_providers::{Middleware, Provider, Ws};
+use ethers_providers::{Middleware, Provider, Ws, Http};
 
 use contracts::{BalancerFlashLoanRecipientAbi, OneSwapInfo};
+
 pub struct SolidityBridge {
-    contract: BalancerFlashLoanRecipientAbi<SignerMiddleware<Arc<Provider<Ws>>, Wallet<SigningKey>>>,
+    contract: BalancerFlashLoanRecipientAbi<SignerMiddleware<Arc<Provider<Http>>, Wallet<SigningKey>>>,
 }
 
 impl SolidityBridge {
-    pub async fn new(address: Address, provider: Arc<Provider<Ws>>, wallet_private_key: String) -> Result<Self> {
+    pub async fn new(address: Address, provider: Arc<Provider<Http>>, wallet_private_key: String) -> Result<Self> {
         let chain_id = provider.get_chainid().await?;
 
         let mut wallet_private_key = wallet_private_key;
@@ -30,7 +32,7 @@ impl SolidityBridge {
             .parse::<LocalWallet>()?
             .with_chain_id(chain_id.as_u64());
 
-        let signer = Arc::new(SignerMiddleware::new(provider, wallet.with_chain_id(chain_id.as_u64())));
+        let signer = Arc::new(SignerMiddleware::new(provider, wallet));
         let contract = BalancerFlashLoanRecipientAbi::new(address, signer);
 
         Ok(Self { contract })
@@ -70,6 +72,7 @@ impl SolidityBridge {
         Ok(self
             .contract
             .get_loan_then_multi_swap(swaps, chain_swaps, return_output)
+            .gas(600_000)
             .estimate_gas()
             .await?)
     }
@@ -82,10 +85,11 @@ impl SolidityBridge {
         gas_price: Option<U256>,
         max_fee_per_gas: Option<U256>,
         max_priority_fee_per_gas: Option<U256>,
-    ) -> Result<TxHash> {
+    ) -> Result<TxHash, ContractError<SignerMiddleware<Arc<Provider<Http>>, Wallet<SigningKey>>>> {
         let mut call = self
             .contract
-            .get_loan_then_multi_swap(swaps, chain_swaps, return_output);
+            .get_loan_then_multi_swap(swaps, chain_swaps, return_output)
+            .gas(800_000);
 
         if gas_price.is_some() {
             call = call.legacy().gas_price(gas_price.unwrap());

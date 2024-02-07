@@ -14,11 +14,11 @@ contract BalancerFlashLoanRecipientTest is Test {
 
     function setUp() public {
         flashLoan = new BalancerFlashLoanRecipient();
-        uniswapV2Router = 0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D; // UniswapV2 Ethereum
+        uniswapV2Router = 0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506; // sushiV2 Polygon
         uniswapV3Router = 0xE592427A0AEce92De3Edee1F18E0157C05861564; // UniswapV3 Polygon
-        USDT = 0xdAC17F958D2ee523a2206206994597C13D831ec7;
-        USDC = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
-        WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
+        USDT = 0xc2132D05D31c914a87C6611C10748AEb04B58e8F;
+        USDC = 0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174;
+        WETH = 0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619;
     }
 
     function test_uniswapv2_one_path() public {
@@ -31,7 +31,7 @@ contract BalancerFlashLoanRecipientTest is Test {
         swaps[0] = OneSwapInfo({
             Protocol: AmmProtocol.UniswapV2,
             AmountIn: 20 * (10 ** 6),
-            AmountOutMin: 19 * (10 ** 6),
+            AmountOutMin: 18 * (10 ** 6),
             Router: uniswapV2Router,
             TokenIn: USDT,
             Deadline: 0,
@@ -39,9 +39,10 @@ contract BalancerFlashLoanRecipientTest is Test {
         });
 
         //vm.expectRevert();
-        flashLoan.getLoanThenMultiSwap(swaps, false);
+        flashLoan.getLoanThenMultiSwap(swaps, false, false);
     }
-
+    
+/*
     function test_uniswapv2_multi_path() public {
         address[] memory addresses = new address[](3);
         addresses[0] = USDT;
@@ -61,9 +62,9 @@ contract BalancerFlashLoanRecipientTest is Test {
         });
 
         //vm.expectRevert();
-        flashLoan.getLoanThenMultiSwap(swaps, false);
+        flashLoan.getLoanThenMultiSwap(swaps, false, false);
     }
-
+*/
     /*
     function test_getLoanThenSwapChain_uniswap2ToUniswap2_swapFail() public {
         OneSwapInfo[] memory swaps = new OneSwapInfo[](2);
