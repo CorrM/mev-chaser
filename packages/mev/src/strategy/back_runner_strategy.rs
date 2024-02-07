@@ -17,11 +17,18 @@ use shared::{
     token::{CryptoToken, TokenManager},
     utils::calculate_next_block_base_fee,
 };
-use std::sync::RwLock;
 use std::{collections::HashMap, ops::Deref, sync::Arc};
+use std::{str::FromStr, sync::RwLock};
 use tokio::sync::broadcast::Receiver;
 
 use crate::pool::{generate_pool_paths, PoolPath, PoolPathsContainer};
+
+fn submit_slippage(amount: U256) -> U256 {
+    // 0.5% slippage (995/1000)
+    // 5.0% slippage (95/100)
+    let final_amount: U256 = (amount * 995) / 1000;
+    final_amount
+}
 
 pub struct BackRunnerStrategy {
     solidity_bridge: SolidityBridge,
@@ -82,19 +89,28 @@ impl BackRunnerStrategy {
         }
 
         // => Test
-        //let pool_address: Address = Address::from_str("0x2cF7252e74036d1Da831d11089D326296e64a728").unwrap();
-        //let gffsdg = &paths_container.get_paths_containing_pool(&pool_address).unwrap()[0];
-        //let swaps = gffsdg.make_swaps(
-        //    parse_units("1", "ether").unwrap().into(),
-        //    parse_units("0.5", "ether").unwrap().into(),
-        //).unwrap();
+        let pool_address: Address = Address::from_str("0x2cF7252e74036d1Da831d11089D326296e64a728").unwrap();
+        let gffsdg = &paths_container.get_paths_containing_pool(&pool_address).unwrap()[0];
+        let swaps = gffsdg
+            .make_swaps(
+                parse_units("1", "ether").unwrap().into(),
+                parse_units("0.5", "ether").unwrap().into(),
+            )
+            .unwrap();
 
-        //let gg = solidity_bridge
-        //    .get_loan_then_swap_chain(swaps.0, swaps.1, false, None, None, None)
-        //    .await;
-        //let err = gg.unwrap_err();
-        //println!("Error 0: {:?}", err);
-        //println!("Error 1: {:?}", err.decode_revert::<String>());
+        let gg = solidity_bridge
+            .get_loan_then_swap_chain(
+                swaps.0,
+                swaps.1,
+                false,
+                Some(parse_units("40", "gwei").unwrap().into()),
+                None,
+                None,
+            )
+            .await;
+        let err = gg.unwrap_err();
+        println!("Error 0: {:?}", err);
+        println!("Error 1: {:?}", err.decode_revert::<String>());
         // => Test
 
         let native_token: &Arc<CryptoToken> = token_manager.native_token();
@@ -232,16 +248,17 @@ impl BackRunnerStrategy {
             // Convert profit to native token price first, so i can calculate the net profit (profit - gas_cost_in_wei_native)
             let price_pool: &Arc<RwLock<dyn AmmPool>> = self.price_calc_pools.get(input_token.address()).unwrap();
             let price_pool: &dyn AmmPool = &*price_pool.read().unwrap();
-            let native_token_price: f64 = UniswapV2Simulator::reserves_to_price(
-                price_pool,
-                Arc::ptr_eq(price_pool.token1(), native_token),
-            );
+            let native_token_price: f64 =
+                UniswapV2Simulator::reserves_to_price(price_pool, Arc::ptr_eq(price_pool.token1(), native_token));
             let profit_in_native: f64 = input_token.convert_to_decimal(profit) * native_token_price;
-            let profit_in_native: U256 = native_token.convert_to_amount(profit_in_native);
+            let mut profit_in_native: U256 = native_token.convert_to_amount(profit_in_native);
+
+            // Slippage 0.5%
+            profit_in_native = submit_slippage(profit_in_native);
 
             let excess_profit: i128 = (profit_in_native.as_u128() as i128) - (gas_cost_in_wei_native.as_u128() as i128);
+            println!("profit: {profit_in_native}");
             println!("cost: {gas_cost_in_wei_native}");
-            println!("profit: {profit}");
             println!("net_profit: {excess_profit}");
 
             if excess_profit <= 0 {
@@ -265,7 +282,9 @@ impl BackRunnerStrategy {
         let swap_input_amount: U256 = best_path.1;
         let swap_output_amount: U256 = best_path.2;
 
-        let swaps: Result<(Vec<OneSwapInfo>, bool)> = swap_path.make_swaps(swap_input_amount, swap_output_amount);
+        //let swaps: Result<(Vec<OneSwapInfo>, bool)> = swap_path.make_swaps(swap_input_amount, swap_output_amount);
+        let swaps: Result<(Vec<OneSwapInfo>, bool)> =
+            swap_path.make_swaps(swap_input_amount, native_token.convert_to_amount(1_f64));
         let Ok(swaps) = swaps else {
             println!("Failed to make swap information: {:?}", swaps.unwrap_err());
             return;
@@ -290,7 +309,7 @@ impl BackRunnerStrategy {
                 tx.max_priority_fee_per_gas,
             )
             .await;
-        println!("back_running_tx_hash: {:?}", tx_hash);
+        println!("back_running_tx_hash: ({:?}) {:?}", tx.hash, tx_hash);
     }
 
     async fn on_new_block(&mut self, block: &NewBlock) {

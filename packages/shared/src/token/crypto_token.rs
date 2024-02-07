@@ -57,6 +57,6 @@ impl CryptoToken {
     }
 
     pub fn convert_to_amount(&self, value: f64) -> U256 {
-        U256::from((value * self.decimals_pow) as u64)
+        U256::from((value * self.decimals_pow) as i128)
     }
 }

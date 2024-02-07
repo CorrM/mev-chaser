@@ -88,8 +88,7 @@ impl SolidityBridge {
     ) -> Result<TxHash, ContractError<SignerMiddleware<Arc<Provider<Http>>, Wallet<SigningKey>>>> {
         let mut call = self
             .contract
-            .get_loan_then_multi_swap(swaps, chain_swaps, return_output)
-            .gas(800_000);
+            .get_loan_then_multi_swap(swaps, chain_swaps, return_output);
 
         if gas_price.is_some() {
             call = call.legacy().gas_price(gas_price.unwrap());

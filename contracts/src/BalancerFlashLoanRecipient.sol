@@ -350,7 +350,7 @@ contract BalancerFlashLoanRecipient is IFlashLoanRecipient {
 
         // Repay
         uint256 amountToPayback = amounts[0] + feeAmounts[0];
-        uint256 lastAmountOut = amountsOut[swaps.length - 1];
+        uint256 lastAmountOut = amountsOut[amountsOut.length - 1];
         // TODO: Should check if the input token is the last token so the amount check are valid
         //       if not then that a vulnerability to let the contract pay the loan
         if (amountToPayback > lastAmountOut) {
