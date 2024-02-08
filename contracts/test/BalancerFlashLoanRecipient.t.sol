@@ -21,6 +21,133 @@ contract BalancerFlashLoanRecipientTest is Test {
         WETH = 0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619;
     }
 
+    function test_tokenFeeOnTransferTokens_shouldFail() public {
+        OneSwapInfo[] memory swaps = new OneSwapInfo[](4);
+
+        address[] memory swapAddresses0 = new address[](2);
+        swapAddresses0[0] = address(0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063);
+        swapAddresses0[1] = address(0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270);
+        bytes memory path0 = abi.encode(swapAddresses0);
+        swaps[0] = OneSwapInfo({
+            Protocol: AmmProtocol.UniswapV2,
+            Router: address(0xC0788A3aD43d79aa53B09c2EaCc313A787d1d607),
+            TokenIn: swapAddresses0[0],
+            Path: path0,
+            AmountIn: 10000000000000000000,
+            AmountOutMin: 0,
+            Deadline: 0
+        });
+
+        address[] memory swapAddresses1 = new address[](2);
+        swapAddresses1[0] = address(0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270);
+        swapAddresses1[1] = address(0x5eF8aAa4338086d4517E6E486BF0483F21443a27);
+        bytes memory path1 = abi.encode(swapAddresses1);
+        swaps[1] = OneSwapInfo({
+            Protocol: AmmProtocol.UniswapV2,
+            Router: address(0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff),
+            TokenIn: swapAddresses1[0],
+            Path: path1,
+            AmountIn: 0,
+            AmountOutMin: 0,
+            Deadline: 0
+        });
+
+        address[] memory swapAddresses2 = new address[](2);
+        swapAddresses2[0] = address(0x5eF8aAa4338086d4517E6E486BF0483F21443a27);
+        swapAddresses2[1] = address(0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270);
+        bytes memory path2 = abi.encode(swapAddresses2);
+        swaps[2] = OneSwapInfo({
+            Protocol: AmmProtocol.UniswapV2,
+            Router: address(0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff),
+            TokenIn: swapAddresses2[0],
+            Path: path2,
+            AmountIn: 0,
+            AmountOutMin: 0,
+            Deadline: 0
+        });
+
+        address[] memory swapAddresses3 = new address[](2);
+        swapAddresses3[0] = address(0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270);
+        swapAddresses3[1] = address(0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063);
+        bytes memory path3 = abi.encode(swapAddresses3);
+        swaps[3] = OneSwapInfo({
+            Protocol: AmmProtocol.UniswapV2,
+            Router: address(0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff),
+            TokenIn: swapAddresses3[0],
+            Path: path3,
+            AmountIn: 0,
+            AmountOutMin: 1000000000000000000,
+            Deadline: 0
+        });
+
+        //vm.expectRevert();
+        flashLoan.getLoanThenMultiSwap(swaps, true, false);
+    }
+
+    function test_uniswapv2MultiSwap() public {
+        OneSwapInfo[] memory swaps = new OneSwapInfo[](4);
+
+        address[] memory swapAddresses0 = new address[](2);
+        swapAddresses0[0] = address(0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063);
+        swapAddresses0[1] = address(0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270);
+        bytes memory path0 = abi.encode(swapAddresses0);
+        swaps[0] = OneSwapInfo({
+            Protocol: AmmProtocol.UniswapV2,
+            Router: address(0xC0788A3aD43d79aa53B09c2EaCc313A787d1d607),
+            TokenIn: swapAddresses0[0],
+            Path: path0,
+            AmountIn: 10000000000000000000,
+            AmountOutMin: 0,
+            Deadline: 0
+        });
+
+        address[] memory swapAddresses1 = new address[](2);
+        swapAddresses1[0] = address(0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270);
+        swapAddresses1[1] = address(0xc2132D05D31c914a87C6611C10748AEb04B58e8F);
+        bytes memory path1 = abi.encode(swapAddresses1);
+        swaps[1] = OneSwapInfo({
+            Protocol: AmmProtocol.UniswapV2,
+            Router: address(0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff),
+            TokenIn: swapAddresses1[0],
+            Path: path1,
+            AmountIn: 0,
+            AmountOutMin: 0,
+            Deadline: 0
+        });
+
+        address[] memory swapAddresses2 = new address[](2);
+        swapAddresses2[0] = address(0xc2132D05D31c914a87C6611C10748AEb04B58e8F);
+        swapAddresses2[1] = address(0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270);
+        bytes memory path2 = abi.encode(swapAddresses2);
+        swaps[2] = OneSwapInfo({
+            Protocol: AmmProtocol.UniswapV2,
+            Router: address(0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff),
+            TokenIn: swapAddresses2[0],
+            Path: path2,
+            AmountIn: 0,
+            AmountOutMin: 0,
+            Deadline: 0
+        });
+
+        address[] memory swapAddresses3 = new address[](2);
+        swapAddresses3[0] = address(0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270);
+        swapAddresses3[1] = address(0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063);
+        bytes memory path3 = abi.encode(swapAddresses3);
+        swaps[3] = OneSwapInfo({
+            Protocol: AmmProtocol.UniswapV2,
+            Router: address(0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff),
+            TokenIn: swapAddresses3[0],
+            Path: path3,
+            AmountIn: 0,
+            AmountOutMin: 1000000000000000000,
+            Deadline: 0
+        });
+
+        //vm.expectRevert();
+        flashLoan.getLoanThenMultiSwap(swaps, true, false);
+    }
+
+    /*
     function test_uniswapv2_one_path() public {
         address[] memory addresses = new address[](2);
         addresses[0] = USDT;
@@ -31,7 +158,7 @@ contract BalancerFlashLoanRecipientTest is Test {
         swaps[0] = OneSwapInfo({
             Protocol: AmmProtocol.UniswapV2,
             AmountIn: 20 * (10 ** 6),
-            AmountOutMin: 18 * (10 ** 6),
+            AmountOutMin: 0,
             Router: uniswapV2Router,
             TokenIn: USDT,
             Deadline: 0,
@@ -42,7 +169,6 @@ contract BalancerFlashLoanRecipientTest is Test {
         flashLoan.getLoanThenMultiSwap(swaps, false, false);
     }
     
-/*
     function test_uniswapv2_multi_path() public {
         address[] memory addresses = new address[](3);
         addresses[0] = USDT;

@@ -1,15 +1,23 @@
+use std::sync::RwLock;
+use std::{collections::HashMap, ops::Deref, sync::Arc};
+use std::str::FromStr;
+
+use anyhow::Result;
+use ethers_core::types::U64;
+use ethers_core::{
+    abi::Log,
+    types::{Address, Block, BlockNumber, CallFrame, CallLogFrame, Transaction, H256, U256},
+    utils::to_checksum,
+};
+use ethers_core::utils::parse_units;
+use ethers_providers::Middleware;
+use tokio::sync::broadcast::Receiver;
+
 use amm::{
     uniswap_v2_utils::batch_update_uniswap_v2_pools, update_touched_pool_reserves, AmmPool, AmmProtocol,
     AmmProtocolKind, UniswapV2Protocol, UniswapV2Simulator,
 };
-use anyhow::Result;
 use contracts::OneSwapInfo;
-use ethers_core::{
-    abi::Log,
-    types::{Address, Block, BlockNumber, CallFrame, CallLogFrame, Transaction, H256, U256},
-    utils::{parse_units, to_checksum},
-};
-use ethers_providers::Middleware;
 use shared::{
     network_streams::{NetworkEvent, NetworkStreamManagerBuilder, NetworkStreamsManager, NewBlock},
     provider::{DebugTraceCallNodeProvider, NodeProvider, NodeProviderKind, NodeProviderManager, NormalNodeProvider},
@@ -17,9 +25,6 @@ use shared::{
     token::{CryptoToken, TokenManager},
     utils::calculate_next_block_base_fee,
 };
-use std::{collections::HashMap, ops::Deref, sync::Arc};
-use std::{str::FromStr, sync::RwLock};
-use tokio::sync::broadcast::Receiver;
 
 use crate::pool::{generate_pool_paths, PoolPath, PoolPathsContainer};
 
@@ -99,13 +104,10 @@ impl BackRunnerStrategy {
             .unwrap();
 
         let gg = solidity_bridge
-            .get_loan_then_swap_chain(
+            .estimate_get_loan_then_swap_chain(
                 swaps.0,
                 swaps.1,
                 false,
-                Some(parse_units("40", "gwei").unwrap().into()),
-                None,
-                None,
             )
             .await;
         let err = gg.unwrap_err();
@@ -200,7 +202,9 @@ impl BackRunnerStrategy {
             let amount_in: U256 = path.get_input_token().convert_to_amount(1_f64);
             let amount_out: Option<U256> = path.get_amount_out_v2(amount_in); // TODO: Fix fees in this function
 
-            let Some(amount_out) = amount_out else { continue };
+            let Some(amount_out) = amount_out else {
+                continue;
+            };
             let _in: i128 = amount_in.as_u128() as i128;
             let _out: i128 = amount_out.as_u128() as i128;
             let spread: i128 = _out - _in;
@@ -215,7 +219,7 @@ impl BackRunnerStrategy {
         }
 
         // Get gas cost
-        let legacy_tx: bool = tx.max_fee_per_gas.is_none() && tx.max_priority_fee_per_gas.is_none();
+        let legacy_tx: bool = tx.transaction_type.unwrap_or(U64::from(0)) == U64::from(0);
         let gas_price: (U256, U256) = if legacy_tx {
             (tx.gas_price.unwrap(), U256::from(0))
         } else {
@@ -223,6 +227,8 @@ impl BackRunnerStrategy {
         };
         let estimated_gas_usage: U256 = U256::from(550000);
         let gas_cost_in_wei_native: U256 = (gas_price.0 + gas_price.1) * estimated_gas_usage;
+
+        println!("is_legacy_tx: {legacy_tx}");
 
         // Sort by spread
         let mut sorted_spreads: Vec<_> = spreads.iter().collect();
@@ -235,7 +241,7 @@ impl BackRunnerStrategy {
         for spread in sorted_spreads {
             let path_idx: &usize = spread.0;
             let path: &Arc<PoolPath> = &touched_paths[*path_idx];
-            let (optimized_in, amount_min_out, profit) = path.optimize_amount_in(1000, 10);
+            let (optimized_in, mut amount_min_out, profit) = path.optimize_amount_in(1000, 10);
 
             println!("optimized_in: {optimized_in:?}");
             if optimized_in.is_zero() {
@@ -255,6 +261,7 @@ impl BackRunnerStrategy {
 
             // Slippage 0.5%
             profit_in_native = submit_slippage(profit_in_native);
+            amount_min_out = submit_slippage(amount_min_out);
 
             let excess_profit: i128 = (profit_in_native.as_u128() as i128) - (gas_cost_in_wei_native.as_u128() as i128);
             println!("profit: {profit_in_native}");
@@ -284,7 +291,7 @@ impl BackRunnerStrategy {
 
         //let swaps: Result<(Vec<OneSwapInfo>, bool)> = swap_path.make_swaps(swap_input_amount, swap_output_amount);
         let swaps: Result<(Vec<OneSwapInfo>, bool)> =
-            swap_path.make_swaps(swap_input_amount, native_token.convert_to_amount(1_f64));
+            swap_path.make_swaps(swap_input_amount, swap_path.get_input_token().convert_to_amount(1_f64));
         let Ok(swaps) = swaps else {
             println!("Failed to make swap information: {:?}", swaps.unwrap_err());
             return;
@@ -294,21 +301,26 @@ impl BackRunnerStrategy {
         let swaps_are_chained: bool = swaps.1;
 
         println!(
-            "swaps_are_chained: {}, swaps: {:?}",
+            "swaps_are_chained: {}, swaps: {:#?}",
             swaps_are_chained, swaps_to_execute
         );
 
-        let tx_hash = self
-            .solidity_bridge
-            .get_loan_then_swap_chain(
-                swaps_to_execute,
-                swaps_are_chained,
-                false,
-                tx.gas_price,
-                tx.max_fee_per_gas,
-                tx.max_priority_fee_per_gas,
-            )
-            .await;
+        let tx_hash = if legacy_tx {
+            self.solidity_bridge
+                .get_loan_then_swap_chain(swaps_to_execute, swaps_are_chained, false, tx.gas_price, None, None)
+                .await
+        } else {
+            self.solidity_bridge
+                .get_loan_then_swap_chain(
+                    swaps_to_execute,
+                    swaps_are_chained,
+                    false,
+                    None,
+                    tx.max_fee_per_gas,
+                    tx.max_priority_fee_per_gas,
+                )
+                .await
+        };
         println!("back_running_tx_hash: ({:?}) {:?}", tx.hash, tx_hash);
     }
 
@@ -365,7 +377,9 @@ impl BackRunnerStrategy {
         let mut event_receiver: Receiver<NetworkEvent> = ns.subscribe();
         while let Ok(event) = event_receiver.recv().await {
             if let NetworkEvent::PendingTx(tx) = &event {
-                let Some(to) = tx.to else { continue };
+                let Some(to) = tx.to else {
+                    continue;
+                };
 
                 let is_router_address: bool = router_addresses.iter().any(|&f| f == to);
                 if !is_router_address {
@@ -392,7 +406,9 @@ impl BackRunnerStrategy {
                 for trace_log in trace_logs {
                     let logs: Option<HashMap<String, (Address, Log)>> =
                         UniswapV2Protocol::decode_pair_trace_logs(&trace_log);
-                    let Some(logs) = logs else { continue };
+                    let Some(logs) = logs else {
+                        continue;
+                    };
 
                     self.on_new_pending_tx(tx, &logs).await;
                 }

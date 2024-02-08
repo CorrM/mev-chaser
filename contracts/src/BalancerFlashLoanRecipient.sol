@@ -3,6 +3,7 @@ pragma solidity ^0.8.23;
 pragma abicoder v2;
 
 import "./Interfaces.sol";
+import {console2} from "forge-std/Test.sol";
 
 // To make tests in sepolia testnetwork use token address in sepolia not in mainnet
 // Also if for some reason Balancer changes there vault contract address in sepolia, you should change it too
@@ -76,8 +77,13 @@ library SwapUtils {
                 deadline
             )
         returns (uint256[] memory amounts) {
-            // amounts[0] = Input token amount, amounts[1] = Output token amount
-            return (amounts[1], false, "");
+            /*
+            amounts[0] = Input token amount
+            amounts[1] = path[1] token output
+            amounts[.] = path[.] token output
+            amounts[amounts.length - 1] = Output token amount
+            */
+            return (amounts[amounts.length - 1], false, "");
         } catch Error(string memory reason) {
             return (0, true, reason);
         } catch (bytes memory reason) {
@@ -214,28 +220,11 @@ contract BalancerFlashLoanRecipient is IFlashLoanRecipient {
         for (uint256 i = 0; i < swaps.length; i = unsafeInc(i)) {
             OneSwapInfo memory curSwap = swaps[i];
 
+            console2.log("for loop: ", i);
+
             require(curSwap.Router != address(0), "Router is null");
             require(curSwap.Path.length > 0, "Path is null");
-            require(curSwap.AmountIn > 0, "AmountIn == 0");
-
-            IERC20 tIn20 = IERC20(curSwap.TokenIn);
-            uint256 curBalance = tIn20.balanceOf(address(this));
-
-            if (curSwap.AmountIn > curBalance) {
-                revert MultiSwapInsufficientFundsToSwapError(
-                    i,
-                    curSwap.TokenIn,
-                    curBalance,
-                    curSwap.AmountIn
-                );
-            }
-
-            // https://github.com/foundry-rs/foundry/issues/6459
-            tIn20.safeIncreaseAllowance(curSwap.Router, curSwap.AmountIn);
-
-            if (curSwap.Deadline == 0) {
-                curSwap.Deadline = block.timestamp + 60;
-            }
+            // require(curSwap.AmountIn > 0, "AmountIn == 0"); // Dont check for that, as `chainSwaps` can be true and `curSwap.AmountIn == 0` in that case
 
             if (chainSwaps) {
                 if (i == 0) {
@@ -254,6 +243,29 @@ contract BalancerFlashLoanRecipient is IFlashLoanRecipient {
             } else {
                 curAmountIn = curSwap.AmountIn;
                 curAmountOut = curSwap.AmountOutMin;
+            }
+
+            console2.log("curAmountIn: ", curAmountIn);
+            console2.log("curAmountOut: ", curAmountOut);
+            console2.log("token in: ", curSwap.TokenIn);
+
+            IERC20 tIn20 = IERC20(curSwap.TokenIn);
+            uint256 curBalance = tIn20.balanceOf(address(this));
+            if (curAmountIn > curBalance) {
+                // If that happens, mostly its a scam token, or it submit fees on transfer
+                revert MultiSwapInsufficientFundsToSwapError(
+                    i,
+                    curSwap.TokenIn,
+                    curBalance,
+                    curAmountIn
+                );
+            }
+
+            // https://github.com/foundry-rs/foundry/issues/6459
+            tIn20.safeIncreaseAllowance(curSwap.Router, curAmountIn);
+
+            if (curSwap.Deadline == 0) {
+                curSwap.Deadline = block.timestamp + 60;
             }
 
             if (curSwap.Protocol == AmmProtocol.UniswapV2) {
@@ -283,12 +295,18 @@ contract BalancerFlashLoanRecipient is IFlashLoanRecipient {
                 revert NotSupportedAmmProtocolError(curSwap.Protocol);
             }
 
+            console2.log("swap out: ", curAmountOut);
+
             // no need for `safeDecreaseAllowance` as it is done when the router do the swap
             //tIn20.safeDecreaseAllowance(curSwap.Router, curAmountIn);
 
             if (hasError) {
+                tIn20.safeDecreaseAllowance(curSwap.Router, curAmountIn);
                 revert MultiSwapError(i, errorReason);
             }
+
+            console2.log("Swap done", i);
+            console2.log("============================");
 
             if (returnOutput) {
                 amountsOut[i] = curAmountOut;

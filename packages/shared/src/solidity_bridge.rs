@@ -9,18 +9,18 @@ use ethers_contract::ContractError;
 use ethers_core::{
     abi::Token,
     k256::ecdsa::SigningKey,
-    types::{Address, Bytes, TxHash, U256}, utils::parse_units,
+    types::{Address, Bytes, TxHash, U256},
 };
-use ethers_providers::{Middleware, Provider, Ws, Http};
+use ethers_providers::{Middleware, Provider, Ws};
 
 use contracts::{BalancerFlashLoanRecipientAbi, OneSwapInfo};
 
 pub struct SolidityBridge {
-    contract: BalancerFlashLoanRecipientAbi<SignerMiddleware<Arc<Provider<Http>>, Wallet<SigningKey>>>,
+    contract: BalancerFlashLoanRecipientAbi<SignerMiddleware<Arc<Provider<Ws>>, Wallet<SigningKey>>>,
 }
 
 impl SolidityBridge {
-    pub async fn new(address: Address, provider: Arc<Provider<Http>>, wallet_private_key: String) -> Result<Self> {
+    pub async fn new(address: Address, provider: Arc<Provider<Ws>>, wallet_private_key: String) -> Result<Self> {
         let chain_id = provider.get_chainid().await?;
 
         let mut wallet_private_key = wallet_private_key;
@@ -68,11 +68,10 @@ impl SolidityBridge {
         swaps: Vec<OneSwapInfo>,
         chain_swaps: bool,
         return_output: bool,
-    ) -> Result<U256> {
+    ) -> Result<U256, ContractError<SignerMiddleware<Arc<Provider<Ws>>, Wallet<SigningKey>>>> {
         Ok(self
             .contract
             .get_loan_then_multi_swap(swaps, chain_swaps, return_output)
-            .gas(600_000)
             .estimate_gas()
             .await?)
     }
@@ -85,10 +84,15 @@ impl SolidityBridge {
         gas_price: Option<U256>,
         max_fee_per_gas: Option<U256>,
         max_priority_fee_per_gas: Option<U256>,
-    ) -> Result<TxHash, ContractError<SignerMiddleware<Arc<Provider<Http>>, Wallet<SigningKey>>>> {
+    ) -> Result<TxHash, ContractError<SignerMiddleware<Arc<Provider<Ws>>, Wallet<SigningKey>>>> {
+        if swaps.is_empty() {
+            return panic!("swaps is empty");
+        }
+
         let mut call = self
             .contract
-            .get_loan_then_multi_swap(swaps, chain_swaps, return_output);
+            .get_loan_then_multi_swap(swaps, chain_swaps, return_output)
+            .gas(800_000);
 
         if gas_price.is_some() {
             call = call.legacy().gas_price(gas_price.unwrap());

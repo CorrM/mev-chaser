@@ -2,13 +2,12 @@ use anyhow::Result;
 use contracts::UNISWAPV2PAIRABI_ABI;
 use ethers_core::{
     abi::{Log, RawLog},
-    types::{Address, CallLogFrame, H256},
+    types::{Address, CallLogFrame},
 };
-use shared::trace::TraceLogData;
 use std::{
     collections::HashMap,
     str::FromStr,
-    sync::{Arc, Mutex, RwLock},
+    sync::{Arc, RwLock},
 };
 
 use crate::{AmmPool, AmmProtocol, AmmProtocolKind};
