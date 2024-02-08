@@ -3,7 +3,7 @@ pragma solidity ^0.8.23;
 pragma abicoder v2;
 
 import "./Interfaces.sol";
-import {console2} from "forge-std/Test.sol";
+//import {console2} from "forge-std/Test.sol";
 
 // To make tests in sepolia testnetwork use token address in sepolia not in mainnet
 // Also if for some reason Balancer changes there vault contract address in sepolia, you should change it too
@@ -220,11 +220,13 @@ contract BalancerFlashLoanRecipient is IFlashLoanRecipient {
         for (uint256 i = 0; i < swaps.length; i = unsafeInc(i)) {
             OneSwapInfo memory curSwap = swaps[i];
 
-            console2.log("for loop: ", i);
+            //console2.log("for loop: ", i);
 
             require(curSwap.Router != address(0), "Router is null");
             require(curSwap.Path.length > 0, "Path is null");
             // require(curSwap.AmountIn > 0, "AmountIn == 0"); // Dont check for that, as `chainSwaps` can be true and `curSwap.AmountIn == 0` in that case
+
+            IERC20 tIn20 = IERC20(curSwap.TokenIn);
 
             if (chainSwaps) {
                 if (i == 0) {
@@ -237,7 +239,8 @@ contract BalancerFlashLoanRecipient is IFlashLoanRecipient {
                     curAmountOut = curSwap.AmountOutMin;
                 } else {
                     // If this is a middle swap
-                    curAmountIn = curAmountOut;
+                    //curAmountIn = curAmountOut;
+                    curAmountIn = tIn20.balanceOf(address(this));
                     curAmountOut = 0;
                 }
             } else {
@@ -245,21 +248,22 @@ contract BalancerFlashLoanRecipient is IFlashLoanRecipient {
                 curAmountOut = curSwap.AmountOutMin;
             }
 
-            console2.log("curAmountIn: ", curAmountIn);
-            console2.log("curAmountOut: ", curAmountOut);
-            console2.log("token in: ", curSwap.TokenIn);
+            //console2.log("curAmountIn: ", curAmountIn);
+            //console2.log("curAmountOut: ", curAmountOut);
+            //console2.log("token in: ", curSwap.TokenIn);
 
-            IERC20 tIn20 = IERC20(curSwap.TokenIn);
-            uint256 curBalance = tIn20.balanceOf(address(this));
-            if (curAmountIn > curBalance) {
-                // If that happens, mostly its a scam token, or it submit fees on transfer
-                revert MultiSwapInsufficientFundsToSwapError(
-                    i,
-                    curSwap.TokenIn,
-                    curBalance,
-                    curAmountIn
-                );
-            }
+            //uint256 curBalance = tIn20.balanceOf(address(this));
+            //if (curAmountIn > curBalance) {
+            //    // If that happens, mostly its a scam token, or it submit fees on transfer
+            //    // https://polygonscan.com/tx/0xc0e43f4e8213e009d0f0e78791753593063f638f14e0489d3da396b6b19d5ecc
+            //    // it use `swapExactTokensForETHSupportingFeeOnTransferTokens` function
+            //    revert MultiSwapInsufficientFundsToSwapError(
+            //        i,
+            //        curSwap.TokenIn,
+            //        curBalance,
+            //        curAmountIn
+            //    );
+            //}
 
             // https://github.com/foundry-rs/foundry/issues/6459
             tIn20.safeIncreaseAllowance(curSwap.Router, curAmountIn);
@@ -295,7 +299,7 @@ contract BalancerFlashLoanRecipient is IFlashLoanRecipient {
                 revert NotSupportedAmmProtocolError(curSwap.Protocol);
             }
 
-            console2.log("swap out: ", curAmountOut);
+            //console2.log("swap out: ", curAmountOut);
 
             // no need for `safeDecreaseAllowance` as it is done when the router do the swap
             //tIn20.safeDecreaseAllowance(curSwap.Router, curAmountIn);
@@ -305,8 +309,8 @@ contract BalancerFlashLoanRecipient is IFlashLoanRecipient {
                 revert MultiSwapError(i, errorReason);
             }
 
-            console2.log("Swap done", i);
-            console2.log("============================");
+            //console2.log("Swap done", i);
+            //console2.log("============================");
 
             if (returnOutput) {
                 amountsOut[i] = curAmountOut;

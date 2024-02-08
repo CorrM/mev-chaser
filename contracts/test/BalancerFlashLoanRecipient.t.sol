@@ -147,7 +147,6 @@ contract BalancerFlashLoanRecipientTest is Test {
         flashLoan.getLoanThenMultiSwap(swaps, true, false);
     }
 
-    /*
     function test_uniswapv2_one_path() public {
         address[] memory addresses = new address[](2);
         addresses[0] = USDT;
@@ -170,17 +169,18 @@ contract BalancerFlashLoanRecipientTest is Test {
     }
     
     function test_uniswapv2_multi_path() public {
-        address[] memory addresses = new address[](3);
+        address[] memory addresses = new address[](4);
         addresses[0] = USDT;
         addresses[1] = USDC;
         addresses[2] = WETH;
+        addresses[3] = USDT;
 
         bytes memory path = abi.encode(addresses);
         OneSwapInfo[] memory swaps = new OneSwapInfo[](1);
         swaps[0] = OneSwapInfo({
             Protocol: AmmProtocol.UniswapV2,
             AmountIn: 20 * (10 ** 6),
-            AmountOutMin: 19 * (10 ** 6),
+            AmountOutMin: 0,
             Router: uniswapV2Router,
             TokenIn: USDT,
             Deadline: 0,
@@ -190,7 +190,7 @@ contract BalancerFlashLoanRecipientTest is Test {
         //vm.expectRevert();
         flashLoan.getLoanThenMultiSwap(swaps, false, false);
     }
-*/
+
     /*
     function test_getLoanThenSwapChain_uniswap2ToUniswap2_swapFail() public {
         OneSwapInfo[] memory swaps = new OneSwapInfo[](2);
