@@ -1,25 +1,26 @@
-use amm::{AmmPool, AmmPoolKind, AmmProtocol, UniswapV2Pool, UniswapV2Protocol};
-use anyhow::{anyhow, Result};
-use ethers_core::types::Address;
-use ethers_core::utils::to_checksum;
-use ethers_providers::{Http, Provider};
-use shared::solidity_bridge::SolidityBridge;
+use std::{env::VarError, path::Path};
 use std::env;
 use std::io::Write;
 use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::{env::VarError, path::Path};
 
-use contracts::{ERC20TokenAbi, UniswapV2FactoryAbi, UniswapV2PairAbi};
+use anyhow::{anyhow, Result};
+use ethers_core::types::Address;
+use ethers_core::utils::to_checksum;
+use ethers_providers::{Http, Middleware, Provider};
+
+use amm::{AmmPool, AmmPoolKind, AmmProtocol, UniswapV2Pool, UniswapV2Protocol};
+use contracts::{ERC20TokenAbi, OneSwapInfo, UniswapV2FactoryAbi, UniswapV2PairAbi};
 use database::{Database, DbDex, DbDexNetwork, DbDexPool, DbDexProtocol, DbToken, DbTokenNetwork};
 use mev::BackRunnerStrategy;
-use shared::provider::NodeProvider;
-use shared::token::{CryptoToken, TokenManager};
 use shared::{
     network::NetworkKind,
     provider::{DebugTraceCallNodeProvider, NodeProviderManager, NodeProviderNetworkInfo, NormalNodeProvider},
 };
+use shared::provider::NodeProvider;
+use shared::solidity_bridge::SolidityBridge;
+use shared::token::{CryptoToken, TokenManager};
 
 use crate::utils::env::Env;
 
@@ -60,7 +61,7 @@ async fn get_node_providers(env: &Env, target_network: &NetworkKind) -> Result<V
                 wss_url: env.wss_url.clone(),
             },
         )
-        .await?,
+            .await?,
         NormalNodeProvider::new(
             "Infura",
             NodeProviderNetworkInfo {
@@ -69,7 +70,7 @@ async fn get_node_providers(env: &Env, target_network: &NetworkKind) -> Result<V
                 wss_url: env.wss_url.clone(),
             },
         )
-        .await?,
+            .await?,
     ];
 
     Ok(providers)
@@ -87,12 +88,12 @@ async fn get_debug_node_providers(env: &Env, target_network: &NetworkKind) -> Re
             "https://{}.blockpi.network/v1/rpc/{}",
             blockpi_network_subdomain, env.blockpi_api_key
         )
-        .to_string(),
+            .to_string(),
         wss_url: format!(
             "wss://{}.blockpi.network/v1/ws/{}",
             blockpi_network_subdomain, env.blockpi_api_key
         )
-        .to_string(),
+            .to_string(),
     };
 
     Ok(vec![
@@ -237,12 +238,52 @@ async fn get_amms(
     Ok(amms)
 }
 
+async fn test_contract(env: &Env, provider_manager: &NodeProviderManager) -> Result<()> {
+    //let bot_address = SolidityBridge::deploy(provider_manager.get_next().raw_ws_provider().clone(), env.private_key.clone()).await;
+    //let Ok(bot_address) = bot_address else { return Err(anyhow!("Failed to deploy")); };
+
+    let solidity_bridge = SolidityBridge::new(
+        Address::from_str(&env.bot_address).unwrap(),
+        Arc::clone(provider_manager.get_next().raw_ws_provider()),
+        env.private_key.clone(),
+    ).await?;
+
+    let swaps: Vec<OneSwapInfo> = vec![
+        SolidityBridge::make_uniswap_v2_protocol_swap_info(
+            Address::from_str("0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff").unwrap(),
+            vec![
+                Address::from_str("0xc2132D05D31c914a87C6611C10748AEb04B58e8F").unwrap(),
+                Address::from_str("0x346404079b3792a6c548B072B9C4DDdFb92948d5").unwrap(),
+            ],
+            10000000,
+            0,
+        ).unwrap(),
+        SolidityBridge::make_uniswap_v2_protocol_swap_info(
+            Address::from_str("0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff").unwrap(),
+            vec![
+                Address::from_str("0x346404079b3792a6c548B072B9C4DDdFb92948d5").unwrap(),
+                Address::from_str("0xc2132D05D31c914a87C6611C10748AEb04B58e8F").unwrap(),
+            ],
+            0,
+            1000000,
+        ).unwrap(),
+    ];
+
+    println!("{:?}", solidity_bridge
+        .estimate_get_loan_then_swap_chain(swaps, true, false)
+        .await.unwrap());
+
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let env: Env = read_env_file()?;
     let db = Database::new(Path::new("./Main.db"))?;
     let target_network: NetworkKind = unsafe { std::mem::transmute(env.chain_id) };
     let provider_manager: NodeProviderManager = create_node_provider_manager(&env, &target_network).await?;
+
+    //test_contract(&env, &provider_manager).await;
 
     let args: Vec<String> = env::args().collect();
 
@@ -321,18 +362,16 @@ async fn main() -> Result<()> {
         Address::from_str(&env.bot_address).unwrap(),
         Arc::clone(provider_manager.get_next().raw_ws_provider()),
         env.private_key,
-    )
-    .await?;
+    ).await?;
 
     println!("[-] Getting amms");
-    std::io::stdout().flush().unwrap();
     let amms: Vec<Arc<dyn AmmProtocol>> = get_amms(
         &db,
         &target_network,
         provider_manager.get_next().deref(),
         &token_manager,
     )
-    .await?;
+        .await?;
 
     let start_tokens: Vec<Arc<CryptoToken>> = vec![
         //token_manager.get_by_symbol("WMATIC").unwrap(), // TODO: Test => IDK but mostly it needs swapTokenForEth v2 function
@@ -341,9 +380,8 @@ async fn main() -> Result<()> {
         token_manager.get_by_symbol("DAI").unwrap(),
     ];
 
-    // 2 are traingle arbitrage
+    // 2 are triangle arbitrage
     println!("[-] Prepare strategy");
-    std::io::stdout().flush().unwrap();
     let mut strategy =
         BackRunnerStrategy::new(solidity_bridge, token_manager, provider_manager, amms, 3, start_tokens).await;
 

@@ -46,7 +46,8 @@ $ forge snapshot
 ### Anvil
 
 ```shell
-$ anvil
+$ FORK_URL=https://polygon-mainnet.g.alchemy.com/v2/{API_KEY}
+$ anvil -f $FORK_URL
 ```
 
 ### Deploy

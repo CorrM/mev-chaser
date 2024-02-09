@@ -131,7 +131,7 @@ contract BalancerFlashLoanRecipient is IFlashLoanRecipient {
     address private immutable _owner;
 
     constructor() {
-        require(msg.sender != address(0), "invalid address");
+        require(msg.sender != address(0), "constructor sender invalid address");
 
         _owner = msg.sender;
         _vault = IVault(0xBA12222222228d8Ba445958a75a0704d566BF2C8);
@@ -273,10 +273,15 @@ contract BalancerFlashLoanRecipient is IFlashLoanRecipient {
             }
 
             if (curSwap.Protocol == AmmProtocol.UniswapV2) {
+                //console2.log("abi.decode: Before");
+                //console2.log(curSwap.Path.length);
+
                 address[] memory pathDecoded = abi.decode(
                     curSwap.Path,
                     (address[])
                 );
+
+                //console2.log("abi.decode: After");
 
                 (curAmountOut, hasError, errorReason) = SwapUtils
                     .swapExactTokensForTokensUniswapV2(
@@ -370,6 +375,10 @@ contract BalancerFlashLoanRecipient is IFlashLoanRecipient {
             returnOutput
         );
 
+        //console2.log("Multi swap done");
+        //console2.log(amountsOut.length);
+        //console2.log(amountsOut[amountsOut.length - 1]);
+
         // Repay
         uint256 amountToPayback = amounts[0] + feeAmounts[0];
         uint256 lastAmountOut = amountsOut[amountsOut.length - 1];
@@ -383,7 +392,11 @@ contract BalancerFlashLoanRecipient is IFlashLoanRecipient {
             );
         }
 
+        //console2.log("Try Pay the loan");
+
         address payable vault = payable(msg.sender); // same as vault
         require(tokens[0].transfer(vault, amountToPayback), "repay failed");
+
+        //console2.log("Pay the loan done");
     }
 }

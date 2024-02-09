@@ -1,6 +1,5 @@
 use std::sync::RwLock;
 use std::{collections::HashMap, ops::Deref, sync::Arc};
-use std::str::FromStr;
 
 use anyhow::Result;
 use ethers_core::types::U64;
@@ -9,7 +8,6 @@ use ethers_core::{
     types::{Address, Block, BlockNumber, CallFrame, CallLogFrame, Transaction, H256, U256},
     utils::to_checksum,
 };
-use ethers_core::utils::parse_units;
 use ethers_providers::Middleware;
 use tokio::sync::broadcast::Receiver;
 
@@ -94,25 +92,24 @@ impl BackRunnerStrategy {
         }
 
         // => Test
-        let pool_address: Address = Address::from_str("0x2cF7252e74036d1Da831d11089D326296e64a728").unwrap();
-        let gffsdg = &paths_container.get_paths_containing_pool(&pool_address).unwrap()[0];
-        let swaps = gffsdg
-            .make_swaps(
-                parse_units("1", "ether").unwrap().into(),
-                parse_units("0.5", "ether").unwrap().into(),
-            )
-            .unwrap();
-
-        let gg = solidity_bridge
-            .estimate_get_loan_then_swap_chain(
-                swaps.0,
-                swaps.1,
-                false,
-            )
-            .await;
-        let err = gg.unwrap_err();
-        println!("Error 0: {:?}", err);
-        println!("Error 1: {:?}", err.decode_revert::<String>());
+        //let pool_address: Address = Address::from_str("0x2cF7252e74036d1Da831d11089D326296e64a728").unwrap();
+        //let gffsdg = &paths_container.get_paths_containing_pool(&pool_address).unwrap()[0];
+        //let swaps = gffsdg
+        //    .make_swaps(
+        //        parse_units("1", "ether").unwrap().into(),
+        //        parse_units("0.5", "ether").unwrap().into(),
+        //    )
+        //    .unwrap();
+        //let gg = solidity_bridge
+        //    .estimate_get_loan_then_swap_chain(
+        //        swaps.0,
+        //        swaps.1,
+        //        false,
+        //    )
+        //    .await;
+        //let err = gg.unwrap_err();
+        //println!("Error 0: {:?}", err);
+        //println!("Error 1: {:?}", err.decode_revert::<String>());
         // => Test
 
         let native_token: &Arc<CryptoToken> = token_manager.native_token();
@@ -225,7 +222,7 @@ impl BackRunnerStrategy {
         } else {
             (tx.max_fee_per_gas.unwrap(), tx.max_priority_fee_per_gas.unwrap())
         };
-        let estimated_gas_usage: U256 = U256::from(550000);
+        let estimated_gas_usage: U256 = U256::from(550_000);
         let gas_cost_in_wei_native: U256 = (gas_price.0 + gas_price.1) * estimated_gas_usage;
 
         println!("is_legacy_tx: {legacy_tx}");
@@ -289,9 +286,7 @@ impl BackRunnerStrategy {
         let swap_input_amount: U256 = best_path.1;
         let swap_output_amount: U256 = best_path.2;
 
-        //let swaps: Result<(Vec<OneSwapInfo>, bool)> = swap_path.make_swaps(swap_input_amount, swap_output_amount);
-        let swaps: Result<(Vec<OneSwapInfo>, bool)> =
-            swap_path.make_swaps(swap_input_amount, swap_path.get_input_token().convert_to_amount(1_f64));
+        let swaps: Result<(Vec<OneSwapInfo>, bool)> = swap_path.make_swaps(swap_input_amount, swap_output_amount);
         let Ok(swaps) = swaps else {
             println!("Failed to make swap information: {:?}", swaps.unwrap_err());
             return;

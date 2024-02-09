@@ -4,12 +4,12 @@ use anyhow::Result;
 use ethers::{
     providers::Provider,
     types::{
-        CallConfig, GethDebugBuiltInTracerConfig, GethDebugBuiltInTracerType, GethDebugTracerConfig, GethDebugTracerType,
-        GethDebugTracingCallOptions, GethDebugTracingOptions, GethTrace, Transaction, U64,
+        CallConfig, GethDebugBuiltInTracerConfig, GethDebugBuiltInTracerType, GethDebugTracerConfig,
+        GethDebugTracerType, GethDebugTracingCallOptions, GethDebugTracingOptions, GethTrace, Transaction, U64,
     },
 };
-use ethers_core::types::{CallFrame, CallLogFrame, GethTraceFrame};
-use ethers_providers::{Middleware, Ws, Http};
+use ethers_core::types::{CallFrame, CallLogFrame, GethTraceFrame, TxHash};
+use ethers_providers::{Http, Middleware, Ws};
 
 use crate::network::NetworkKind;
 
@@ -58,7 +58,7 @@ impl DebugTraceCallNodeProvider {
         if let Some(ref logs_vec) = call_frame.logs {
             logs.extend(logs_vec.iter().cloned());
         }
-    
+
         if let Some(ref calls_vec) = call_frame.calls {
             for call in calls_vec {
                 DebugTraceCallNodeProvider::extract_trace_logs(call, logs);
@@ -71,7 +71,7 @@ impl DebugTraceCallNodeProvider {
             with_log: Some(true), // 👈 make sure we are getting logs
             ..Default::default()
         };
-        
+
         let mut opts = GethDebugTracingCallOptions::default();
         opts.tracing_options.tracer = Some(GethDebugTracerType::BuiltInTracer(
             GethDebugBuiltInTracerType::CallTracer,
@@ -96,8 +96,35 @@ impl DebugTraceCallNodeProvider {
         }
 
         let trace: GethTrace = trace.unwrap();
-        let GethTrace::Known(call_tracer) = trace else { return Ok(None); };
-        let GethTraceFrame::CallTracer(frame) = call_tracer else { return Ok(None); };
+        let GethTrace::Known(call_tracer) = trace else {
+            return Ok(None);
+        };
+        let GethTraceFrame::CallTracer(frame) = call_tracer else {
+            return Ok(None);
+        };
+
+        Ok(Some(frame))
+    }
+    pub async fn debug_trace_transaction(&self, tx_hash: TxHash) -> Result<Option<CallFrame>> {
+        let provider: &Arc<Provider<Ws>> = self.raw_ws_provider();
+
+        let mut debug_opts = GethDebugTracingOptions::default();
+        debug_opts.tracer = Some(GethDebugTracerType::BuiltInTracer(
+            GethDebugBuiltInTracerType::CallTracer,
+        ));
+
+        let trace = provider.debug_trace_transaction(tx_hash, debug_opts).await;
+        if trace.is_err() {
+            return Ok(None);
+        }
+
+        let trace: GethTrace = trace.unwrap();
+        let GethTrace::Known(call_tracer) = trace else {
+            return Ok(None);
+        };
+        let GethTraceFrame::CallTracer(frame) = call_tracer else {
+            return Ok(None);
+        };
 
         Ok(Some(frame))
     }

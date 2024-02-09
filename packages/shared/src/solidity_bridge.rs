@@ -38,6 +38,23 @@ impl SolidityBridge {
         Ok(Self { contract })
     }
 
+    pub async fn deploy(provider: Arc<Provider<Ws>>, wallet_private_key: String) -> Result<Address> {
+        let chain_id = provider.get_chainid().await?;
+
+        let mut wallet_private_key = wallet_private_key;
+        if wallet_private_key.starts_with("0x") {
+            wallet_private_key = wallet_private_key.split_off(2);
+        }
+
+        let wallet: LocalWallet = wallet_private_key
+            .parse::<LocalWallet>()?
+            .with_chain_id(chain_id.as_u64());
+
+        let signer = Arc::new(SignerMiddleware::new(provider, wallet));
+        let gg = BalancerFlashLoanRecipientAbi::deploy(signer, ()).expect("deploy failed").send().await;
+        Ok(gg.unwrap().address())
+    }
+
     pub fn make_uniswap_v2_protocol_swap_info(
         router: Address,
         path: Vec<Address>,
@@ -50,7 +67,8 @@ impl SolidityBridge {
 
         let token_in: Address = path[0];
         let path_token: Vec<Token> = path.into_iter().map(Token::Address).collect();
-        let encoded_path: Bytes = ethers::abi::encode(&path_token).into();
+        let addresses = Token::Array(path_token);
+        let encoded_path: Bytes = ethers::abi::encode(&[addresses]).into();
 
         Ok(OneSwapInfo {
             protocol: 0,
@@ -92,7 +110,7 @@ impl SolidityBridge {
         let mut call = self
             .contract
             .get_loan_then_multi_swap(swaps, chain_swaps, return_output)
-            .gas(800_000);
+            .gas(2_000_000);
 
         if gas_price.is_some() {
             call = call.legacy().gas_price(gas_price.unwrap());
@@ -101,6 +119,9 @@ impl SolidityBridge {
             tx.max_fee_per_gas = max_fee_per_gas;
             tx.max_priority_fee_per_gas = max_priority_fee_per_gas;
         }
+
+        //let tx_hash = call.send().await?.await?.unwrap();
+        //println!("Transaction Receipt: {}", serde_json::to_string(&tx_hash)?);
 
         let tx_hash: TxHash = call.send().await?.tx_hash();
         Ok(tx_hash)
