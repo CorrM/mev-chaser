@@ -233,49 +233,44 @@ impl BackRunnerStrategy {
         sorted_spreads.reverse();
 
         // Get most profitable path
+        let mut best_net_profit: i128 = 0;
         let native_token: &Arc<CryptoToken> = self.token_manager.native_token();
         let mut best_path: Option<(&Arc<PoolPath>, U256, U256)> = None;
         for spread in sorted_spreads {
             let path_idx: &usize = spread.0;
             let path: &Arc<PoolPath> = &touched_paths[*path_idx];
-            let (optimized_in, mut amount_min_out, profit) = path.optimize_amount_in(1000, 10);
+            let (optimized_in, amount_min_out, profit) = path.optimize_amount_in(1000, 10);
 
-            println!("optimized_in: {optimized_in:?}");
             if optimized_in.is_zero() {
                 continue;
             }
 
+            // Convert gas cost to input token price
             let input_token: Arc<CryptoToken> = path.get_input_token();
-            println!("input_token: {}", input_token.symbol());
-
-            // Convert profit to native token price first, so i can calculate the net profit (profit - gas_cost_in_wei_native)
             let price_pool: &Arc<RwLock<dyn AmmPool>> = self.price_calc_pools.get(input_token.address()).unwrap();
             let price_pool: &dyn AmmPool = &*price_pool.read().unwrap();
-            let native_token_price: f64 =
-                UniswapV2Simulator::reserves_to_price(price_pool, Arc::ptr_eq(price_pool.token1(), native_token));
-            let profit_in_native: f64 = input_token.convert_to_decimal(profit) * native_token_price;
-            let mut profit_in_native: U256 = native_token.convert_to_amount(profit_in_native);
+            let input_token_price: f64 =
+                UniswapV2Simulator::reserves_to_price(price_pool, Arc::ptr_eq(price_pool.token0(), native_token));
+            let cost_in_input_token: f64 = native_token.convert_to_decimal(gas_cost_in_wei_native) * input_token_price;
+            let cost_in_input_token_u: U256 = input_token.convert_to_amount(cost_in_input_token);
 
-            // Slippage 0.5%
-            profit_in_native = submit_slippage(profit_in_native);
-            amount_min_out = submit_slippage(amount_min_out);
-
-            let excess_profit: i128 = (profit_in_native.as_u128() as i128) - (gas_cost_in_wei_native.as_u128() as i128);
-            println!("profit: {profit_in_native}");
-            println!("cost: {gas_cost_in_wei_native}");
-            println!("net_profit: {excess_profit}");
-
-            if excess_profit <= 0 {
+            let net_profit: i128 = (profit.as_u128() as i128) - (cost_in_input_token_u.as_u128() as i128);
+            if net_profit <= 0 {
                 continue;
             }
 
-            // Check amount_min_out
-            if best_path.is_some_and(|x| x.2 >= amount_min_out) {
+            println!("net_profit: {net_profit}");
+            println!("best_net_profit: {best_net_profit}");
+            if best_net_profit > net_profit {
                 continue;
             }
 
-            best_path = Some((path, optimized_in, amount_min_out));
+            // amount_min_out are just input + cost of the transaction, then AMM will give use the profit
+            best_path = Some((path, optimized_in, optimized_in + (cost_in_input_token_u * 2)));
+            best_net_profit = net_profit;
         }
+
+        println!("net_profit: {best_net_profit}");
 
         let Some(best_path) = best_path else {
             return;
@@ -294,11 +289,6 @@ impl BackRunnerStrategy {
 
         let swaps_to_execute: Vec<OneSwapInfo> = swaps.0;
         let swaps_are_chained: bool = swaps.1;
-
-        println!(
-            "swaps_are_chained: {}, swaps: {:#?}",
-            swaps_are_chained, swaps_to_execute
-        );
 
         let tx_hash = if legacy_tx {
             self.solidity_bridge
