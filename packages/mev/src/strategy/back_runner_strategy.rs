@@ -228,15 +228,15 @@ impl BackRunnerStrategy {
         println!("is_legacy_tx: {legacy_tx}");
 
         // Sort by spread
-        let mut sorted_spreads: Vec<_> = spreads.iter().collect();
-        sorted_spreads.sort_by_key(|x| x.1);
-        sorted_spreads.reverse();
+        //let mut sorted_spreads: Vec<_> = spreads.iter().collect();
+        //sorted_spreads.sort_by_key(|x| x.1);
+        //sorted_spreads.reverse();
 
         // Get most profitable path
         let mut best_net_profit: i128 = 0;
         let native_token: &Arc<CryptoToken> = self.token_manager.native_token();
         let mut best_path: Option<(&Arc<PoolPath>, U256, U256)> = None;
-        for spread in sorted_spreads {
+        for spread in &spreads {
             let path_idx: &usize = spread.0;
             let path: &Arc<PoolPath> = &touched_paths[*path_idx];
             let (optimized_in, amount_min_out, profit) = path.optimize_amount_in(1000, 10);
@@ -254,23 +254,21 @@ impl BackRunnerStrategy {
             let cost_in_input_token: f64 = native_token.convert_to_decimal(gas_cost_in_wei_native) * input_token_price;
             let cost_in_input_token_u: U256 = input_token.convert_to_amount(cost_in_input_token);
 
+            // net profit
             let net_profit: i128 = (profit.as_u128() as i128) - (cost_in_input_token_u.as_u128() as i128);
             if net_profit <= 0 {
                 continue;
             }
 
             println!("net_profit: {net_profit}");
-            println!("best_net_profit: {best_net_profit}");
             if best_net_profit > net_profit {
                 continue;
             }
 
             // amount_min_out are just input + cost of the transaction, then AMM will give use the profit
-            best_path = Some((path, optimized_in, optimized_in + (cost_in_input_token_u * 2)));
+            best_path = Some((path, optimized_in, optimized_in + cost_in_input_token_u));
             best_net_profit = net_profit;
         }
-
-        println!("net_profit: {best_net_profit}");
 
         let Some(best_path) = best_path else {
             return;
@@ -280,6 +278,16 @@ impl BackRunnerStrategy {
         let swap_path: &Arc<PoolPath> = best_path.0;
         let swap_input_amount: U256 = best_path.1;
         let swap_output_amount: U256 = best_path.2;
+        let input_token = swap_path.get_input_token();
+
+        // TODO: That's only valid for stable coins
+        if input_token.convert_to_amount(1_f64).as_u128() as i128 > best_net_profit {
+            println!("Min profit not reached: {best_net_profit}");
+            return;
+        }
+
+        println!("input_token: {}", swap_path.get_input_token().symbol());
+        println!("best_net_profit: {best_net_profit}");
 
         let swaps: Result<(Vec<OneSwapInfo>, bool)> = swap_path.make_swaps(swap_input_amount, swap_output_amount);
         let Ok(swaps) = swaps else {

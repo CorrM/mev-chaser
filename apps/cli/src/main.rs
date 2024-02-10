@@ -374,7 +374,7 @@ async fn main() -> Result<()> {
         .await?;
 
     let start_tokens: Vec<Arc<CryptoToken>> = vec![
-        //token_manager.get_by_symbol("WMATIC").unwrap(), // TODO: Test => IDK but mostly it needs swapTokenForEth v2 function
+        token_manager.get_by_symbol("WMATIC").unwrap(), // TODO: Test => IDK but mostly it needs swapTokenForEth v2 function
         token_manager.get_by_symbol("USDT").unwrap(),
         token_manager.get_by_symbol("USDC").unwrap(),
         token_manager.get_by_symbol("DAI").unwrap(),
