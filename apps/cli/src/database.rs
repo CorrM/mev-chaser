@@ -1,9 +1,10 @@
-use amm::{AmmPool, AmmProtocol, AmmProtocolKind};
+use std::path::Path;
+
 use ethers_core::types::Address;
 use ethers_core::utils::to_checksum;
 use rusqlite::{params, Connection, OptionalExtension, Result, Statement};
-use std::path::Path;
 
+use amm::{AmmPool, AmmProtocol, AmmProtocolKind};
 use shared::network::NetworkKind;
 use shared::token::CryptoToken;
 
@@ -489,6 +490,44 @@ impl Database {
             DbDexPool::from_row,
         )
         .optional()
+    }
+
+    pub fn get_dex_pools(&self, network: &NetworkKind, valid_pools_only: bool) -> Result<Vec<DbDexPool>> {
+        let db_network: Option<DbNetwork> = self.get_network(network)?;
+        if db_network.is_none() {
+            return Err(rusqlite::Error::QueryReturnedNoRows);
+        }
+
+        let mut stmt: Statement = if valid_pools_only {
+            self.db.prepare("SELECT * FROM DexPools WHERE networkId = ?")?
+        } else {
+            self.db
+                .prepare(&format!("SELECT * FROM DexPools WHERE networkId = ? AND address != {}", to_checksum(&Address::zero(), None)))?
+        };
+
+        let ret = stmt
+            .query_map(params![db_network.unwrap().id], DbDexPool::from_row)?
+            .collect();
+        ret
+    }
+
+    pub fn get_dex_pools_by_dex_id(&self, dex_id: i64, network: &NetworkKind, valid_pools_only: bool) -> Result<Vec<DbDexPool>> {
+        let db_network: Option<DbNetwork> = self.get_network(network)?;
+        if db_network.is_none() {
+            return Err(rusqlite::Error::QueryReturnedNoRows);
+        }
+
+        let mut stmt: Statement = if valid_pools_only {
+            self.db.prepare("SELECT * FROM DexPools WHERE dexId = ? AND networkId = ?")?
+        }
+        else {
+            self.db.prepare(&format!("SELECT * FROM DexPools WHERE dexId = ? AND networkId = ? AND address != {}", to_checksum(&Address::zero(), None)))?
+        };
+
+        let ret = stmt
+            .query_map(params![dex_id, db_network.unwrap().id], DbDexPool::from_row)?
+            .collect();
+        ret
     }
 
     pub fn add_dex_pool(&self, pool: &impl AmmPool) -> Result<DbDexPool> {
