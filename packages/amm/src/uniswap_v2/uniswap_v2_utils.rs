@@ -31,8 +31,8 @@ async fn get_uniswap_v2_reserves(provider: &NormalNodeProvider, pools: Vec<Arc<R
 
         if let Ok(Token::Tuple(response)) = reserve {
             pool.write().unwrap().update_reserve(
-                response[0].clone().into_uint().unwrap(),
-                response[1].clone().into_uint().unwrap(),
+                &response[0].clone().into_uint().unwrap(),
+                &response[1].clone().into_uint().unwrap(),
             );
         }
     }

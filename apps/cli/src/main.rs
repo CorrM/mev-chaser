@@ -1,12 +1,15 @@
+use std::collections::HashMap;
 use std::env;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::time::Instant;
 use std::{env::VarError, path::Path};
 
 use anyhow::{anyhow, Result};
-use ethers_core::types::Address;
+use ethers_core::abi::Log;
+use ethers_core::types::{Address, CallFrame, CallLogFrame, H256};
 use ethers_core::utils::to_checksum;
-use ethers_providers::{Http, Provider};
+use ethers_providers::{Http, Middleware, Provider};
 
 use amm::{AmmPool, AmmPoolKind, AmmProtocol, UniswapV2Pool, UniswapV2Protocol};
 use contracts::{OneSwapInfo, UniswapV2FactoryAbi, UniswapV2PairAbi};
@@ -19,12 +22,13 @@ use shared::{
     network::NetworkKind,
     provider::{DebugTraceCallNodeProvider, NodeProviderManager, NodeProviderNetworkInfo, NormalNodeProvider},
 };
+use tokio::task::JoinSet;
 
 use crate::commands::AddPoolCommand;
 use crate::utils::env::Env;
 
-mod database;
 mod commands;
+mod database;
 mod utils;
 
 fn generate_pairs<T>(list: &[T]) -> Vec<(&T, &T)> {
@@ -124,7 +128,7 @@ fn get_tokens(db: &Database, network: &NetworkKind) -> Result<Vec<CryptoToken>> 
 }
 
 fn get_dexes(db: &Database, network: &NetworkKind, token_manager: &TokenManager) -> Result<Vec<Arc<dyn AmmProtocol>>> {
-    let dexes: Vec<Arc<dyn AmmProtocol>> = Vec::new();
+    let mut dexes: Vec<Arc<dyn AmmProtocol>> = Vec::new();
 
     for db_dex in db.get_dexes_by_network(network)? {
         let Some(db_dex_protocol) = db.get_dex_protocol_by_id(db_dex.dex_protocol_id)? else {
@@ -136,7 +140,6 @@ fn get_dexes(db: &Database, network: &NetworkKind, token_manager: &TokenManager)
         };
 
         let db_dex_pools: Vec<DbDexPool> = db.get_dex_pools_by_dex_id(db_dex.id, network, true)?;
-
         match db_dex_protocol.name.as_str() {
             "UniswapV2" => {
                 let network_options: serde_json::Value = serde_json::from_str(&db_dex_network.options)?;
@@ -179,6 +182,8 @@ fn get_dexes(db: &Database, network: &NetworkKind, token_manager: &TokenManager)
                         token1,
                     )?);
                 }
+
+                dexes.push(Arc::new(uniswap_v2));
             }
             _ => panic!("Unsupported dex protocol"),
         }
@@ -354,11 +359,12 @@ async fn main() -> Result<()> {
     let target_network: NetworkKind = unsafe { std::mem::transmute(env.chain_id) };
     let provider_manager: NodeProviderManager = create_node_provider_manager(&env, &target_network).await?;
 
+    //speed_of_tx(&provider_manager).await;
     //test_contract(&env, &provider_manager).await;
+    //return Ok(());
 
+    // CLI commands
     let args: Vec<String> = env::args().collect();
-
-    // Add_pool command
     if args.len() > 1 && args[1] == "add_pool" {
         let pools_type: AmmPoolKind = match args[2].as_str() {
             "uniswapv2" => AmmPoolKind::UniswapV2,
@@ -383,14 +389,10 @@ async fn main() -> Result<()> {
     .await?;
 
     println!("[-] Getting amms");
-    let amms: Vec<Arc<dyn AmmProtocol>> = get_dexes(
-        &db,
-        &target_network,
-        &token_manager,
-    )?;
+    let amms: Vec<Arc<dyn AmmProtocol>> = get_dexes(&db, &target_network, &token_manager)?;
 
     let start_tokens: Vec<Arc<CryptoToken>> = vec![
-        token_manager.get_by_symbol("WMATIC").unwrap(), // TODO: Test => IDK but mostly it needs swapTokenForEth v2 function
+        //token_manager.get_by_symbol("WMATIC").unwrap(), // TODO: Test => IDK but mostly it needs swapTokenForEth v2 function
         token_manager.get_by_symbol("USDT").unwrap(),
         token_manager.get_by_symbol("USDC").unwrap(),
         token_manager.get_by_symbol("DAI").unwrap(),
@@ -402,7 +404,62 @@ async fn main() -> Result<()> {
         BackRunnerStrategy::new(solidity_bridge, token_manager, provider_manager, amms, 3, start_tokens).await;
 
     println!("[+] Start strategy");
+    //strategy.speed_of_tx().await;
     strategy.run().await?;
 
+    println!("[+] Done");
+
     Ok(())
+}
+
+pub async fn speed_of_tx(provider_manager: &NodeProviderManager) {
+    let provider: Arc<Provider<Http>> = Arc::clone(provider_manager.get_next().raw_http_provider());
+    let Some(tx) = provider
+        .get_transaction(H256::from_str("0x04e88c26f24ca2d5eb9b3a3ffc0a2eb4d034b2ac101c588f362287e858165de6").unwrap())
+        .await
+        .unwrap()
+    else {
+        return;
+    };
+
+    let debug_provider: &Arc<DebugTraceCallNodeProvider> = provider_manager.get_next_debug_trace_call();
+
+    let mut start = Instant::now();
+    let frame: Result<Option<CallFrame>> = debug_provider.debug_trace_call(&tx, None).await;
+    if frame.is_err() {
+        println!("[?] Error from debug_trace_call: {:?}", frame.unwrap_err());
+        return;
+    }
+
+    let Some(frame) = frame.unwrap() else {
+        println!("no frame");
+        return;
+    };
+    println!("debug_trace_call took: {}", start.elapsed().as_millis());
+
+    start = Instant::now();
+    let mut trace_logs: Vec<CallLogFrame> = Vec::new();
+    DebugTraceCallNodeProvider::extract_trace_logs(&frame, &mut trace_logs);
+    println!("extract_trace_logs took: {}", start.elapsed().as_millis());
+
+    // TODO: Use to_address to determine which dex to `decode_pair_trace_logs`
+    start = Instant::now();
+    //let mut tasks = JoinSet::new();
+    for trace_log in &trace_logs {
+        let logs: Option<HashMap<String, (Address, Log)>> = UniswapV2Protocol::decode_pair_trace_logs(trace_log);
+        let Some(logs) = logs else {
+            continue;
+        };
+
+        //tasks.spawn(self.on_new_pending_tx(tx.clone(), logs));
+        //self.on_new_pending_tx(&tx, &logs).await;
+    }
+
+    //while let Some(_res) = tasks.join_next().await {}
+
+    println!(
+        "process tx took: {}, trace_logs: {}",
+        start.elapsed().as_millis(),
+        trace_logs.len()
+    );
 }

@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use crate::{AmmPoolKind, AmmProtocol};
 
-pub trait AmmPool {
+pub trait AmmPool: Send + Sync {
     fn kind(&self) -> AmmPoolKind;
     fn address(&self) -> &Address;
     fn dex(&self) -> Arc<dyn AmmProtocol>;
@@ -13,5 +13,5 @@ pub trait AmmPool {
     fn token1(&self) -> &Arc<CryptoToken>;
     fn reserve0(&self) -> U256;
     fn reserve1(&self) -> U256;
-    fn update_reserve(&mut self, reserve0: U256, reserve1: U256);
+    fn update_reserve(&mut self, reserve0: &U256, reserve1: &U256);
 }

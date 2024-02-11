@@ -70,8 +70,8 @@ impl AmmPool for UniswapV2Pool {
         self.reserve1
     }
 
-    fn update_reserve(&mut self, reserve0: U256, reserve1: U256) {
-        self.reserve0 = reserve0;
-        self.reserve1 = reserve1;
+    fn update_reserve(&mut self, reserve0: &U256, reserve1: &U256) {
+        self.reserve0 = *reserve0;
+        self.reserve1 = *reserve1;
     }
 }

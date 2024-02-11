@@ -11,7 +11,7 @@ use shared::{solidity_bridge::SolidityBridge, token::CryptoToken};
 
 use super::PoolPathItem;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PoolPath {
     path: Vec<PoolPathItem>,
 }

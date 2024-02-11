@@ -68,6 +68,36 @@ impl UniswapV2Protocol {
         Some(ret)
     }
 
+    pub fn decode_pair_trace_log(event_name: &str, trace_log: &CallLogFrame) -> Option<(Address, Log)> {
+        let Some(ref topics) = trace_log.topics else {
+            return None;
+        };
+
+        if topics.is_empty() {
+            return None;
+        }
+
+        let Ok(ev) = UNISWAPV2PAIRABI_ABI.event(event_name) else {
+            panic!("Event not found: {}", event_name);
+        };
+
+        if ev.signature() != topics[0] {
+            return None;
+        }
+
+        // TODO: Need to change this (a lot of clones)
+        let log_result: Result<Log, ethers_core::abi::Error> = ev.parse_log(RawLog {
+            topics: topics.clone(),
+            data: trace_log.data.as_ref().unwrap().to_vec(),
+        });
+
+        let Ok(log) = log_result else {
+            return None;
+        };
+
+        Some((trace_log.address.unwrap(), log))
+    }
+
     pub fn factory(&self) -> &Address {
         &self.factory
     }

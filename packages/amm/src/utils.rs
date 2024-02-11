@@ -43,7 +43,7 @@ pub async fn update_touched_pool_reserves(
                 Token::Uint(rs) => rs,
                 _ => U256::zero(),
             };
-            pool.unwrap().write().unwrap().update_reserve(reserve0, reserve1);
+            pool.unwrap().write().unwrap().update_reserve(&reserve0, &reserve1);
 
             tx_idx.insert(log.address, idx);
         }

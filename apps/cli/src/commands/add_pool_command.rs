@@ -21,7 +21,7 @@ impl AddPoolCommand {
         provider: Arc<Provider<Http>>,
     ) -> Result<()> {
         for pool in pools {
-            if db.get_dex_pool(&target_network, pool)?.is_some() {
+            if db.get_dex_pool(target_network, pool)?.is_some() {
                 continue;
             }
 
@@ -35,7 +35,7 @@ impl AddPoolCommand {
                     let token1: Address = pair_contract.token_1().call_raw().await?;
                     let token1_str: String = to_checksum(&token1, None);
 
-                    if db.get_token_by_address(&token0_str, &target_network).is_err() {
+                    if db.get_token_by_address(&token0_str, target_network).is_err() {
                         let token_contract = ERC20TokenAbi::new(token0, provider.clone());
                         let token_name: String = token_contract.name().call_raw().await?;
                         let token_symbol: String = token_contract.symbol().call_raw().await?;
@@ -43,7 +43,7 @@ impl AddPoolCommand {
 
                         println!("Adding token0 {} '{}'", token_symbol, &token0_str);
                         let token_add = db.add_token(&CryptoToken::new(
-                            &target_network,
+                            target_network,
                             &token0_str,
                             token_name,
                             token_symbol,
@@ -54,7 +54,7 @@ impl AddPoolCommand {
                         }
                     }
 
-                    if db.get_token_by_address(&token1_str, &target_network).is_err() {
+                    if db.get_token_by_address(&token1_str, target_network).is_err() {
                         let token_contract = ERC20TokenAbi::new(token1, provider.clone());
                         let token_name: String = token_contract.name().call_raw().await?;
                         let token_symbol: String = token_contract.symbol().call_raw().await?;
@@ -62,7 +62,7 @@ impl AddPoolCommand {
 
                         println!("Adding token1 {} {}", token_symbol, token1_str);
                         let token_add = db.add_token(&CryptoToken::new(
-                            &target_network,
+                            target_network,
                             &token1_str,
                             token_name,
                             token_symbol,

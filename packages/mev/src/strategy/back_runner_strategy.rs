@@ -1,4 +1,5 @@
-use std::sync::RwLock;
+use std::sync::{Mutex, RwLock};
+use std::time::Instant;
 use std::{collections::HashMap, ops::Deref, sync::Arc};
 
 use anyhow::Result;
@@ -9,6 +10,7 @@ use ethers_core::{
     utils::to_checksum,
 };
 use ethers_providers::Middleware;
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use tokio::sync::broadcast::Receiver;
 
 use amm::{
@@ -161,17 +163,10 @@ impl BackRunnerStrategy {
         }
     }
 
-    async fn on_new_pending_tx(&self, tx: &Transaction, decoded_log: &HashMap<String, (Address, Log)>) {
-        let sync_log: Option<&(Address, Log)> = decoded_log.get("Sync");
-        if sync_log.is_none() {
-            return;
-        }
-
+    async fn on_new_pending_tx_with_sync_event(&self, tx: &Transaction, sync_log: &(Address, Log)) {
         let tx_hash: String = format!("{:?}", tx.hash);
-        println!("tx_hash: {}", tx_hash);
-
-        let (pool_address, log): &(Address, Log) = sync_log.unwrap();
-        println!("pool_address: {}", to_checksum(pool_address, None));
+        let (pool_address, log): &(Address, Log) = sync_log;
+        println!("tx_hash: {}\npool_address: {}", tx_hash, to_checksum(pool_address, None));
 
         let Some(local_pool) = self.pools.get(pool_address) else {
             return;
@@ -184,7 +179,7 @@ impl BackRunnerStrategy {
         let ethers_core::abi::Token::Uint(reserve1) = log.params[1].value else {
             panic!("reserve1 is not uint")
         };
-        local_pool.write().unwrap().update_reserve(reserve0, reserve1);
+        local_pool.write().unwrap().update_reserve(&reserve0, &reserve1);
 
         // Get paths
         let touched_paths: Option<&Vec<Arc<PoolPath>>> = self.paths_container.get_paths_containing_pool(pool_address);
@@ -193,27 +188,7 @@ impl BackRunnerStrategy {
             return;
         };
 
-        // Get spreads
-        let mut spreads: HashMap<usize, i128> = HashMap::new();
-        for (idx, path) in touched_paths.iter().enumerate() {
-            let amount_in: U256 = path.get_input_token().convert_to_amount(1_f64);
-            let amount_out: Option<U256> = path.get_amount_out_v2(amount_in); // TODO: Fix fees in this function
-
-            let Some(amount_out) = amount_out else {
-                continue;
-            };
-            let _in: i128 = amount_in.as_u128() as i128;
-            let _out: i128 = amount_out.as_u128() as i128;
-            let spread: i128 = _out - _in;
-
-            if spread > 0 {
-                spreads.insert(idx, spread);
-            }
-        }
-
-        if spreads.is_empty() {
-            return;
-        }
+        println!("touched_paths: {}", touched_paths.len());
 
         // Get gas cost
         let legacy_tx: bool = tx.transaction_type.unwrap_or(U64::from(0)) == U64::from(0);
@@ -224,28 +199,33 @@ impl BackRunnerStrategy {
         };
         let estimated_gas_usage: U256 = U256::from(550_000);
         let gas_cost_in_wei_native: U256 = (gas_price.0 + gas_price.1) * estimated_gas_usage;
-
-        println!("is_legacy_tx: {legacy_tx}");
-
-        // Sort by spread
-        //let mut sorted_spreads: Vec<_> = spreads.iter().collect();
-        //sorted_spreads.sort_by_key(|x| x.1);
-        //sorted_spreads.reverse();
-
-        // Get most profitable path
-        let mut best_net_profit: i128 = 0;
         let native_token: &Arc<CryptoToken> = self.token_manager.native_token();
-        let mut best_path: Option<(&Arc<PoolPath>, U256, U256)> = None;
-        for spread in &spreads {
-            let path_idx: &usize = spread.0;
-            let path: &Arc<PoolPath> = &touched_paths[*path_idx];
-            let (optimized_in, amount_min_out, profit) = path.optimize_amount_in(1000, 10);
 
+        let mut best_net_profit: std::sync::Mutex<i128> = std::sync::Mutex::new(0_i128);
+        let mut best_path: std::sync::Mutex<Option<(&Arc<PoolPath>, U256, U256)>> = std::sync::Mutex::new(None);
+        touched_paths.par_iter().for_each(|path: &Arc<PoolPath>| {
+            let amount_in: U256 = path.get_input_token().convert_to_amount(1_f64);
+            let amount_out: Option<U256> = path.get_amount_out_v2(amount_in); // TODO: Fix fees in this function
+
+            let Some(amount_out) = amount_out else {
+                return; //continue;
+            };
+
+            let _in: i128 = amount_in.as_u128() as i128;
+            let _out: i128 = amount_out.as_u128() as i128;
+            let spread: i128 = _out - _in;
+
+            if spread <= 0 {
+                return; //continue;
+            }
+
+            let (optimized_in, _amount_min_out, profit) = path.optimize_amount_in(1000, 10);
             if optimized_in.is_zero() {
-                continue;
+                return; //continue;
             }
 
             // Convert gas cost to input token price
+            // TODO: A service to handle prices should be used, will (maybe) save some milliseconds
             let input_token: Arc<CryptoToken> = path.get_input_token();
             let price_pool: &Arc<RwLock<dyn AmmPool>> = self.price_calc_pools.get(input_token.address()).unwrap();
             let price_pool: &dyn AmmPool = &*price_pool.read().unwrap();
@@ -257,19 +237,22 @@ impl BackRunnerStrategy {
             // net profit
             let net_profit: i128 = (profit.as_u128() as i128) - (cost_in_input_token_u.as_u128() as i128);
             if net_profit <= 0 {
-                continue;
+                return; //continue;
             }
 
-            println!("net_profit: {net_profit}");
-            if best_net_profit > net_profit {
-                continue;
+            // Lock from here to the end of the socpe so that we can check without other threads messing with it
+            let mut best_net_profit_lock = best_net_profit.lock().unwrap();
+            if *best_net_profit_lock > net_profit {
+                return; //continue;
             }
 
-            // amount_min_out are just input + cost of the transaction, then AMM will give use the profit
-            best_path = Some((path, optimized_in, optimized_in + cost_in_input_token_u));
-            best_net_profit = net_profit;
-        }
+            // amount_min_out are just input + cost of the transaction, then AMM will give use max output
+            *best_path.lock().unwrap() = Some((path, optimized_in, optimized_in + cost_in_input_token_u));
+            *best_net_profit_lock = net_profit;
+        });
 
+        let best_net_profit: &i128 = best_net_profit.get_mut().unwrap();
+        let best_path: &Option<(&Arc<PoolPath>, U256, U256)> = best_path.get_mut().unwrap();
         let Some(best_path) = best_path else {
             return;
         };
@@ -281,7 +264,7 @@ impl BackRunnerStrategy {
         let input_token = swap_path.get_input_token();
 
         // TODO: That's only valid for stable coins
-        if input_token.convert_to_amount(1_f64).as_u128() as i128 > best_net_profit {
+        if input_token.convert_to_amount(0.5_f64).as_u128() as i128 > *best_net_profit {
             println!("Min profit not reached: {best_net_profit}");
             return;
         }
@@ -298,23 +281,23 @@ impl BackRunnerStrategy {
         let swaps_to_execute: Vec<OneSwapInfo> = swaps.0;
         let swaps_are_chained: bool = swaps.1;
 
-        let tx_hash = if legacy_tx {
-            self.solidity_bridge
-                .get_loan_then_swap_chain(swaps_to_execute, swaps_are_chained, false, tx.gas_price, None, None)
-                .await
-        } else {
-            self.solidity_bridge
-                .get_loan_then_swap_chain(
-                    swaps_to_execute,
-                    swaps_are_chained,
-                    false,
-                    None,
-                    tx.max_fee_per_gas,
-                    tx.max_priority_fee_per_gas,
-                )
-                .await
-        };
-        println!("back_running_tx_hash: ({:?}) {:?}", tx.hash, tx_hash);
+        //let tx_hash = if legacy_tx {
+        //    self.solidity_bridge
+        //        .get_loan_then_swap_chain(swaps_to_execute, swaps_are_chained, false, tx.gas_price, None, None)
+        //        .await
+        //} else {
+        //    self.solidity_bridge
+        //        .get_loan_then_swap_chain(
+        //            swaps_to_execute,
+        //            swaps_are_chained,
+        //            false,
+        //            None,
+        //            tx.max_fee_per_gas,
+        //            tx.max_priority_fee_per_gas,
+        //        )
+        //        .await
+        //};
+        //println!("back_running_tx_hash: ({:?}) {:?}", tx.hash, tx_hash);
     }
 
     async fn on_new_block(&mut self, block: &NewBlock) {
@@ -369,47 +352,68 @@ impl BackRunnerStrategy {
 
         let mut event_receiver: Receiver<NetworkEvent> = ns.subscribe();
         while let Ok(event) = event_receiver.recv().await {
-            if let NetworkEvent::PendingTx(tx) = &event {
-                let Some(to) = tx.to else {
-                    continue;
-                };
+            match event {
+                NetworkEvent::Block(block) => {
+                    new_block = block;
+                    self.next_block_base_fee = new_block.next_base_fee;
 
-                let is_router_address: bool = router_addresses.iter().any(|&f| f == to);
-                if !is_router_address {
-                    continue;
+                    self.on_new_block(&new_block).await;
                 }
-
-                let debug_provider: &Arc<DebugTraceCallNodeProvider> =
-                    self.provider_manager.get_next_debug_trace_call();
-                let frame: Result<Option<CallFrame>> =
-                    debug_provider.debug_trace_call(tx, new_block.block_number).await;
-                if frame.is_err() {
-                    println!("[?] Error from debug_trace_call: {:?}", frame.unwrap_err());
-                    continue;
-                }
-
-                let Some(frame) = frame.unwrap() else {
-                    continue;
-                };
-
-                let mut trace_logs: Vec<CallLogFrame> = Vec::new();
-                DebugTraceCallNodeProvider::extract_trace_logs(&frame, &mut trace_logs);
-
-                // TODO: Use to_address to determine which dex to `decode_pair_trace_logs`
-                for trace_log in trace_logs {
-                    let logs: Option<HashMap<String, (Address, Log)>> =
-                        UniswapV2Protocol::decode_pair_trace_logs(&trace_log);
-                    let Some(logs) = logs else {
+                NetworkEvent::PendingTx(ref tx) => {
+                    let Some(to) = tx.to else {
                         continue;
                     };
 
-                    self.on_new_pending_tx(tx, &logs).await;
-                }
-            } else if let NetworkEvent::Block(block) = event {
-                new_block = block;
-                self.next_block_base_fee = new_block.next_base_fee;
+                    let is_router_address: bool = router_addresses.iter().any(|&f| f == to);
+                    if !is_router_address {
+                        continue;
+                    }
 
-                self.on_new_block(&new_block).await;
+                    let debug_provider: &Arc<DebugTraceCallNodeProvider> =
+                        self.provider_manager.get_next_debug_trace_call();
+                    let frame: Result<Option<CallFrame>> =
+                        debug_provider.debug_trace_call(tx, None).await;
+                    if frame.is_err() {
+                        println!("[?] Error from debug_trace_call: {:?}", frame.unwrap_err());
+                        continue;
+                    }
+
+                    let Some(frame) = frame.unwrap() else {
+                        continue;
+                    };
+
+                    let mut trace_logs: Vec<CallLogFrame> = Vec::new();
+                    DebugTraceCallNodeProvider::extract_trace_logs(&frame, &mut trace_logs);
+
+                    // TODO: Use to_address to determine which dex to `decode_pair_trace_logs`
+                    let start = Instant::now();
+
+                    let mut all_sync_logs: Mutex<Vec<(Address, Log)>> = Mutex::new(Vec::new());
+                    trace_logs.par_iter().for_each(|trace_log| {
+                        let logs: Option<(Address, Log)> =
+                            UniswapV2Protocol::decode_pair_trace_log("Sync", trace_log);
+                        let Some(logs) = logs else {
+                            return;
+                        };
+
+                        all_sync_logs.lock().unwrap().push(logs);
+                    });
+                    let all_sync_logs: &mut Vec<(Address, Log)> = all_sync_logs.get_mut().unwrap();
+
+                    async_scoped::TokioScope::scope_and_block(|s| {
+                        for logs in all_sync_logs {
+                            s.spawn(self.on_new_pending_tx_with_sync_event(tx, logs));
+                        };
+                    });
+
+                    println!(
+                        "process tx took: {}ms, trace_logs: {}",
+                        start.elapsed().as_millis(),
+                        trace_logs.len()
+                    );
+                    println!("============");
+                }
+                NetworkEvent::Log(_) => {}
             }
         }
 
