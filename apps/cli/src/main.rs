@@ -369,7 +369,7 @@ async fn main() -> Result<()> {
             };
             let file_name: &String = &args[3];
             let pools: String = std::fs::read_to_string(file_name).expect("Something went wrong reading the file");
-            let pools: Vec<&str> = pools.split('\n').collect::<Vec<&str>>();
+            let pools: Vec<&str> = pools.lines().filter(|s| !s.is_empty()).collect();
 
             AddPoolCommand::process(
                 pools_type,
@@ -386,7 +386,7 @@ async fn main() -> Result<()> {
         if args[1] == "add_token" {
             let file_name: &String = &args[2];
             let tokens: String = std::fs::read_to_string(file_name).expect("Something went wrong reading the file");
-            let tokens: Vec<&str> = tokens.split('\n').collect::<Vec<&str>>();
+            let tokens: Vec<&str> = tokens.lines().filter(|s| !s.is_empty()).collect();
 
             AddTokenCommand::process(
                 tokens,

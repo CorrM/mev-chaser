@@ -39,9 +39,10 @@ async fn get_uniswap_v2_reserves(provider: &NormalNodeProvider, pools: Vec<Arc<R
 }
 
 pub async fn batch_update_uniswap_v2_pools(provider: &NormalNodeProvider, pools: &[Arc<RwLock<dyn AmmPool>>]) {
-    let pools_cnt: usize = pools.len();
-    let batch: f32 = ((pools_cnt / 250) as f32).ceil();
-    let pools_per_batch: usize = ((pools_cnt as f32) / batch).ceil() as usize;
+    let pools_cnt = pools.len() as f32;
+    let batch: f32 = (pools_cnt / 250_f32).ceil();
+    let pools_per_batch: usize = (pools_cnt / batch).ceil() as usize;
+    let pools_cnt: usize = pools_cnt as usize;
 
     for i in 0..(batch as usize) {
         let start_idx: usize = i * pools_per_batch;

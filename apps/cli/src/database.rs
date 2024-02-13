@@ -263,11 +263,15 @@ impl Database {
             .db
             .prepare("SELECT * FROM TokenNetworks WHERE networkId = ? AND address = ? LIMIT 1")?;
 
-        let db_token_network: DbTokenNetwork =
-            stmt.query_row(params![db_network.id, address.into()], DbTokenNetwork::from_row)?;
+        let db_token_network: Option<DbTokenNetwork> = stmt
+            .query_row(params![db_network.id, address.into()], DbTokenNetwork::from_row)
+            .optional()?;
+        if db_token_network.is_none() {
+            return Ok(None);
+        }
 
+        let db_token_network: DbTokenNetwork = db_token_network.unwrap();
         let mut stmt: Statement = self.db.prepare("SELECT * FROM Tokens WHERE id = ? LIMIT 1")?;
-
         stmt.query_row(params![db_token_network.token_id], DbToken::from_row)
             .optional()
     }
@@ -337,7 +341,7 @@ impl Database {
             .get_token_network(to_checksum(token.address(), None), token.network())?
             .is_some()
         {
-            return Err(rusqlite::Error::QueryReturnedNoRows);
+            return Err(rusqlite::Error::ExecuteReturnedResults);
         }
 
         let mut stmt: Statement = self
@@ -501,8 +505,10 @@ impl Database {
         let mut stmt: Statement = if valid_pools_only {
             self.db.prepare("SELECT * FROM DexPools WHERE networkId = ?")?
         } else {
-            self.db
-                .prepare(&format!("SELECT * FROM DexPools WHERE networkId = ? AND address != {}", to_checksum(&Address::zero(), None)))?
+            self.db.prepare(&format!(
+                "SELECT * FROM DexPools WHERE networkId = ? AND address != {}",
+                to_checksum(&Address::zero(), None)
+            ))?
         };
 
         let ret = stmt
@@ -511,17 +517,25 @@ impl Database {
         ret
     }
 
-    pub fn get_dex_pools_by_dex_id(&self, dex_id: i64, network: &NetworkKind, valid_pools_only: bool) -> Result<Vec<DbDexPool>> {
+    pub fn get_dex_pools_by_dex_id(
+        &self,
+        dex_id: i64,
+        network: &NetworkKind,
+        valid_pools_only: bool,
+    ) -> Result<Vec<DbDexPool>> {
         let db_network: Option<DbNetwork> = self.get_network(network)?;
         if db_network.is_none() {
             return Err(rusqlite::Error::QueryReturnedNoRows);
         }
 
         let mut stmt: Statement = if valid_pools_only {
-            self.db.prepare("SELECT * FROM DexPools WHERE dexId = ? AND networkId = ?")?
-        }
-        else {
-            self.db.prepare(&format!("SELECT * FROM DexPools WHERE dexId = ? AND networkId = ? AND address != {}", to_checksum(&Address::zero(), None)))?
+            self.db
+                .prepare("SELECT * FROM DexPools WHERE dexId = ? AND networkId = ?")?
+        } else {
+            self.db.prepare(&format!(
+                "SELECT * FROM DexPools WHERE dexId = ? AND networkId = ? AND address != {}",
+                to_checksum(&Address::zero(), None)
+            ))?
         };
 
         let ret = stmt

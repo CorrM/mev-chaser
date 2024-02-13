@@ -20,14 +20,14 @@ impl AddTokenCommand {
         tokens: &[&str],
         db: &Database,
         target_network: &NetworkKind,
-        provider: &Arc<Provider<Http>>
+        provider: &Arc<Provider<Http>>,
     ) -> Result<()> {
         let mut multicall: Multicall<Provider<Http>> = Multicall::new(Arc::clone(provider), None).await.unwrap();
 
         for token_address in tokens {
             // Can't execlude tokens here, because it will cause an error in the next for loop
             let token_contract = ERC20TokenAbi::new(Address::from_str(token_address).unwrap(), Arc::clone(provider));
-            
+
             multicall.add_call(token_contract.name(), false);
             multicall.add_call(token_contract.symbol(), false);
             multicall.add_call(token_contract.decimals(), false);
@@ -35,18 +35,29 @@ impl AddTokenCommand {
 
         let result: Vec<Result<Token, Bytes>> = multicall.call_raw().await.unwrap();
         for i in (0..result.len()).step_by(3) {
-            let token_address: &str = tokens[i];
+            let token_address: &str = tokens[i / 3];
             if db.get_token_by_address(token_address, target_network)?.is_some() {
-                println!("Token '{}' already exists", token_address);
+                let token_symbol: &Result<Token, Bytes> = &result[i + 1];
+                let Ok(Token::String(token_symbol)) = token_symbol else {
+                    panic!("Failed to get token name");
+                };
+
+                println!("Token {} '{}' already exists", token_symbol, token_address);
                 continue;
             }
 
             let token_name: &Result<Token, Bytes> = &result[i];
             let token_symbol: &Result<Token, Bytes> = &result[i + 1];
             let token_decimals: &Result<Token, Bytes> = &result[i + 2];
-            let Ok(Token::String(token_name)) = token_name else { panic!("Failed to get token name"); };
-            let Ok(Token::String(token_symbol)) = token_symbol else { panic!("Failed to get token symbol"); };
-            let Ok(Token::Uint(token_decimals)) = token_decimals else { panic!("Failed to get token decimals"); };
+            let Ok(Token::String(token_name)) = token_name else {
+                panic!("Failed to get token name");
+            };
+            let Ok(Token::String(token_symbol)) = token_symbol else {
+                panic!("Failed to get token symbol");
+            };
+            let Ok(Token::Uint(token_decimals)) = token_decimals else {
+                panic!("Failed to get token decimals");
+            };
             let token_decimals = token_decimals.as_u32() as u8;
 
             println!("Adding token {} '{}'", token_symbol, token_address);
@@ -72,9 +83,10 @@ impl AddTokenCommand {
         target_network: &NetworkKind,
         provider: Arc<Provider<Http>>,
     ) -> Result<()> {
-        let tokens_cnt: usize = tokens.len();
-        let batch: f32 = ((tokens_cnt / 250) as f32).ceil();
-        let tokens_per_batch: usize = ((tokens_cnt as f32) / batch).ceil() as usize;
+        let tokens_cnt = tokens.len() as f32;
+        let batch: f32 = (tokens_cnt / 250_f32).ceil();
+        let tokens_per_batch: usize = (tokens_cnt / batch).ceil() as usize;
+        let tokens_cnt: usize = tokens_cnt as usize;
 
         for i in 0..(batch as usize) {
             let start_idx: usize = i * tokens_per_batch;
