@@ -103,10 +103,6 @@ impl SolidityBridge {
         max_fee_per_gas: Option<U256>,
         max_priority_fee_per_gas: Option<U256>,
     ) -> Result<TxHash, ContractError<SignerMiddleware<Arc<Provider<Ws>>, Wallet<SigningKey>>>> {
-        if swaps.is_empty() {
-            return panic!("swaps is empty");
-        }
-
         let mut call = self
             .contract
             .get_loan_then_multi_swap(swaps, chain_swaps, return_output)

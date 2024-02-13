@@ -1,15 +1,12 @@
-use std::collections::HashMap;
 use std::env;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::time::Instant;
 use std::{env::VarError, path::Path};
 
 use anyhow::{anyhow, Result};
-use ethers_core::abi::Log;
-use ethers_core::types::{Address, CallFrame, CallLogFrame, H256};
+use ethers_core::types::Address;
 use ethers_core::utils::to_checksum;
-use ethers_providers::{Http, Middleware, Provider};
+use ethers_providers::{Http, Provider};
 
 use amm::{AmmPool, AmmPoolKind, AmmProtocol, UniswapV2Pool, UniswapV2Protocol};
 use contracts::{OneSwapInfo, UniswapV2FactoryAbi, UniswapV2PairAbi};
@@ -22,9 +19,8 @@ use shared::{
     network::NetworkKind,
     provider::{DebugTraceCallNodeProvider, NodeProviderManager, NodeProviderNetworkInfo, NormalNodeProvider},
 };
-use tokio::task::JoinSet;
 
-use crate::commands::AddPoolCommand;
+use crate::commands::{AddPoolCommand, AddTokenCommand};
 use crate::utils::env::Env;
 
 mod commands;
@@ -365,19 +361,43 @@ async fn main() -> Result<()> {
 
     // CLI commands
     let args: Vec<String> = env::args().collect();
-    if args.len() > 1 && args[1] == "add_pool" {
-        let pools_type: AmmPoolKind = match args[2].as_str() {
-            "uniswapv2" => AmmPoolKind::UniswapV2,
-            _ => panic!("Unsupported pool type"),
-        };
-        let file_name: &String = &args[3];
-        let pools: String = std::fs::read_to_string(file_name).expect("Something went wrong reading the file");
-        let pools: Vec<&str> = pools.split('\n').collect::<Vec<&str>>();
+    if args.len() > 1 {
+        if args[1] == "add_pool" {
+            let pools_type: AmmPoolKind = match args[2].as_str() {
+                "uniswapv2" => AmmPoolKind::UniswapV2,
+                _ => panic!("Unsupported pool type"),
+            };
+            let file_name: &String = &args[3];
+            let pools: String = std::fs::read_to_string(file_name).expect("Something went wrong reading the file");
+            let pools: Vec<&str> = pools.split('\n').collect::<Vec<&str>>();
 
-        let provider: Arc<Provider<Http>> = Arc::clone(provider_manager.get_next().raw_http_provider());
-        AddPoolCommand::process(pools_type, pools, &db, &target_network, provider).await?;
+            AddPoolCommand::process(
+                pools_type,
+                pools,
+                &db,
+                &target_network,
+                Arc::clone(provider_manager.get_next().raw_http_provider()),
+            )
+            .await?;
 
-        return Ok(());
+            return Ok(());
+        }
+
+        if args[1] == "add_token" {
+            let file_name: &String = &args[2];
+            let tokens: String = std::fs::read_to_string(file_name).expect("Something went wrong reading the file");
+            let tokens: Vec<&str> = tokens.split('\n').collect::<Vec<&str>>();
+
+            AddTokenCommand::process(
+                tokens,
+                &db,
+                &target_network,
+                Arc::clone(provider_manager.get_next().raw_http_provider()),
+            )
+            .await?;
+
+            return Ok(());
+        }
     }
 
     let token_manager = TokenManager::new(get_tokens(&db, &target_network)?, &target_network);
@@ -410,56 +430,4 @@ async fn main() -> Result<()> {
     println!("[+] Done");
 
     Ok(())
-}
-
-pub async fn speed_of_tx(provider_manager: &NodeProviderManager) {
-    let provider: Arc<Provider<Http>> = Arc::clone(provider_manager.get_next().raw_http_provider());
-    let Some(tx) = provider
-        .get_transaction(H256::from_str("0x04e88c26f24ca2d5eb9b3a3ffc0a2eb4d034b2ac101c588f362287e858165de6").unwrap())
-        .await
-        .unwrap()
-    else {
-        return;
-    };
-
-    let debug_provider: &Arc<DebugTraceCallNodeProvider> = provider_manager.get_next_debug_trace_call();
-
-    let mut start = Instant::now();
-    let frame: Result<Option<CallFrame>> = debug_provider.debug_trace_call(&tx, None).await;
-    if frame.is_err() {
-        println!("[?] Error from debug_trace_call: {:?}", frame.unwrap_err());
-        return;
-    }
-
-    let Some(frame) = frame.unwrap() else {
-        println!("no frame");
-        return;
-    };
-    println!("debug_trace_call took: {}", start.elapsed().as_millis());
-
-    start = Instant::now();
-    let mut trace_logs: Vec<CallLogFrame> = Vec::new();
-    DebugTraceCallNodeProvider::extract_trace_logs(&frame, &mut trace_logs);
-    println!("extract_trace_logs took: {}", start.elapsed().as_millis());
-
-    // TODO: Use to_address to determine which dex to `decode_pair_trace_logs`
-    start = Instant::now();
-    //let mut tasks = JoinSet::new();
-    for trace_log in &trace_logs {
-        let logs: Option<HashMap<String, (Address, Log)>> = UniswapV2Protocol::decode_pair_trace_logs(trace_log);
-        let Some(logs) = logs else {
-            continue;
-        };
-
-        //tasks.spawn(self.on_new_pending_tx(tx.clone(), logs));
-        //self.on_new_pending_tx(&tx, &logs).await;
-    }
-
-    //while let Some(_res) = tasks.join_next().await {}
-
-    println!(
-        "process tx took: {}, trace_logs: {}",
-        start.elapsed().as_millis(),
-        trace_logs.len()
-    );
 }

@@ -26,8 +26,8 @@ async fn get_uniswap_v2_reserves(provider: &NormalNodeProvider, pools: Vec<Arc<R
 
     let result: Vec<Result<Token, Bytes>> = multicall.call_raw().await.unwrap();
     for i in 0..result.len() {
-        let pool = &pools[i];
-        let reserve: Result<Token, Bytes> = result[i].clone();
+        let pool: &Arc<RwLock<dyn AmmPool>> = &pools[i];
+        let reserve: &Result<Token, Bytes> = &result[i];
 
         if let Ok(Token::Tuple(response)) = reserve {
             pool.write().unwrap().update_reserve(
@@ -38,7 +38,7 @@ async fn get_uniswap_v2_reserves(provider: &NormalNodeProvider, pools: Vec<Arc<R
     }
 }
 
-pub async fn batch_update_uniswap_v2_pools(provider: &NormalNodeProvider, pools: &Vec<Arc<RwLock<dyn AmmPool>>>) {
+pub async fn batch_update_uniswap_v2_pools(provider: &NormalNodeProvider, pools: &[Arc<RwLock<dyn AmmPool>>]) {
     let pools_cnt: usize = pools.len();
     let batch: f32 = ((pools_cnt / 250) as f32).ceil();
     let pools_per_batch: usize = ((pools_cnt as f32) / batch).ceil() as usize;

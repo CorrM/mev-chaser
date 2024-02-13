@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use amm::{AmmPool, AmmProtocol, UniswapV2Protocol, UniswapV2Simulator};
+use amm::{AmmProtocol, UniswapV2Protocol, UniswapV2Simulator};
 use anyhow::{anyhow, Result};
 use contracts::OneSwapInfo;
 use ethers_core::{
@@ -122,6 +122,8 @@ impl PoolPath {
             Arc::ptr_eq(&pool_read_lock.dex(), &first_path_dex)
         });
 
+        let mut swaps: Vec<OneSwapInfo> = Vec::new();
+        let mut chain_swaps: bool = false;
         if all_are_same_dex {
             let v2_dex_ptr: *mut UniswapV2Protocol = &*first_path_dex as *const _ as *mut UniswapV2Protocol;
             let router: Address = unsafe { *(*v2_dex_ptr).router() };
@@ -153,10 +155,8 @@ impl PoolPath {
                 return Err(anyhow!("Failed to make UniswapV2ProtocolSwapInfo"));
             };
 
-            return Ok((vec![swap], false));
+            swaps.push(swap);
         } else {
-            let mut swaps: Vec<OneSwapInfo> = Vec::new();
-
             for (idx, path_item) in self.path.iter().enumerate() {
                 let v2_dex_ptr: *mut UniswapV2Protocol =
                     &*path_item.pool.read().unwrap().dex() as *const _ as *mut UniswapV2Protocol;
@@ -193,7 +193,9 @@ impl PoolPath {
                 swaps.push(swap);
             }
 
-            Ok((swaps, true))
+            chain_swaps = true;
         }
+
+        Ok((swaps, chain_swaps))
     }
 }

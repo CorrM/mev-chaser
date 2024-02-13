@@ -281,23 +281,25 @@ impl BackRunnerStrategy {
         let swaps_to_execute: Vec<OneSwapInfo> = swaps.0;
         let swaps_are_chained: bool = swaps.1;
 
-        //let tx_hash = if legacy_tx {
-        //    self.solidity_bridge
-        //        .get_loan_then_swap_chain(swaps_to_execute, swaps_are_chained, false, tx.gas_price, None, None)
-        //        .await
-        //} else {
-        //    self.solidity_bridge
-        //        .get_loan_then_swap_chain(
-        //            swaps_to_execute,
-        //            swaps_are_chained,
-        //            false,
-        //            None,
-        //            tx.max_fee_per_gas,
-        //            tx.max_priority_fee_per_gas,
-        //        )
-        //        .await
-        //};
-        //println!("back_running_tx_hash: ({:?}) {:?}", tx.hash, tx_hash);
+        let start = Instant::now();
+
+        let tx_hash = if legacy_tx {
+            self.solidity_bridge
+                .get_loan_then_swap_chain(swaps_to_execute, swaps_are_chained, false, tx.gas_price, None, None)
+                .await
+        } else {
+            self.solidity_bridge
+                .get_loan_then_swap_chain(
+                    swaps_to_execute,
+                    swaps_are_chained,
+                    false,
+                    None,
+                    tx.max_fee_per_gas,
+                    tx.max_priority_fee_per_gas,
+                )
+                .await
+        };
+        println!("path: {:?}\nback_running_tx_hash: ({:?}) {:?}\nmake_tx_took: {}ms", swap_path, tx.hash, tx_hash, start.elapsed().as_millis());
     }
 
     async fn on_new_block(&mut self, block: &NewBlock) {
@@ -381,6 +383,11 @@ impl BackRunnerStrategy {
                     let Some(frame) = frame.unwrap() else {
                         continue;
                     };
+
+                    if frame.error.is_some() {
+                        println!("[?] Error from transaction when calling debug_trace_call: {:?}", frame.error);
+                        continue;
+                    }
 
                     let mut trace_logs: Vec<CallLogFrame> = Vec::new();
                     DebugTraceCallNodeProvider::extract_trace_logs(&frame, &mut trace_logs);
