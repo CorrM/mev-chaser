@@ -16,7 +16,7 @@ use crate::database::Database;
 pub struct AddTokenCommand;
 
 impl AddTokenCommand {
-    async fn get_token_info(
+    async fn add_token_info(
         tokens: &[&str],
         db: &Database,
         target_network: &NetworkKind,
@@ -92,7 +92,7 @@ impl AddTokenCommand {
             let start_idx: usize = i * tokens_per_batch;
             let end_idx: usize = std::cmp::min(start_idx + tokens_per_batch, tokens_cnt);
 
-            AddTokenCommand::get_token_info(&tokens[start_idx..end_idx], db, target_network, &provider).await?;
+            AddTokenCommand::add_token_info(&tokens[start_idx..end_idx], db, target_network, &provider).await?;
         }
 
         Ok(())

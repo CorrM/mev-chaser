@@ -467,8 +467,8 @@ impl Database {
         &self,
         dex_id: i64,
         network: &NetworkKind,
-        token_a: &Address,
-        token_b: &Address,
+        token_a: impl Into<String>,
+        token_b: impl Into<String>,
     ) -> Result<Option<DbDexPool>> {
         let db_network: Option<DbNetwork> = self.get_network(network)?;
         if db_network.is_none() {
@@ -476,8 +476,8 @@ impl Database {
         }
         let db_network = db_network.unwrap();
 
-        let db_token_a: Option<DbToken> = self.get_token_by_address(to_checksum(token_a, None), network)?;
-        let db_token_b: Option<DbToken> = self.get_token_by_address(to_checksum(token_b, None), network)?;
+        let db_token_a: Option<DbToken> = self.get_token_by_address(token_a.into(), network)?;
+        let db_token_b: Option<DbToken> = self.get_token_by_address(token_b.into(), network)?;
         if db_token_a.is_none() || db_token_b.is_none() {
             return Err(rusqlite::Error::QueryReturnedNoRows);
         }
@@ -544,31 +544,36 @@ impl Database {
         ret
     }
 
-    pub fn add_dex_pool(&self, pool: &impl AmmPool) -> Result<DbDexPool> {
-        let db_network: Option<DbNetwork> = self.get_network(pool.network())?;
+    pub fn add_dex_pool(
+        &self,
+        address: &Address,
+        network: &NetworkKind,
+        dex_id: i64,
+        token0_id: i64,
+        token1_id: i64,
+    ) -> Result<DbDexPool> {
+        let db_network: Option<DbNetwork> = self.get_network(network)?;
         if db_network.is_none() {
             return Err(rusqlite::Error::QueryReturnedNoRows);
         }
 
-        let db_dex: Option<DbDex> = self.get_dex_by_name(pool.dex().name())?;
+        let db_dex: Option<DbDex> = self.get_dex_by_id(dex_id)?;
         if db_dex.is_none() {
             return Err(rusqlite::Error::QueryReturnedNoRows);
         }
 
         let db_dex: DbDex = db_dex.unwrap();
-        let pool_address: String = to_checksum(pool.address(), None);
-        if self.get_dex_pool(pool.network(), &pool_address)?.is_some() {
-            return Err(rusqlite::Error::QueryReturnedNoRows);
+        let pool_address: String = to_checksum(address, None);
+        if self.get_dex_pool(network, &pool_address)?.is_some() {
+            return Err(rusqlite::Error::ExecuteReturnedResults);
         };
 
-        let db_token0: Option<(DbToken, DbTokenNetwork)> =
-            self.get_token_and_network(to_checksum(pool.token0().address(), None), pool.network())?;
+        let db_token0: Option<DbToken> = self.get_token_by_id(token0_id)?;
         if db_token0.is_none() {
             return Err(rusqlite::Error::QueryReturnedNoRows);
         }
 
-        let db_token1: Option<(DbToken, DbTokenNetwork)> =
-            self.get_token_and_network(to_checksum(pool.token1().address(), None), pool.network())?;
+        let db_token1: Option<DbToken> = self.get_token_by_id(token1_id)?;
         if db_token1.is_none() {
             return Err(rusqlite::Error::QueryReturnedNoRows);
         }
@@ -582,8 +587,8 @@ impl Database {
                 db_dex.id,
                 db_network.unwrap().id,
                 pool_address,
-                db_token0.unwrap().0.id,
-                db_token1.unwrap().0.id
+                token0_id,
+                token1_id
             ],
             DbDexPool::from_row,
         )
@@ -593,8 +598,8 @@ impl Database {
         &self,
         dex_id: i64,
         network: &NetworkKind,
-        token_a: &Address,
-        token_b: &Address,
+        token_a: &str,
+        token_b: &str,
     ) -> Result<DbDexPool> {
         let db_network: Option<DbNetwork> = self.get_network(network)?;
         if db_network.is_none() {
@@ -607,13 +612,13 @@ impl Database {
         }
 
         let db_token0: Option<(DbToken, DbTokenNetwork)> =
-            self.get_token_and_network(to_checksum(token_a, None), network)?;
+            self.get_token_and_network(token_a, network)?;
         if db_token0.is_none() {
             return Err(rusqlite::Error::QueryReturnedNoRows);
         }
 
         let db_token1: Option<(DbToken, DbTokenNetwork)> =
-            self.get_token_and_network(to_checksum(token_b, None), network)?;
+            self.get_token_and_network(token_b, network)?;
         if db_token1.is_none() {
             return Err(rusqlite::Error::QueryReturnedNoRows);
         }
