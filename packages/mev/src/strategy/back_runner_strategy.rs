@@ -194,14 +194,15 @@ impl BackRunnerStrategy {
 
         println!("touched_paths: {}", touched_paths.len());
 
+        let native_token: &Arc<CryptoToken> = self.token_manager.native_token();
         let mut best_profit_in_native: std::sync::Mutex<i128> = std::sync::Mutex::new(0_i128);
         let mut best_path: std::sync::Mutex<Option<(&Arc<PoolPath>, U256, U256)>> = std::sync::Mutex::new(None);
-        let native_token: &Arc<CryptoToken> = self.token_manager.native_token();
         touched_paths.par_iter().for_each(|path: &Arc<PoolPath>| {
-            let amount_in: U256 = path.get_input_token().convert_to_amount(1_f64);
-            let amount_out: Option<U256> = path.get_amount_out_v2(amount_in); // TODO: Fix fees in this function
+            let input_token: Arc<CryptoToken> = path.get_input_token();
 
-            let Some(amount_out) = amount_out else {
+            let amount_in: U256 = input_token.convert_to_amount(1_f64);
+            let Some(amount_out) = path.get_amount_out_v2(amount_in) else {
+                // TODO: Fix fees in this function
                 return;
             };
 
@@ -219,7 +220,6 @@ impl BackRunnerStrategy {
             }
 
             // Convert profit to native so we can get the most profitable path
-            let input_token: Arc<CryptoToken> = path.get_input_token();
             let price_pool: &dyn AmmPool = &*self
                 .price_calc_pools
                 .get(input_token.address())

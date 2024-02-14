@@ -55,7 +55,10 @@ impl GenPoolCommand {
             let pairs_chank: &[(&String, &String)] = &token_pairs[start_idx..end_idx];
 
             // Get pools addresses
-            println!("[-] Getting pools addresses for dex '{}'", db_dex.name);
+            println!(
+                "[-] Getting pools [{} -> {}] addresses for dex '{}'",
+                start_idx, end_idx, db_dex.name
+            );
             let mut multicall: Multicall<Provider<Http>> = Multicall::new(Arc::clone(provider), None).await.unwrap();
             for (token_a, token_b) in pairs_chank {
                 // Can't execlude pairs here, because it will cause an error in the next for loop
