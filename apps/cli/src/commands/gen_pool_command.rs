@@ -117,6 +117,7 @@ impl GenPoolCommand {
                 let pool_contract = UniswapV2PairAbi::new(*pool_address, Arc::clone(provider));
 
                 // TODO: filter by check if pool is empty and check reserves
+                // TODO: Maybe check if the reservers are worth 1000USDT
 
                 multicall.add_call(pool_contract.token_0(), false);
                 multicall.add_call(pool_contract.token_1(), false);

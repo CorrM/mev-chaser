@@ -166,7 +166,11 @@ impl BackRunnerStrategy {
     async fn on_new_pending_tx_with_sync_event(&self, tx: &Transaction, sync_log: &(Address, Log)) {
         let tx_hash: String = format!("{:?}", tx.hash);
         let (pool_address, log): &(Address, Log) = sync_log;
-        println!("tx_hash: {}\npool_address: {}", tx_hash, to_checksum(pool_address, None));
+        println!(
+            "tx_hash: {}\npool_address: {}",
+            tx_hash,
+            to_checksum(pool_address, None)
+        );
 
         let Some(local_pool) = self.pools.get(pool_address) else {
             return;
@@ -190,6 +194,60 @@ impl BackRunnerStrategy {
 
         println!("touched_paths: {}", touched_paths.len());
 
+        let mut best_profit_in_native: std::sync::Mutex<i128> = std::sync::Mutex::new(0_i128);
+        let mut best_path: std::sync::Mutex<Option<(&Arc<PoolPath>, U256, U256)>> = std::sync::Mutex::new(None);
+        let native_token: &Arc<CryptoToken> = self.token_manager.native_token();
+        touched_paths.par_iter().for_each(|path: &Arc<PoolPath>| {
+            let amount_in: U256 = path.get_input_token().convert_to_amount(1_f64);
+            let amount_out: Option<U256> = path.get_amount_out_v2(amount_in); // TODO: Fix fees in this function
+
+            let Some(amount_out) = amount_out else {
+                return;
+            };
+
+            let _in: i128 = amount_in.as_u128() as i128;
+            let _out: i128 = amount_out.as_u128() as i128;
+            let spread: i128 = _out - _in;
+
+            if spread <= 0 {
+                return;
+            }
+
+            let (optimized_in, _amount_min_out, profit) = path.optimize_amount_in(1000, 10);
+            if optimized_in.is_zero() {
+                return;
+            }
+
+            // Convert profit to native so we can get the most profitable path
+            let input_token: Arc<CryptoToken> = path.get_input_token();
+            let price_pool: &dyn AmmPool = &*self
+                .price_calc_pools
+                .get(input_token.address())
+                .unwrap()
+                .read()
+                .unwrap();
+
+            let native_token_price: f64 =
+                UniswapV2Simulator::reserves_to_price(price_pool, Arc::ptr_eq(price_pool.token1(), native_token));
+            let profit_in_native: f64 = input_token.convert_to_decimal(profit) / native_token_price;
+            let profit_in_native: i128 = native_token.convert_to_amount(profit_in_native).as_u128() as i128;
+
+            // Lock from here to the end of the socpe so that we can check without other threads messing with it
+            let mut best_profit_lock = best_profit_in_native.lock().unwrap();
+            if *best_profit_lock > profit_in_native {
+                return;
+            }
+
+            // amount_min_out are just input + cost of the transaction, then AMM will give use max output
+            *best_path.lock().unwrap() = Some((path, optimized_in, optimized_in + profit_in_native));
+            *best_profit_lock = profit_in_native;
+        });
+
+        let best_profit: i128 = *best_profit_in_native.get_mut().unwrap();
+        if best_profit == 0 {
+            return;
+        }
+
         // Get gas cost
         let legacy_tx: bool = tx.transaction_type.unwrap_or(U64::from(0)) == U64::from(0);
         let gas_price: (U256, U256) = if legacy_tx {
@@ -199,59 +257,13 @@ impl BackRunnerStrategy {
         };
         let estimated_gas_usage: U256 = U256::from(550_000);
         let gas_cost_in_wei_native: U256 = (gas_price.0 + gas_price.1) * estimated_gas_usage;
-        let native_token: &Arc<CryptoToken> = self.token_manager.native_token();
 
-        let mut best_net_profit: std::sync::Mutex<i128> = std::sync::Mutex::new(0_i128);
-        let mut best_path: std::sync::Mutex<Option<(&Arc<PoolPath>, U256, U256)>> = std::sync::Mutex::new(None);
-        touched_paths.par_iter().for_each(|path: &Arc<PoolPath>| {
-            let amount_in: U256 = path.get_input_token().convert_to_amount(1_f64);
-            let amount_out: Option<U256> = path.get_amount_out_v2(amount_in); // TODO: Fix fees in this function
+        // get net profit
+        let net_profit: i128 = best_profit - (gas_cost_in_wei_native.as_u128() as i128);
+        if net_profit <= 0 {
+            return;
+        }
 
-            let Some(amount_out) = amount_out else {
-                return; //continue;
-            };
-
-            let _in: i128 = amount_in.as_u128() as i128;
-            let _out: i128 = amount_out.as_u128() as i128;
-            let spread: i128 = _out - _in;
-
-            if spread <= 0 {
-                return; //continue;
-            }
-
-            let (optimized_in, _amount_min_out, profit) = path.optimize_amount_in(1000, 10);
-            if optimized_in.is_zero() {
-                return; //continue;
-            }
-
-            // Convert gas cost to input token price
-            // TODO: A service to handle prices should be used, will (maybe) save some milliseconds
-            let input_token: Arc<CryptoToken> = path.get_input_token();
-            let price_pool: &Arc<RwLock<dyn AmmPool>> = self.price_calc_pools.get(input_token.address()).unwrap();
-            let price_pool: &dyn AmmPool = &*price_pool.read().unwrap();
-            let input_token_price: f64 =
-                UniswapV2Simulator::reserves_to_price(price_pool, Arc::ptr_eq(price_pool.token0(), native_token));
-            let cost_in_input_token: f64 = native_token.convert_to_decimal(gas_cost_in_wei_native) * input_token_price;
-            let cost_in_input_token_u: U256 = input_token.convert_to_amount(cost_in_input_token);
-
-            // net profit
-            let net_profit: i128 = (profit.as_u128() as i128) - (cost_in_input_token_u.as_u128() as i128);
-            if net_profit <= 0 {
-                return; //continue;
-            }
-
-            // Lock from here to the end of the socpe so that we can check without other threads messing with it
-            let mut best_net_profit_lock = best_net_profit.lock().unwrap();
-            if *best_net_profit_lock > net_profit {
-                return; //continue;
-            }
-
-            // amount_min_out are just input + cost of the transaction, then AMM will give use max output
-            *best_path.lock().unwrap() = Some((path, optimized_in, optimized_in + cost_in_input_token_u));
-            *best_net_profit_lock = net_profit;
-        });
-
-        let best_net_profit: &i128 = best_net_profit.get_mut().unwrap();
         let best_path: &Option<(&Arc<PoolPath>, U256, U256)> = best_path.get_mut().unwrap();
         let Some(best_path) = best_path else {
             return;
@@ -264,19 +276,18 @@ impl BackRunnerStrategy {
         let input_token = swap_path.get_input_token();
 
         // TODO: That's only valid for stable coins
-        if input_token.convert_to_amount(0.5_f64).as_u128() as i128 > *best_net_profit {
-            println!("Min profit not reached: {best_net_profit}");
+        if input_token.convert_to_amount(0.5_f64).as_u128() as i128 > net_profit {
+            println!("Min profit not reached: {net_profit}");
             return;
         }
 
-        println!("input_token: {}", swap_path.get_input_token().symbol());
-        println!("best_net_profit: {best_net_profit}");
-
+        let start = Instant::now();
         let swaps: Result<(Vec<OneSwapInfo>, bool)> = swap_path.make_swaps(swap_input_amount, swap_output_amount);
         let Ok(swaps) = swaps else {
             println!("Failed to make swap information: {:?}", swaps.unwrap_err());
             return;
         };
+        println!("make_swaps_took: {}ms", start.elapsed().as_millis());
 
         let swaps_to_execute: Vec<OneSwapInfo> = swaps.0;
         let swaps_are_chained: bool = swaps.1;
@@ -299,7 +310,16 @@ impl BackRunnerStrategy {
                 )
                 .await
         };
-        println!("path: {:?}\nback_running_tx_hash: ({:?}) {:?}\nmake_tx_took: {}ms", swap_path, tx.hash, tx_hash, start.elapsed().as_millis());
+
+        println!("input_token: {}", swap_path.get_input_token().symbol());
+        println!("best_net_profit: {}", net_profit);
+        println!(
+            "path: {:?}\nback_running_tx_hash: ({:?}) {:?}\nmake_tx_took: {}ms",
+            swap_path,
+            tx.hash,
+            tx_hash,
+            start.elapsed().as_millis()
+        );
     }
 
     async fn on_new_block(&mut self, block: &NewBlock) {
@@ -352,6 +372,9 @@ impl BackRunnerStrategy {
             ),
         };
 
+        let debug_provider: Arc<DebugTraceCallNodeProvider> =
+            Arc::clone(self.provider_manager.get_next_debug_trace_call());
+
         let mut event_receiver: Receiver<NetworkEvent> = ns.subscribe();
         while let Ok(event) = event_receiver.recv().await {
             match event {
@@ -371,10 +394,9 @@ impl BackRunnerStrategy {
                         continue;
                     }
 
-                    let debug_provider: &Arc<DebugTraceCallNodeProvider> =
-                        self.provider_manager.get_next_debug_trace_call();
-                    let frame: Result<Option<CallFrame>> =
-                        debug_provider.debug_trace_call(tx, None).await;
+                    let start = Instant::now();
+
+                    let frame: Result<Option<CallFrame>> = debug_provider.debug_trace_call(tx, None).await;
                     if frame.is_err() {
                         println!("[?] Error from debug_trace_call: {:?}", frame.unwrap_err());
                         continue;
@@ -385,20 +407,28 @@ impl BackRunnerStrategy {
                     };
 
                     if frame.error.is_some() {
-                        println!("[?] Error from transaction when calling debug_trace_call: {:?}", frame.error);
+                        println!(
+                            "[?] Error from transaction when calling debug_trace_call: {:?}",
+                            frame.error
+                        );
                         continue;
                     }
+
+                    println!("debug_trace_call took: {}ms", start.elapsed().as_millis());
+
+                    let start = Instant::now();
 
                     let mut trace_logs: Vec<CallLogFrame> = Vec::new();
                     DebugTraceCallNodeProvider::extract_trace_logs(&frame, &mut trace_logs);
 
-                    // TODO: Use to_address to determine which dex to `decode_pair_trace_logs`
+                    println!("extract_trace_logs took: {}ms", start.elapsed().as_millis());
+
                     let start = Instant::now();
 
+                    // TODO: Use to_address to determine which dex to `decode_pair_trace_logs`
                     let mut all_sync_logs: Mutex<Vec<(Address, Log)>> = Mutex::new(Vec::new());
                     trace_logs.par_iter().for_each(|trace_log| {
-                        let logs: Option<(Address, Log)> =
-                            UniswapV2Protocol::decode_pair_trace_log("Sync", trace_log);
+                        let logs: Option<(Address, Log)> = UniswapV2Protocol::decode_pair_trace_log("Sync", trace_log);
                         let Some(logs) = logs else {
                             return;
                         };
@@ -410,11 +440,11 @@ impl BackRunnerStrategy {
                     async_scoped::TokioScope::scope_and_block(|s| {
                         for logs in all_sync_logs {
                             s.spawn(self.on_new_pending_tx_with_sync_event(tx, logs));
-                        };
+                        }
                     });
 
                     println!(
-                        "process tx took: {}ms, trace_logs: {}",
+                        "Back running took: {}ms, trace_logs: {}",
                         start.elapsed().as_millis(),
                         trace_logs.len()
                     );

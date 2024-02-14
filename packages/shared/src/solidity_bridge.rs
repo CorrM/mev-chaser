@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
 
 use anyhow::{anyhow, Result};
 use ethers::{
@@ -87,11 +87,11 @@ impl SolidityBridge {
         chain_swaps: bool,
         return_output: bool,
     ) -> Result<U256, ContractError<SignerMiddleware<Arc<Provider<Ws>>, Wallet<SigningKey>>>> {
-        Ok(self
+        self
             .contract
             .get_loan_then_multi_swap(swaps, chain_swaps, return_output)
             .estimate_gas()
-            .await?)
+            .await
     }
 
     pub async fn get_loan_then_swap_chain(
@@ -103,6 +103,8 @@ impl SolidityBridge {
         max_fee_per_gas: Option<U256>,
         max_priority_fee_per_gas: Option<U256>,
     ) -> Result<TxHash, ContractError<SignerMiddleware<Arc<Provider<Ws>>, Wallet<SigningKey>>>> {
+        let start = Instant::now();
+        
         let mut call = self
             .contract
             .get_loan_then_multi_swap(swaps, chain_swaps, return_output)
@@ -116,10 +118,15 @@ impl SolidityBridge {
             tx.max_priority_fee_per_gas = max_priority_fee_per_gas;
         }
 
+        println!("tx_call_took: {}ms", start.elapsed().as_millis());
+
         //let tx_hash = call.send().await?.await?.unwrap();
         //println!("Transaction Receipt: {}", serde_json::to_string(&tx_hash)?);
 
+        let start = Instant::now();
         let tx_hash: TxHash = call.send().await?.tx_hash();
+        println!("tx_send_took: {}ms", start.elapsed().as_millis());
+
         Ok(tx_hash)
     }
 }
