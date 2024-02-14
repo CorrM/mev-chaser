@@ -1,6 +1,10 @@
-use std::{collections::HashSet, sync::{Arc, RwLock}};
+use std::{
+    collections::HashSet,
+    sync::{Arc, RwLock},
+};
 
 use amm::AmmPool;
+use ethers_core::utils::to_checksum;
 use shared::token::CryptoToken;
 
 use super::{pool_path_item::PoolPathItem, PoolPath};
@@ -9,7 +13,7 @@ fn dfs(
     token_pools: &Vec<Arc<RwLock<dyn AmmPool>>>,
     current_token: &Arc<CryptoToken>,
     output_token: &Arc<CryptoToken>,
-    visited_pairs: &mut HashSet<usize>,
+    visited_pools: &mut HashSet<usize>,
     route: &mut Vec<PoolPathItem>,
     hop_count: i32,
     max_multi_hop: i32,
@@ -20,14 +24,15 @@ fn dfs(
     }
 
     for (idx, next_pool) in token_pools.iter().enumerate() {
+        if visited_pools.contains(&idx) {
+            continue;
+        }
+        
         let next_pool_read_lock = next_pool.read().unwrap();
-
         let token0: &Arc<CryptoToken> = next_pool_read_lock.token0();
         let token1: &Arc<CryptoToken> = next_pool_read_lock.token1();
 
-        if !Arc::ptr_eq(current_token, token0) && !Arc::ptr_eq(current_token, token1)
-            || visited_pairs.iter().any(|&x| idx == x)
-        {
+        if !Arc::ptr_eq(current_token, token0) && !Arc::ptr_eq(current_token, token1) {
             continue;
         }
 
@@ -41,16 +46,28 @@ fn dfs(
             Arc::clone(next_pool),
             Arc::ptr_eq(token0, current_token),
         ));
-        visited_pairs.insert(idx);
+        visited_pools.insert(idx);
 
-        if Arc::ptr_eq(next_token, output_token) && route.len() > 1 {
+        let all_is_same_pool: bool = route.len() > 1
+            && route
+                .iter()
+                .all(|r| route[0].pool.read().unwrap().address() == r.pool.read().unwrap().address());
+
+        if all_is_same_pool {
+            println!("{:?}", to_checksum(token_pools[37].read().unwrap().address(), None));
+            println!("{:?}", to_checksum(token_pools[83].read().unwrap().address(), None));
+            println!("{:?}", route);
+            panic!("Found a path are all the same pool");
+        }
+
+        if !all_is_same_pool && Arc::ptr_eq(next_token, output_token) && route.len() > 1 {
             arbitrage_paths.push(PoolPath::new(route.to_vec()));
         } else {
             dfs(
                 token_pools,
                 next_token,
                 output_token,
-                visited_pairs,
+                visited_pools,
                 route,
                 hop_count + 1,
                 max_multi_hop,
@@ -59,7 +76,7 @@ fn dfs(
         }
 
         route.pop();
-        visited_pairs.remove(&idx);
+        visited_pools.remove(&idx);
     }
 }
 

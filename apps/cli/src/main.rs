@@ -8,7 +8,7 @@ use ethers_core::types::Address;
 
 use amm::{AmmProtocol, UniswapV2Pool, UniswapV2Protocol};
 use contracts::OneSwapInfo;
-use database::{Database, DbDexPool, DbToken, DbTokenNetwork};
+use database::{Database, DbDex, DbDexPool, DbToken, DbTokenNetwork};
 use mev::BackRunnerStrategy;
 use shared::provider::NodeProvider;
 use shared::solidity_bridge::SolidityBridge;
@@ -114,7 +114,8 @@ fn get_tokens(db: &Database, network: &NetworkKind) -> Result<Vec<CryptoToken>> 
 fn get_dexes(db: &Database, network: &NetworkKind, token_manager: &TokenManager) -> Result<Vec<Arc<dyn AmmProtocol>>> {
     let mut dexes: Vec<Arc<dyn AmmProtocol>> = Vec::new();
 
-    for db_dex in db.get_dexes_by_network(network)? {
+    let db_dexes: Vec<DbDex> = db.get_dexes_by_network(network)?;
+    for db_dex in db_dexes {
         let Some(db_dex_protocol) = db.get_dex_protocol_by_id(db_dex.dex_protocol_id)? else {
             continue;
         };

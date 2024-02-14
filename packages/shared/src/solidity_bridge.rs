@@ -118,15 +118,11 @@ impl SolidityBridge {
             tx.max_priority_fee_per_gas = max_priority_fee_per_gas;
         }
 
-        println!("tx_call_took: {}ms", start.elapsed().as_millis());
-
         //let tx_hash = call.send().await?.await?.unwrap();
         //println!("Transaction Receipt: {}", serde_json::to_string(&tx_hash)?);
 
         let start = Instant::now();
         let tx_hash: TxHash = call.send().await?.tx_hash();
-        println!("tx_send_took: {}ms", start.elapsed().as_millis());
-
         Ok(tx_hash)
     }
 }

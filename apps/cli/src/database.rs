@@ -4,7 +4,7 @@ use ethers_core::types::Address;
 use ethers_core::utils::to_checksum;
 use rusqlite::{params, Connection, OptionalExtension, Result, Statement};
 
-use amm::{AmmPool, AmmProtocol, AmmProtocolKind};
+use amm::{AmmProtocol, AmmProtocolKind};
 use shared::network::NetworkKind;
 use shared::token::CryptoToken;
 
@@ -146,7 +146,6 @@ pub struct DbDex {
     pub id: i64,
     pub name: String,
     pub dex_protocol_id: i64,
-    pub pools_ids: Option<String>,
     pub dex_networks_ids: String,
     pub options: String,
 }
@@ -157,9 +156,8 @@ impl DbDex {
             id: row.get(0)?,
             name: row.get(1)?,
             dex_protocol_id: row.get(2)?,
-            pools_ids: row.get(3)?,
-            dex_networks_ids: row.get(4)?,
-            options: row.get(5)?,
+            dex_networks_ids: row.get(3)?,
+            options: row.get(4)?,
         })
     }
 }
