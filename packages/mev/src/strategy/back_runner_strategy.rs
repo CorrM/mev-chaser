@@ -228,7 +228,7 @@ impl BackRunnerStrategy {
                 .unwrap();
 
             let native_token_price: f64 =
-                UniswapV2Simulator::reserves_to_price(price_pool, Arc::ptr_eq(price_pool.token1(), native_token));
+                UniswapV2Simulator::reserves_to_price(price_pool, Arc::ptr_eq(price_pool.token0(), native_token));
             let profit_in_native: f64 = input_token.convert_to_decimal(profit) / native_token_price;
             let profit_in_native: i128 = native_token.convert_to_amount(profit_in_native).as_u128() as i128;
 
@@ -389,7 +389,7 @@ impl BackRunnerStrategy {
                         continue;
                     };
 
-                    let is_router_address: bool = router_addresses.iter().any(|&f| f == to);
+                    let is_router_address: bool = router_addresses.contains(&to);
                     if !is_router_address {
                         continue;
                     }
