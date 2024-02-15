@@ -27,6 +27,7 @@ use shared::{
 };
 
 use crate::pool::{generate_pool_paths, PoolPath, PoolPathsContainer};
+use crate::PriceManager;
 
 fn submit_slippage(amount: U256) -> U256 {
     // 0.5% slippage (995/1000)
@@ -41,7 +42,7 @@ pub struct BackRunnerStrategy {
     provider_manager: NodeProviderManager,
     dexes: Vec<Arc<dyn AmmProtocol>>,
     pools: HashMap<Address, Arc<RwLock<dyn AmmPool>>>,
-    price_calc_pools: HashMap<Address, Arc<RwLock<dyn AmmPool>>>,
+    price_manager: PriceManager,
     paths_container: PoolPathsContainer,
     next_block_base_fee: U256, // TODO: Should be a service that manages gas_price
 }
@@ -145,6 +146,12 @@ impl BackRunnerStrategy {
         // Update pools again before starts
         batch_update_uniswap_v2_pools(provider_manager.get_next(), &pools).await;
 
+        let price_manager = PriceManager::new(
+            *native_token.address(),
+            start_tokens.iter().map(|t| *t.address()).collect(),
+            &pools,
+        );
+
         Self {
             solidity_bridge,
             token_manager,
@@ -157,7 +164,7 @@ impl BackRunnerStrategy {
                     (address, p)
                 })
                 .collect::<HashMap<_, _>>(),
-            price_calc_pools,
+            price_manager,
             paths_container,
             next_block_base_fee: U256::zero(),
         }
@@ -220,17 +227,10 @@ impl BackRunnerStrategy {
             }
 
             // Convert profit to native so we can get the most profitable path
-            let price_pool: &dyn AmmPool = &*self
-                .price_calc_pools
-                .get(input_token.address())
-                .unwrap()
-                .read()
-                .unwrap();
-
-            let native_token_price: f64 =
-                UniswapV2Simulator::reserves_to_price(price_pool, Arc::ptr_eq(price_pool.token0(), native_token));
-            let profit_in_native: f64 = input_token.convert_to_decimal(profit) / native_token_price;
-            let profit_in_native: i128 = native_token.convert_to_amount(profit_in_native).as_u128() as i128;
+            let native_token_price: f64 = self.price_manager.get_price(input_token.address()).unwrap();
+            let profit_in_native: i128 = native_token
+                .convert_to_amount(input_token.convert_to_decimal(profit) / native_token_price)
+                .as_u128() as i128;
 
             // Lock from here to the end of the socpe so that we can check without other threads messing with it
             let mut best_profit_lock = best_profit_in_native.lock().unwrap();
