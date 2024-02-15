@@ -221,13 +221,13 @@ impl BackRunnerStrategy {
                 return;
             }
 
-            let (optimized_in, _amount_min_out, profit) = path.optimize_amount_in(1000, 10);
+            let (optimized_in, _amount_min_out, profit) = path.find_optimal_input(1000, 10);
             if optimized_in.is_zero() {
                 return;
             }
 
             // Convert profit to native so we can get the most profitable path
-            let native_token_price: f64 = self.price_manager.get_price(input_token.address()).unwrap();
+            let native_token_price: f64 = self.price_manager.get_native_token_price(input_token.address()).unwrap();
             let profit_in_native: i128 = native_token
                 .convert_to_amount(input_token.convert_to_decimal(profit) / native_token_price)
                 .as_u128() as i128;

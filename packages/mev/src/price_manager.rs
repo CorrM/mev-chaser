@@ -47,10 +47,10 @@ impl PriceManager {
         }
     }
 
-    pub fn get_price(&self, token: &Address) -> Result<f64> {
-        let price_pool: Option<&Arc<RwLock<dyn AmmPool>>> = self.price_calc_pools.get(token);
+    pub fn get_native_token_price(&self, in_term_of_token: &Address) -> Result<f64> {
+        let price_pool: Option<&Arc<RwLock<dyn AmmPool>>> = self.price_calc_pools.get(in_term_of_token);
         if price_pool.is_none() {
-            return Err(anyhow!("Could not find pool for token({})", token));
+            return Err(anyhow!("Could not find pool for token({})", in_term_of_token));
         }
         
         let price_pool: &dyn AmmPool = &*price_pool.unwrap().read().unwrap();

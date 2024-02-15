@@ -81,7 +81,7 @@ impl PoolPath {
         Some(amount_out)
     }
 
-    pub fn optimize_amount_in(&self, max_count_in: u64, step_size: usize) -> (U256, U256, U256) {
+    pub fn find_optimal_input(&self, max_count_in: u64, step_size: usize) -> (U256, U256, U256) {
         let input_token: Arc<CryptoToken> = self.get_input_token();
         let input_token_unit: U256 = U256::from(10).pow(U256::from(input_token.decimals()));
 
