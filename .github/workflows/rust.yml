@@ -34,7 +34,9 @@ jobs:
         toolchain: stable
       
     - name: 🔨 Build
-      run: cargo build --release --target-dir target --verbose
+      run: |
+        pwd
+        cargo build --release --target-dir target --verbose
       
     - name: 🔎 Tests
       run: cargo test --verbose
