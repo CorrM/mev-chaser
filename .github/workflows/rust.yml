@@ -40,7 +40,7 @@ jobs:
         with:
           host: ${{ vars.HOST_IP }}
           username: root
-          password: $$ {{ secrets.HOST_PASSWORD }}
+          password: ${{ secrets.HOST_PASSWORD }}
           script: |
             cd ~
             pwd
