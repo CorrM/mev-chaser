@@ -62,7 +62,7 @@ jobs:
         run: sudo apt-get install sshpass
 
       - name: 📲 Send CLI to server
-        run: sshpass -v -p ${{ secrets.HOST_PASSWORD }} scp -o StrictHostKeyChecking=no cli root@${{ vars.HOST_IP }}:~/mev-chaser/cli
+        run: sshpass -v -p ${{ secrets.HOST_PASSWORD }} scp -r -o StrictHostKeyChecking=no cli root@${{ vars.HOST_IP }}:~/mev-chaser/cli
 
       - name: 📡 Deploy
         uses: appleboy/ssh-action@master
