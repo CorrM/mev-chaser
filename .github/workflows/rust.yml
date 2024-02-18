@@ -46,6 +46,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: ls
+        run: |
+          cd target/release/cli
+          ls -l
+
       - name: Install sshpass
         run: sudo apt-get install sshpass
 
