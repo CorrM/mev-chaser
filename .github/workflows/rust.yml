@@ -48,6 +48,7 @@ jobs:
 
       - name: ls
         run: |
+          pwd
           ls -l
 
       - name: Install sshpass
