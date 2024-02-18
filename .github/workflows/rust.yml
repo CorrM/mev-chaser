@@ -48,7 +48,6 @@ jobs:
 
       - name: ls
         run: |
-          cd target/release/cli
           ls -l
 
       - name: Install sshpass
