@@ -34,12 +34,13 @@ jobs:
         toolchain: stable
       
     - name: 🔨 Build
-      run: |
-        pwd
-        cargo build --release --target-dir ./target --verbose
+      run: cargo build --release --verbose
       
     - name: 🔎 Tests
       run: cargo test --verbose
+
+    - name: Copy target
+      run: cp target/release/cli x86_64-unknown-linux-gnu
 
   deploy:
     needs: build
