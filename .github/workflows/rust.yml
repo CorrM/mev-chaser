@@ -63,7 +63,7 @@ jobs:
 
       - name: 📲 Send CLI to server
         run: |
-          sshpass -v -p ${{ secrets.HOST_PASSWORD }} ssh -o StrictHostKeyChecking=no root@${{ vars.HOST_IP }} mkdir ~/mev-chaser
+          sshpass -v -p ${{ secrets.HOST_PASSWORD }} ssh -o StrictHostKeyChecking=no root@${{ vars.HOST_IP }} mkdir -p ~/mev-chaser
           sshpass -v -p ${{ secrets.HOST_PASSWORD }} scp -o StrictHostKeyChecking=no cli root@${{ vars.HOST_IP }}:~/mev-chaser/cli
 
       - name: 📡 Deploy
