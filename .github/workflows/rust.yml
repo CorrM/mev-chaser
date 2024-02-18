@@ -34,7 +34,7 @@ jobs:
         toolchain: stable
       
     - name: 🔨 Build
-      run: cargo build --verbose
+      run: cargo build --release --verbose
       
     - name: 🔎 Tests
       run: cargo test --verbose
@@ -46,6 +46,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Install sshpass
+        run: sudo apt-get install sshpass
+
+      - name: Copy app to server
+        run: sshpass -v -p ${{ secrets.HOST_PASSWORD }} scp -o StrictHostKeyChecking=no target/release/cli root@${{ vars.HOST_IP }}:~
+
       - name: Deploy
         uses: appleboy/ssh-action@master
         with:
@@ -54,5 +60,5 @@ jobs:
           password: ${{ secrets.HOST_PASSWORD }}
           script: |
             cd ~
-            pwd
+            ./cli
         
