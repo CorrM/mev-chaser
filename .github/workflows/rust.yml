@@ -36,7 +36,7 @@ jobs:
     - name: 🔨 Build
       run: |
         pwd
-        cargo build --release --target-dir target --verbose
+        cargo build --release --target-dir ./target --verbose
       
     - name: 🔎 Tests
       run: cargo test --verbose
