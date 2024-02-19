@@ -325,14 +325,14 @@ where
                 NetworkEvent::PendingTx(ref tx) => {
                     let start = Instant::now();
 
-                    let Some(to) = tx.to else {
-                        continue;
-                    };
-
-                    let is_router_address: bool = router_addresses.contains(&to);
-                    if !is_router_address {
-                        continue;
-                    }
+                    // TODO: No need for this as NetworkStreamsManager filters pending transactions 
+                    //let Some(to) = tx.to else {
+                    //    continue;
+                    //};
+                    //let is_router_address: bool = router_addresses.contains(&to);
+                    //if !is_router_address {
+                    //    continue;
+                    //}
 
                     let frame: Result<Option<CallFrame>> =
                         ProviderHelper::debug_trace_call(Arc::clone(&debug_provider), tx, None).await;
@@ -356,7 +356,6 @@ where
                     let mut trace_logs: Vec<CallLogFrame> = Vec::new();
                     ProviderHelper::extract_trace_logs(&frame, &mut trace_logs);
 
-                    // TODO: Use to_address to determine which dex to `decode_pair_trace_logs`
                     let mut thouched_pools: Mutex<Vec<Address>> = Mutex::new(Vec::new());
                     trace_logs.par_iter().for_each(|trace_log| {
                         let sync_log: Option<(Address, Log)> =
