@@ -153,7 +153,7 @@ where
         let mut best_profit_in_native: std::sync::Mutex<i128> = std::sync::Mutex::new(0_i128);
         let mut best_path: std::sync::Mutex<Option<(&Arc<PoolPath>, U256)>> = std::sync::Mutex::new(None);
         touched_paths.par_iter().for_each(|path: &Arc<PoolPath>| {
-            let input_token: Arc<CryptoToken> = path.get_input_token();
+            let input_token: &CryptoToken = path.get_input_token();
 
             let amount_in: U256 = input_token.one_token_amount();
             let Some(amount_out) = path.get_amount_out_v2(amount_in) else {
@@ -193,7 +193,7 @@ where
             *best_profit_lock = profit_in_native;
         });
 
-        println!("Touched path time: {}ms", touched_path_time.elapsed().as_millis());
+        println!("touched_paths_time: {}ms", touched_path_time.elapsed().as_millis());
 
         let best_profit: i128 = *best_profit_in_native.get_mut().unwrap();
         if best_profit == 0 {
@@ -226,7 +226,7 @@ where
         let swap_path: &Arc<PoolPath> = best_path.0;
         let swap_input_amount: U256 = best_path.1;
         let swap_output_amount: U256 = swap_input_amount + gas_cost_in_wei_native; // amount_min_out AMM will give use max output
-        let swap_input_token: Arc<CryptoToken> = swap_path.get_input_token();
+        let swap_input_token: &CryptoToken = swap_path.get_input_token();
 
         // TODO: That's only valid for stable coins
         if swap_input_token.convert_to_amount(0.5_f64).as_u128() as i128 > net_profit {
@@ -260,7 +260,7 @@ where
                 .await
         };
 
-        println!("make_tx_took: {}ms", start.elapsed().as_millis());
+        println!("processing: {}ms", start.elapsed().as_millis());
         println!("touched_paths: {}", touched_paths.len());
         println!("input_token: {}", swap_path.get_input_token().symbol());
         println!("best_net_profit: {}", net_profit);

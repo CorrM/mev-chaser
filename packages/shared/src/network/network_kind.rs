@@ -1,7 +1,7 @@
 use std::fmt::{Display, Formatter, Result};
 
 #[repr(i32)]
-#[derive(Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum NetworkKind {
     Ethereum = 1,
     Polygon = 137,

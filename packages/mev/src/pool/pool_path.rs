@@ -15,6 +15,7 @@ use super::PoolPathItem;
 #[derive(Debug, Clone)]
 pub struct PoolPath {
     path: Vec<PoolPathItem>,
+    input_token: Arc<CryptoToken>,
 }
 
 impl PoolPath {
@@ -45,7 +46,15 @@ impl PoolPath {
     }
 
     pub fn new(path: Vec<PoolPathItem>) -> Self {
-        Self { path }
+        let first_path_item: &PoolPathItem = &path[0];
+
+        let input_token: Arc<CryptoToken> = if first_path_item.zero_are_input {
+            Arc::clone(first_path_item.pool.read().unwrap().token0())
+        } else {
+            Arc::clone(first_path_item.pool.read().unwrap().token1())
+        };
+
+        Self { path, input_token }
     }
 
     pub fn path(&self) -> &Vec<PoolPathItem> {
@@ -62,13 +71,8 @@ impl PoolPath {
         false
     }
 
-    pub fn get_input_token(&self) -> Arc<CryptoToken> {
-        let first_pool = &self.path[0].pool;
-        if self.path[0].zero_are_input {
-            Arc::clone(first_pool.read().unwrap().token0())
-        } else {
-            Arc::clone(first_pool.read().unwrap().token1())
-        }
+    pub fn get_input_token(&self) -> &CryptoToken {
+        &self.input_token
     }
 
     pub fn get_amount_out_v2(&self, amount_in: U256) -> Option<U256> {
@@ -109,8 +113,8 @@ impl PoolPath {
     }
 
     pub fn find_optimal_input(&self, max_count_in: u64, step_size: usize) -> (U256, U256) {
-        let input_token: Arc<CryptoToken> = self.get_input_token();
-        let input_token_unit: U256 = U256::from(10).pow(U256::from(input_token.decimals()));
+        let input_token: &CryptoToken = self.get_input_token();
+        let input_token_unit: U256 = input_token.input_token_unit();
 
         let mut optimized_in: U256 = U256::zero();
         let mut profit: i128 = 0;
@@ -204,12 +208,9 @@ impl PoolPath {
                     U256::zero()
                 };
 
-                let Ok(swap) = PoolPath::make_uniswap_v2_protocol_swap_info(
-                    router,
-                    path,
-                    cur_intput_amount,
-                    cur_output_amount,
-                ) else {
+                let Ok(swap) =
+                    PoolPath::make_uniswap_v2_protocol_swap_info(router, path, cur_intput_amount, cur_output_amount)
+                else {
                     return Err(anyhow!("Failed to make UniswapV2ProtocolSwapInfo"));
                 };
 
