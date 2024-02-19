@@ -65,7 +65,8 @@ jobs:
       - name: 📲 Send CLI to server
         run: |
           sshpass -v -p ${{ secrets.HOST_PASSWORD }} ssh -o StrictHostKeyChecking=no root@${{ vars.HOST_IP }} mkdir -p /root/mev-chaser
-          sshpass -v -p ${{ secrets.HOST_PASSWORD }} scp -o StrictHostKeyChecking=no cli/ root@${{ vars.HOST_IP }}:/root/mev-chaser/
+          sshpass -v -p ${{ secrets.HOST_PASSWORD }} scp -o StrictHostKeyChecking=no target/release/cli root@${{ vars.HOST_IP }}:/root/mev-chaser/
+          sshpass -v -p ${{ secrets.HOST_PASSWORD }} scp -o StrictHostKeyChecking=no Main.db root@${{ vars.HOST_IP }}:/root/mev-chaser/
 
       - name: 📡 Deploy
         uses: appleboy/ssh-action@master
