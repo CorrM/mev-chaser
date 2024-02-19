@@ -152,6 +152,52 @@ where
         let native_token: &Arc<CryptoToken> = self.token_manager.native_token();
         let mut best_profit_in_native: std::sync::Mutex<i128> = std::sync::Mutex::new(0_i128);
         let mut best_path: std::sync::Mutex<Option<(&Arc<PoolPath>, U256)>> = std::sync::Mutex::new(None);
+        async_scoped::TokioScope::scope_and_block(|s| {
+            for path in touched_paths {
+                s.spawn(async {
+                    let input_token: &CryptoToken = path.get_input_token();
+
+                    let amount_in: U256 = input_token.one_token_amount();
+                    let Some(amount_out) = path.get_amount_out_v2(amount_in) else {
+                        // TODO: Fix fees in this function
+                        return;
+                    };
+
+                    // TODO: Do benchmark to check if I128 is faster than U256
+                    let _in: i128 = amount_in.as_u128() as i128;
+                    let _out: i128 = amount_out.as_u128() as i128;
+                    let spread: i128 = _out - _in;
+                    if spread <= 0 {
+                        return;
+                    }
+
+                    let (optimized_in, profit) = path.find_optimal_input(1000, 10);
+                    if optimized_in.is_zero() {
+                        return;
+                    }
+
+                    // Convert profit to native so we can get the most profitable path
+                    let native_token_price: f64 = self
+                        .price_manager
+                        .get_native_token_price(input_token.address())
+                        .unwrap();
+                    let profit_in_native: i128 = native_token
+                        .convert_to_amount(input_token.convert_to_decimal(profit) / native_token_price)
+                        .as_u128() as i128;
+
+                    // Lock from here to the end of the socpe so that we can check without other threads messing with it
+                    let mut best_profit_lock = best_profit_in_native.lock().unwrap();
+                    if *best_profit_lock > profit_in_native {
+                        return;
+                    }
+
+                    *best_path.lock().unwrap() = Some((path, optimized_in));
+                    *best_profit_lock = profit_in_native;
+                });
+            }
+        });
+
+        /*
         touched_paths.par_iter().for_each(|path: &Arc<PoolPath>| {
             let input_token: &CryptoToken = path.get_input_token();
 
@@ -179,8 +225,8 @@ where
                 .price_manager
                 .get_native_token_price(input_token.address())
                 .unwrap();
-            let profit_in_native: i128 =
-                native_token.convert_to_amount(input_token.convert_to_decimal(profit) / native_token_price)
+            let profit_in_native: i128 = native_token
+                .convert_to_amount(input_token.convert_to_decimal(profit) / native_token_price)
                 .as_u128() as i128;
 
             // Lock from here to the end of the socpe so that we can check without other threads messing with it
@@ -192,6 +238,7 @@ where
             *best_path.lock().unwrap() = Some((path, optimized_in));
             *best_profit_lock = profit_in_native;
         });
+        */
 
         println!("touched_paths_time: {}ms", touched_path_time.elapsed().as_millis());
 
@@ -361,6 +408,35 @@ where
                     ProviderHelper::extract_trace_logs(&frame, &mut trace_logs);
 
                     let mut thouched_pools: Mutex<Vec<Address>> = Mutex::new(Vec::new());
+                    async_scoped::TokioScope::scope_and_block(|s| {
+                        for trace_log in &trace_logs {
+                            s.spawn(async {
+                                let sync_log: Option<(Address, Log)> =
+                                    UniswapV2Protocol::decode_pair_trace_log("Sync", trace_log);
+                                let Some(sync_log) = sync_log else {
+                                    return;
+                                };
+    
+                                let (pool_address, log): &(Address, Log) = &sync_log;
+                                let Some(local_pool) = self.pools.get(pool_address) else {
+                                    return;
+                                };
+    
+                                // Update pool
+                                let ethers_core::abi::Token::Uint(reserve0) = log.params[0].value else {
+                                    panic!("reserve0 is not uint")
+                                };
+                                let ethers_core::abi::Token::Uint(reserve1) = log.params[1].value else {
+                                    panic!("reserve1 is not uint")
+                                };
+                                local_pool.write().unwrap().update_reserve(&reserve0, &reserve1);
+    
+                                thouched_pools.lock().unwrap().push(*pool_address);
+                            });
+                        }
+                    });
+
+                    /*
                     trace_logs.par_iter().for_each(|trace_log| {
                         let sync_log: Option<(Address, Log)> =
                             UniswapV2Protocol::decode_pair_trace_log("Sync", trace_log);
@@ -384,6 +460,8 @@ where
 
                         thouched_pools.lock().unwrap().push(*pool_address);
                     });
+                    */
+                    
                     let thouched_pools: &Vec<Address> = thouched_pools.get_mut().unwrap();
 
                     async_scoped::TokioScope::scope_and_block(|s| {
