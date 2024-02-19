@@ -4,10 +4,11 @@ use amm::{AmmProtocol, UniswapV2Protocol, UniswapV2Simulator};
 use anyhow::{anyhow, Result};
 use contracts::OneSwapInfo;
 use ethers_core::{
-    types::{Address, U256},
+    abi::Token,
+    types::{Address, Bytes, U256},
     utils::to_checksum,
 };
-use shared::{solidity_bridge::SolidityBridge, token::CryptoToken};
+use shared::token::CryptoToken;
 
 use super::PoolPathItem;
 
@@ -17,6 +18,32 @@ pub struct PoolPath {
 }
 
 impl PoolPath {
+    pub fn make_uniswap_v2_protocol_swap_info(
+        router: Address,
+        path: Vec<Address>,
+        amount_in: impl Into<U256>,
+        amount_out_min: impl Into<U256>,
+    ) -> Result<OneSwapInfo> {
+        if path.len() < 2 {
+            return Err(anyhow!("path must have at least 2 elements"));
+        }
+
+        let token_in: Address = path[0];
+        let path_token: Vec<Token> = path.into_iter().map(Token::Address).collect();
+        let addresses = Token::Array(path_token);
+        let encoded_path: Bytes = ethers::abi::encode(&[addresses]).into();
+
+        Ok(OneSwapInfo {
+            protocol: 0,
+            router,
+            token_in,
+            path: encoded_path,
+            amount_in: amount_in.into(),
+            amount_out_min: amount_out_min.into(),
+            deadline: U256::from(0),
+        })
+    }
+
     pub fn new(path: Vec<PoolPathItem>) -> Self {
         Self { path }
     }
@@ -149,8 +176,7 @@ impl PoolPath {
                 path.push(*last_path_item.pool.read().unwrap().token0().address());
             }
 
-            let Ok(swap) =
-                SolidityBridge::make_uniswap_v2_protocol_swap_info(router, path, input_amount, output_amount)
+            let Ok(swap) = PoolPath::make_uniswap_v2_protocol_swap_info(router, path, input_amount, output_amount)
             else {
                 return Err(anyhow!("Failed to make UniswapV2ProtocolSwapInfo"));
             };
@@ -171,11 +197,7 @@ impl PoolPath {
                 };
 
                 // Its chain swap, so only first swap needs input amount
-                let cur_intput_amount: U256 = if idx == 0 {
-                    input_amount
-                } else {
-                    U256::zero()
-                };
+                let cur_intput_amount: U256 = if idx == 0 { input_amount } else { U256::zero() };
 
                 // Its chain swap, so only last swap needs output amount
                 let cur_output_amount: U256 = if idx == self.path.len() - 1 {
@@ -184,9 +206,12 @@ impl PoolPath {
                     U256::zero()
                 };
 
-                let Ok(swap) =
-                    SolidityBridge::make_uniswap_v2_protocol_swap_info(router, path, cur_intput_amount, cur_output_amount)
-                else {
+                let Ok(swap) = PoolPath::make_uniswap_v2_protocol_swap_info(
+                    router,
+                    path,
+                    cur_intput_amount,
+                    cur_output_amount,
+                ) else {
                     return Err(anyhow!("Failed to make UniswapV2ProtocolSwapInfo"));
                 };
 
@@ -199,3 +224,50 @@ impl PoolPath {
         Ok((swaps, chain_swaps))
     }
 }
+
+/*
+async fn test_contract(env: &Env, provider_manager: &NodeProviderManager) -> Result<()> {
+    //let bot_address = SolidityBridge::deploy(provider_manager.get_next().raw_ws_provider().clone(), env.private_key.clone()).await;
+    //let Ok(bot_address) = bot_address else { return Err(anyhow!("Failed to deploy")); };
+
+    let solidity_bridge = SolidityBridge::new(
+        Address::from_str(&env.bot_address).unwrap(),
+        Arc::clone(provider_manager.get_next().raw_ws_provider()),
+        env.private_key.clone(),
+    )
+    .await?;
+
+    let swaps: Vec<OneSwapInfo> = vec![
+        PoolPath::make_uniswap_v2_protocol_swap_info(
+            Address::from_str("0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff").unwrap(),
+            vec![
+                Address::from_str("0xc2132D05D31c914a87C6611C10748AEb04B58e8F").unwrap(),
+                Address::from_str("0x346404079b3792a6c548B072B9C4DDdFb92948d5").unwrap(),
+            ],
+            10000000,
+            0,
+        )
+        .unwrap(),
+        PoolPath::make_uniswap_v2_protocol_swap_info(
+            Address::from_str("0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff").unwrap(),
+            vec![
+                Address::from_str("0x346404079b3792a6c548B072B9C4DDdFb92948d5").unwrap(),
+                Address::from_str("0xc2132D05D31c914a87C6611C10748AEb04B58e8F").unwrap(),
+            ],
+            0,
+            1000000,
+        )
+        .unwrap(),
+    ];
+
+    println!(
+        "{:?}",
+        solidity_bridge
+            .estimate_get_loan_then_swap_chain(swaps, true, false)
+            .await
+            .unwrap()
+    );
+
+    Ok(())
+}
+*/

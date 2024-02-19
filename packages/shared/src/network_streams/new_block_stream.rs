@@ -1,14 +1,11 @@
 use std::sync::Arc;
 
-use ethers::{
-    providers::Middleware,
-    types::{Block, H256, U256, U64},
-};
-use ethers_providers::{Provider, Ws};
+use ethers::types::{Block, H256, U256, U64};
+use ethers_providers::{Middleware, PubsubClient};
 use tokio::sync::broadcast::Sender;
 use tokio_stream::StreamExt;
 
-use crate::{provider::NodeProvider, utils::calculate_next_block_base_fee};
+use crate::utils::calculate_next_block_base_fee;
 
 use super::network_event::NetworkEvent;
 
@@ -19,9 +16,12 @@ pub struct NewBlock {
     pub next_base_fee: U256,
 }
 
-pub async fn stream_new_blocks<T: NodeProvider>(provider: T, event_sender: Sender<NetworkEvent>) {
-    let ws: &Arc<Provider<Ws>> = provider.raw_ws_provider();
-    let stream = ws.subscribe_blocks().await.unwrap();
+pub async fn stream_new_blocks<M>(provider: M, event_sender: Sender<NetworkEvent>)
+where
+    M: Middleware,
+    M::Provider: PubsubClient,
+{
+    let stream = provider.subscribe_blocks().await.unwrap();
     let mut stream = stream.filter_map(|block: Block<H256>| match block.number {
         Some(number) => Some(NewBlock {
             block_number: number,

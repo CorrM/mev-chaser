@@ -1,22 +1,30 @@
-use std::ops::Deref;
-use std::sync::Arc;
-
 use ethers::types::Filter;
+use ethers_providers::{Middleware, PubsubClient};
 use tokio::sync::{broadcast, broadcast::Sender};
-
-use crate::provider::NodeProviderKind;
 
 use super::{network_event::NetworkEvent, network_streams_manager::NetworkStreamsManager};
 
-pub struct NetworkStreamManagerBuilder {
-    provider: Arc<NodeProviderKind>,
+pub struct NetworkStreamManagerBuilder<M>
+where
+    M: Middleware + Clone,
+    M::Provider: PubsubClient,
+{
+    provider: M,
     new_blocks: bool,
     pending_transactions: Option<Vec<String>>,
     events: Option<Vec<Option<Filter>>>,
 }
 
-impl NetworkStreamManagerBuilder {
-    pub fn new(provider: Arc<NodeProviderKind>) -> Self {
+impl<M> NetworkStreamManagerBuilder<M>
+where
+    M: Middleware + Clone + 'static,
+    <M as Middleware>::Provider: PubsubClient,
+{
+    pub fn new(provider: M) -> Self
+    where
+        M: Middleware,
+        M::Provider: PubsubClient,
+    {
         Self {
             provider: provider.clone(),
             new_blocks: false,
@@ -30,10 +38,7 @@ impl NetworkStreamManagerBuilder {
         self
     }
 
-    pub fn watch_pending_transactions(
-        &mut self,
-        filter_to_address: Option<Vec<String>>,
-    ) -> &mut Self {
+    pub fn watch_pending_transactions(&mut self, filter_to_address: Option<Vec<String>>) -> &mut Self {
         self.pending_transactions = Some(filter_to_address.unwrap_or_default());
         self
     }
@@ -49,21 +54,12 @@ impl NetworkStreamManagerBuilder {
 
     pub fn build(&self) -> NetworkStreamsManager {
         let (event_sender, _): (Sender<NetworkEvent>, _) = broadcast::channel(512);
-        match self.provider.deref() {
-            NodeProviderKind::Normal(p) => NetworkStreamsManager::new(
-                p.clone(),
-                event_sender,
-                self.new_blocks,
-                self.pending_transactions.clone(),
-                self.events.clone(),
-            ),
-            NodeProviderKind::DebugTraceCall(p) => NetworkStreamsManager::new(
-                p.clone(),
-                event_sender,
-                self.new_blocks,
-                self.pending_transactions.clone(),
-                self.events.clone(),
-            ),
-        }
+        NetworkStreamsManager::new(
+            self.provider.clone(),
+            event_sender,
+            self.new_blocks,
+            self.pending_transactions.clone(),
+            self.events.clone(),
+        )
     }
 }

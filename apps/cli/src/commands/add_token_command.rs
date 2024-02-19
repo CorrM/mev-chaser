@@ -8,7 +8,7 @@ use ethers_core::{
     abi::Token,
     types::{Address, Bytes},
 };
-use ethers_providers::{Http, Provider};
+use ethers_providers::Middleware;
 use shared::{network::NetworkKind, token::CryptoToken};
 
 use crate::database::Database;
@@ -16,13 +16,13 @@ use crate::database::Database;
 pub struct AddTokenCommand;
 
 impl AddTokenCommand {
-    async fn add_token_info(
+    async fn add_token_info<M: Middleware>(
         tokens: &[&str],
         db: &Database,
         target_network: &NetworkKind,
-        provider: &Arc<Provider<Http>>,
+        provider: &Arc<M>,
     ) -> Result<()> {
-        let mut multicall: Multicall<Provider<Http>> = Multicall::new(Arc::clone(provider), None).await.unwrap();
+        let mut multicall: Multicall<M> = Multicall::new(Arc::clone(provider), None).await.unwrap();
 
         for token_address in tokens {
             // Can't execlude tokens here, because it will cause an error in the next for loop
@@ -77,11 +77,11 @@ impl AddTokenCommand {
         Ok(())
     }
 
-    pub async fn process(
+    pub async fn process<M: Middleware>(
         tokens: Vec<&str>,
         db: &Database,
         target_network: &NetworkKind,
-        provider: Arc<Provider<Http>>,
+        provider: Arc<M>,
     ) -> Result<()> {
         let tokens_cnt = tokens.len() as f32;
         let batch: f32 = (tokens_cnt / 250_f32).ceil();

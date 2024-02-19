@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Instant};
+use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 use ethers::{
@@ -11,17 +11,20 @@ use ethers_core::{
     k256::ecdsa::SigningKey,
     types::{Address, Bytes, TxHash, U256},
 };
-use ethers_providers::{Middleware, Provider, Ws};
+use ethers_providers::Middleware;
 
 use contracts::{BalancerFlashLoanRecipientAbi, OneSwapInfo};
 
-pub struct SolidityBridge {
-    contract: BalancerFlashLoanRecipientAbi<SignerMiddleware<Arc<Provider<Ws>>, Wallet<SigningKey>>>,
+pub struct SolidityBridge<M: Middleware> {
+    contract: BalancerFlashLoanRecipientAbi<SignerMiddleware<Arc<M>, Wallet<SigningKey>>>,
 }
 
-impl SolidityBridge {
-    pub async fn new(address: Address, provider: Arc<Provider<Ws>>, wallet_private_key: String) -> Result<Self> {
-        let chain_id = provider.get_chainid().await?;
+impl<M> SolidityBridge<M>
+where
+    M: Middleware + 'static,
+{
+    pub async fn new(address: Address, provider: Arc<M>, wallet_private_key: String) -> Result<Self> {
+        let chain_id: U256 = provider.get_chainid().await?;
 
         let mut wallet_private_key = wallet_private_key;
         if wallet_private_key.starts_with("0x") {
@@ -38,8 +41,8 @@ impl SolidityBridge {
         Ok(Self { contract })
     }
 
-    pub async fn deploy(provider: Arc<Provider<Ws>>, wallet_private_key: String) -> Result<Address> {
-        let chain_id = provider.get_chainid().await?;
+    pub async fn deploy(provider: Arc<M>, wallet_private_key: String) -> Result<Address> {
+        let chain_id: U256 = provider.get_chainid().await?;
 
         let mut wallet_private_key = wallet_private_key;
         if wallet_private_key.starts_with("0x") {
@@ -51,34 +54,11 @@ impl SolidityBridge {
             .with_chain_id(chain_id.as_u64());
 
         let signer = Arc::new(SignerMiddleware::new(provider, wallet));
-        let gg = BalancerFlashLoanRecipientAbi::deploy(signer, ()).expect("deploy failed").send().await;
+        let gg = BalancerFlashLoanRecipientAbi::deploy(signer, ())
+            .expect("deploy failed")
+            .send()
+            .await;
         Ok(gg.unwrap().address())
-    }
-
-    pub fn make_uniswap_v2_protocol_swap_info(
-        router: Address,
-        path: Vec<Address>,
-        amount_in: impl Into<U256>,
-        amount_out_min: impl Into<U256>,
-    ) -> Result<OneSwapInfo> {
-        if path.len() < 2 {
-            return Err(anyhow!("path must have at least 2 elements"));
-        }
-
-        let token_in: Address = path[0];
-        let path_token: Vec<Token> = path.into_iter().map(Token::Address).collect();
-        let addresses = Token::Array(path_token);
-        let encoded_path: Bytes = ethers::abi::encode(&[addresses]).into();
-
-        Ok(OneSwapInfo {
-            protocol: 0,
-            router,
-            token_in,
-            path: encoded_path,
-            amount_in: amount_in.into(),
-            amount_out_min: amount_out_min.into(),
-            deadline: U256::from(0),
-        })
     }
 
     pub async fn estimate_get_loan_then_swap_chain(
@@ -86,9 +66,8 @@ impl SolidityBridge {
         swaps: Vec<OneSwapInfo>,
         chain_swaps: bool,
         return_output: bool,
-    ) -> Result<U256, ContractError<SignerMiddleware<Arc<Provider<Ws>>, Wallet<SigningKey>>>> {
-        self
-            .contract
+    ) -> Result<U256, ContractError<SignerMiddleware<Arc<M>, Wallet<SigningKey>>>> {
+        self.contract
             .get_loan_then_multi_swap(swaps, chain_swaps, return_output)
             .estimate_gas()
             .await
@@ -102,9 +81,7 @@ impl SolidityBridge {
         gas_price: Option<U256>,
         max_fee_per_gas: Option<U256>,
         max_priority_fee_per_gas: Option<U256>,
-    ) -> Result<TxHash, ContractError<SignerMiddleware<Arc<Provider<Ws>>, Wallet<SigningKey>>>> {
-        let start = Instant::now();
-        
+    ) -> Result<TxHash, ContractError<SignerMiddleware<Arc<M>, Wallet<SigningKey>>>> {
         let mut call = self
             .contract
             .get_loan_then_multi_swap(swaps, chain_swaps, return_output)
@@ -119,9 +96,8 @@ impl SolidityBridge {
         }
 
         //let tx_hash = call.send().await?.await?.unwrap();
-        //println!("Transaction Receipt: {}", serde_json::to_string(&tx_hash)?);
+        //println!("Transaction Receipt: {}", serde_json::to_string(&tx_hash)?); // Use simd_json
 
-        let start = Instant::now();
         let tx_hash: TxHash = call.send().await?.tx_hash();
         Ok(tx_hash)
     }

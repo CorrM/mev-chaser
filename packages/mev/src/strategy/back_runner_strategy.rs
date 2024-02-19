@@ -1,33 +1,31 @@
 use std::sync::{Mutex, RwLock};
 use std::time::Instant;
-use std::{collections::HashMap, ops::Deref, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
 use anyhow::Result;
 use ethers_core::types::U64;
 use ethers_core::{
     abi::Log,
-    types::{Address, Block, BlockNumber, CallFrame, CallLogFrame, Transaction, H256, U256},
+    types::{Address, CallFrame, CallLogFrame, Transaction, U256},
     utils::to_checksum,
 };
-use ethers_providers::Middleware;
+use ethers_providers::{Middleware, PubsubClient};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use tokio::sync::broadcast::Receiver;
 
 use amm::{
     uniswap_v2_utils::batch_update_uniswap_v2_pools, update_touched_pool_reserves, AmmPool, AmmProtocol,
-    AmmProtocolKind, UniswapV2Protocol, UniswapV2Simulator,
+    AmmProtocolKind, UniswapV2Protocol,
 };
 use contracts::OneSwapInfo;
 use shared::{
     network_streams::{NetworkEvent, NetworkStreamManagerBuilder, NetworkStreamsManager, NewBlock},
-    provider::{DebugTraceCallNodeProvider, NodeProvider, NodeProviderKind, NodeProviderManager, NormalNodeProvider},
     solidity_bridge::SolidityBridge,
     token::{CryptoToken, TokenManager},
-    utils::calculate_next_block_base_fee,
 };
 
 use crate::pool::{generate_pool_paths, PoolPath, PoolPathsContainer};
-use crate::PriceManager;
+use crate::{PriceManager, ProviderHelper};
 
 fn submit_slippage(amount: U256) -> U256 {
     // 0.5% slippage (995/1000)
@@ -36,22 +34,28 @@ fn submit_slippage(amount: U256) -> U256 {
     final_amount
 }
 
-pub struct BackRunnerStrategy {
-    solidity_bridge: SolidityBridge,
+pub struct BackRunnerStrategy<M>
+where
+    M: Middleware,
+{
+    solidity_bridge: SolidityBridge<M>,
     token_manager: TokenManager,
-    provider_manager: NodeProviderManager,
     dexes: Vec<Arc<dyn AmmProtocol>>,
     pools: HashMap<Address, Arc<RwLock<dyn AmmPool>>>,
-    price_manager: PriceManager,
+    price_manager: Arc<PriceManager>,
     paths_container: PoolPathsContainer,
     next_block_base_fee: U256, // TODO: Should be a service that manages gas_price
 }
 
-impl BackRunnerStrategy {
+impl<M> BackRunnerStrategy<M>
+where
+    M: Middleware + Clone + 'static,
+    <M as Middleware>::Provider: PubsubClient,
+{
     pub async fn new(
-        solidity_bridge: SolidityBridge,
+        solidity_bridge: SolidityBridge<M>,
+        provider: &Arc<M>,
         token_manager: TokenManager,
-        provider_manager: NodeProviderManager,
         dexes: Vec<Arc<dyn AmmProtocol>>,
         max_hops: i32,
         start_tokens: Vec<Arc<CryptoToken>>,
@@ -63,7 +67,7 @@ impl BackRunnerStrategy {
         }
 
         // Update pools
-        batch_update_uniswap_v2_pools(provider_manager.get_next(), &pools).await;
+        batch_update_uniswap_v2_pools(Arc::clone(provider), &pools).await;
 
         // Remove empty pools
         let mut pools_to_remove: Vec<usize> = Vec::new();
@@ -115,37 +119,10 @@ impl BackRunnerStrategy {
         //println!("Error 1: {:?}", err.decode_revert::<String>());
         // => Test
 
-        let native_token: &Arc<CryptoToken> = token_manager.native_token();
-        let price_calc_pools: HashMap<Address, Arc<RwLock<dyn AmmPool>>> = start_tokens
-            .iter()
-            .map(|t| {
-                for pool in &pools {
-                    let pool_read_lock = pool.read().unwrap();
-
-                    if !Arc::ptr_eq(pool_read_lock.token0(), native_token)
-                        && !Arc::ptr_eq(pool_read_lock.token1(), native_token)
-                    {
-                        continue;
-                    }
-
-                    if !Arc::ptr_eq(pool_read_lock.token0(), t) && !Arc::ptr_eq(pool_read_lock.token1(), t) {
-                        continue;
-                    }
-
-                    return (*t.address(), Arc::clone(pool));
-                }
-
-                panic!(
-                    "Could not find pool for native token({}) with token({})",
-                    native_token.name(),
-                    t.name()
-                );
-            })
-            .collect();
-
         // Update pools again before starts
-        batch_update_uniswap_v2_pools(provider_manager.get_next(), &pools).await;
+        batch_update_uniswap_v2_pools(Arc::clone(provider), &pools).await;
 
+        let native_token: &Arc<CryptoToken> = token_manager.native_token();
         let price_manager = PriceManager::new(
             *native_token.address(),
             start_tokens.iter().map(|t| *t.address()).collect(),
@@ -155,7 +132,6 @@ impl BackRunnerStrategy {
         Self {
             solidity_bridge,
             token_manager,
-            provider_manager,
             dexes,
             pools: pools
                 .into_iter()
@@ -227,7 +203,10 @@ impl BackRunnerStrategy {
             }
 
             // Convert profit to native so we can get the most profitable path
-            let native_token_price: f64 = self.price_manager.get_native_token_price(input_token.address()).unwrap();
+            let native_token_price: f64 = self
+                .price_manager
+                .get_native_token_price(input_token.address())
+                .unwrap();
             let profit_in_native: i128 = native_token
                 .convert_to_amount(input_token.convert_to_decimal(profit) / native_token_price)
                 .as_u128() as i128;
@@ -322,8 +301,7 @@ impl BackRunnerStrategy {
         );
     }
 
-    async fn on_new_block(&mut self, block: &NewBlock) {
-        let provider = self.provider_manager.get_next().raw_ws_provider();
+    async fn on_new_block(&mut self, provider: &Arc<M>, block: &NewBlock) {
         update_touched_pool_reserves(provider, block.block_number, &mut self.pools)
             .await
             .unwrap_or_else(|e| {
@@ -331,7 +309,10 @@ impl BackRunnerStrategy {
             });
     }
 
-    pub async fn run(&mut self) -> Result<()> {
+    pub async fn run<MD>(&mut self, provider: Arc<M>, debug_provider: Arc<MD>) -> Result<()>
+    where
+        MD: Middleware + 'static,
+    {
         let router_addresses: Vec<Address> = self
             .dexes
             .iter()
@@ -348,16 +329,13 @@ impl BackRunnerStrategy {
             .map(|s: &Address| to_checksum(s, None))
             .collect();
 
-        let provider: &Arc<NormalNodeProvider> = self.provider_manager.get_next();
-        let provider_kind: &Arc<NodeProviderKind> = &Arc::new(NodeProviderKind::Normal(provider.deref().clone()));
-
-        let ns: NetworkStreamsManager = NetworkStreamManagerBuilder::new(provider_kind.clone())
+        let ns: NetworkStreamsManager = NetworkStreamManagerBuilder::<M>::new((*provider).clone())
             .watch_new_blocks()
             .watch_pending_transactions(Some(filters.clone()))
             .build();
 
+        /*
         let block: Block<H256> = provider
-            .raw_ws_provider()
             .get_block(BlockNumber::Latest)
             .await
             .unwrap()
@@ -371,18 +349,16 @@ impl BackRunnerStrategy {
                 block.base_fee_per_gas.unwrap(),
             ),
         };
-
-        let debug_provider: Arc<DebugTraceCallNodeProvider> =
-            Arc::clone(self.provider_manager.get_next_debug_trace_call());
+        */
 
         let mut event_receiver: Receiver<NetworkEvent> = ns.subscribe();
         while let Ok(event) = event_receiver.recv().await {
             match event {
                 NetworkEvent::Block(block) => {
-                    new_block = block;
-                    self.next_block_base_fee = new_block.next_base_fee;
+                    // new_block = block;
+                    self.next_block_base_fee = block.next_base_fee;
 
-                    self.on_new_block(&new_block).await;
+                    self.on_new_block(&provider, &block).await;
                 }
                 NetworkEvent::PendingTx(ref tx) => {
                     let Some(to) = tx.to else {
@@ -396,7 +372,7 @@ impl BackRunnerStrategy {
 
                     let start = Instant::now();
 
-                    let frame: Result<Option<CallFrame>> = debug_provider.debug_trace_call(tx, None).await;
+                    let frame: Result<Option<CallFrame>> = ProviderHelper::debug_trace_call(Arc::clone(&debug_provider), tx, None).await;
                     if frame.is_err() {
                         println!("[?] Error from debug_trace_call: {:?}", frame.unwrap_err());
                         continue;
@@ -419,7 +395,7 @@ impl BackRunnerStrategy {
                     let start = Instant::now();
 
                     let mut trace_logs: Vec<CallLogFrame> = Vec::new();
-                    DebugTraceCallNodeProvider::extract_trace_logs(&frame, &mut trace_logs);
+                    ProviderHelper::extract_trace_logs(&frame, &mut trace_logs);
 
                     println!("extract_trace_logs took: {}ms", start.elapsed().as_millis());
 

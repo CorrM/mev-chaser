@@ -8,18 +8,17 @@ use ethers_core::types::Address;
 
 use amm::{AmmProtocol, UniswapV2Pool, UniswapV2Protocol};
 use contracts::OneSwapInfo;
-use database::{Database, DbDex, DbDexPool, DbToken, DbTokenNetwork};
 use mev::BackRunnerStrategy;
-use shared::provider::NodeProvider;
 use shared::solidity_bridge::SolidityBridge;
-use shared::token::{CryptoToken, TokenManager};
 use shared::{
     network::NetworkKind,
-    provider::{DebugTraceCallNodeProvider, NodeProviderManager, NodeProviderNetworkInfo, NormalNodeProvider},
+    provider::{NodeProvider, NodeProviderManager, NodeProviderNetworkInfo},
+    token::{CryptoToken, TokenManager},
 };
 
-use crate::commands::{GenPoolCommand, AddTokenCommand};
-use crate::utils::env::Env;
+use commands::{AddTokenCommand, GenPoolCommand};
+use database::{Database, DbDex, DbDexPool, DbToken, DbTokenNetwork};
+use utils::env::Env;
 
 mod commands;
 mod database;
@@ -39,23 +38,24 @@ fn read_env_file() -> Result<Env> {
     Ok(var_parse.unwrap())
 }
 
-async fn get_node_providers(env: &Env, target_network: &NetworkKind) -> Result<Vec<NormalNodeProvider>> {
-    let providers: Vec<NormalNodeProvider> = vec![
-        NormalNodeProvider::new(
+/*
+async fn get_node_providers(env: &Env, target_network: &NetworkKind) -> Result<Vec<NodeProvider>> {
+    let providers: Vec<NodeProvider> = vec![
+        NodeProvider::new(
             "Alchemy",
             NodeProviderNetworkInfo {
                 network: *target_network,
                 http_url: env.https_url.clone(),
-                wss_url: env.wss_url.clone(),
+                ws_url: env.wss_url.clone(),
             },
         )
         .await?,
-        NormalNodeProvider::new(
-            "Infura",
+        NodeProvider::new(
+            "Local",
             NodeProviderNetworkInfo {
                 network: *target_network,
                 http_url: env.https_url.clone(),
-                wss_url: env.wss_url.clone(),
+                ws_url: env.wss_url.clone(),
             },
         )
         .await?,
@@ -64,7 +64,7 @@ async fn get_node_providers(env: &Env, target_network: &NetworkKind) -> Result<V
     Ok(providers)
 }
 
-async fn get_debug_node_providers(env: &Env, target_network: &NetworkKind) -> Result<Vec<DebugTraceCallNodeProvider>> {
+async fn get_debug_node_providers(env: &Env, target_network: &NetworkKind) -> Result<Vec<NodeProvider>> {
     let blockpi_network_subdomain: String = match target_network {
         NetworkKind::Ethereum => "ethereum".to_string(),
         NetworkKind::Polygon => "polygon".to_string(),
@@ -77,7 +77,7 @@ async fn get_debug_node_providers(env: &Env, target_network: &NetworkKind) -> Re
             blockpi_network_subdomain, env.blockpi_api_key
         )
         .to_string(),
-        wss_url: format!(
+        ws_url: format!(
             "wss://{}.blockpi.network/v1/ws/{}",
             blockpi_network_subdomain, env.blockpi_api_key
         )
@@ -85,14 +85,15 @@ async fn get_debug_node_providers(env: &Env, target_network: &NetworkKind) -> Re
     };
 
     Ok(vec![
-        DebugTraceCallNodeProvider::new("blockpi", blockpi_net_info).await?,
+        NodeProvider::new("blockpi", blockpi_net_info).await?,
     ])
 }
 
 async fn create_node_provider_manager(env: &Env, target_network: &NetworkKind) -> Result<NodeProviderManager> {
-    let providers: Vec<NormalNodeProvider> = get_node_providers(env, target_network).await?;
+    let providers: Vec<NodeProvider> = get_node_providers(env, target_network).await?;
     NodeProviderManager::new(providers, get_debug_node_providers(env, target_network).await?)
 }
+*/
 
 fn get_tokens(db: &Database, network: &NetworkKind) -> Result<Vec<CryptoToken>> {
     let db_tokens: Vec<(DbToken, DbTokenNetwork)> = db.get_tokens(network)?;
@@ -177,59 +178,25 @@ fn get_dexes(db: &Database, network: &NetworkKind, token_manager: &TokenManager)
     Ok(dexes)
 }
 
-async fn test_contract(env: &Env, provider_manager: &NodeProviderManager) -> Result<()> {
-    //let bot_address = SolidityBridge::deploy(provider_manager.get_next().raw_ws_provider().clone(), env.private_key.clone()).await;
-    //let Ok(bot_address) = bot_address else { return Err(anyhow!("Failed to deploy")); };
-
-    let solidity_bridge = SolidityBridge::new(
-        Address::from_str(&env.bot_address).unwrap(),
-        Arc::clone(provider_manager.get_next().raw_ws_provider()),
-        env.private_key.clone(),
-    )
-    .await?;
-
-    let swaps: Vec<OneSwapInfo> = vec![
-        SolidityBridge::make_uniswap_v2_protocol_swap_info(
-            Address::from_str("0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff").unwrap(),
-            vec![
-                Address::from_str("0xc2132D05D31c914a87C6611C10748AEb04B58e8F").unwrap(),
-                Address::from_str("0x346404079b3792a6c548B072B9C4DDdFb92948d5").unwrap(),
-            ],
-            10000000,
-            0,
-        )
-        .unwrap(),
-        SolidityBridge::make_uniswap_v2_protocol_swap_info(
-            Address::from_str("0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff").unwrap(),
-            vec![
-                Address::from_str("0x346404079b3792a6c548B072B9C4DDdFb92948d5").unwrap(),
-                Address::from_str("0xc2132D05D31c914a87C6611C10748AEb04B58e8F").unwrap(),
-            ],
-            0,
-            1000000,
-        )
-        .unwrap(),
-    ];
-
-    println!(
-        "{:?}",
-        solidity_bridge
-            .estimate_get_loan_then_swap_chain(swaps, true, false)
-            .await
-            .unwrap()
-    );
-
-    Ok(())
-}
-
 #[tokio::main]
 async fn main() -> Result<()> {
     let env: Env = read_env_file()?;
     let db = Database::new(Path::new("./Main.db"))?;
     let target_network: NetworkKind = unsafe { std::mem::transmute(env.chain_id) };
-    let provider_manager: NodeProviderManager = create_node_provider_manager(&env, &target_network).await?;
+    //let provider_manager: NodeProviderManager = create_node_provider_manager(&env, &target_network).await?;
 
-    //speed_of_tx(&provider_manager).await;
+    let provider: NodeProvider = NodeProvider::new(
+        "Local",
+        NodeProviderNetworkInfo {
+            network: target_network,
+            http_url: None,
+            ws_url: None,
+            ipc_path: Some("/var/lib/bor/bor.ipc".to_string()),
+        },
+    )
+    .await?;
+    let provider_manager = NodeProviderManager::new(vec![provider.clone()], vec![provider])?;
+
     //test_contract(&env, &provider_manager).await;
     //return Ok(());
 
@@ -240,7 +207,7 @@ async fn main() -> Result<()> {
             GenPoolCommand::process(
                 &db,
                 &target_network,
-                Arc::clone(provider_manager.get_next().raw_http_provider()),
+                Arc::clone(provider_manager.get_next().raw_ipc_provider()),
             )
             .await?;
 
@@ -267,7 +234,7 @@ async fn main() -> Result<()> {
     let token_manager = TokenManager::new(get_tokens(&db, &target_network)?, &target_network);
     let solidity_bridge = SolidityBridge::new(
         Address::from_str(&env.bot_address).unwrap(),
-        Arc::clone(provider_manager.get_next().raw_ws_provider()),
+        Arc::clone(provider_manager.get_next().raw_ipc_provider()),
         env.private_key,
     )
     .await?;
@@ -284,12 +251,23 @@ async fn main() -> Result<()> {
 
     // 2 are triangle arbitrage
     println!("[-] Prepare strategy");
-    let mut strategy =
-        BackRunnerStrategy::new(solidity_bridge, token_manager, provider_manager, amms, 3, start_tokens).await;
+    let mut strategy = BackRunnerStrategy::new(
+        solidity_bridge,
+        provider_manager.get_next().raw_ipc_provider(),
+        token_manager,
+        amms,
+        3,
+        start_tokens,
+    )
+    .await;
 
     println!("[+] Start strategy");
-    //strategy.speed_of_tx().await;
-    strategy.run().await?;
+    strategy
+        .run(
+            Arc::clone(provider_manager.get_next().raw_ipc_provider()),
+            Arc::clone(provider_manager.get_next_debug_trace_call().raw_ipc_provider()),
+        )
+        .await?;
 
     println!("[+] Done");
 

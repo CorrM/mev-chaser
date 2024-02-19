@@ -1,25 +1,25 @@
-use std::sync::Arc;
+use std::str::FromStr;
 
-use ethers_core::utils;
-use ethers_providers::{Middleware, Provider, Ws};
-use serde_json::{json, Value};
+use ethers_core::types::Address;
+use ethers_providers::{Middleware, PubsubClient};
+use serde_json::from_str;
 use tokio::sync::broadcast::Sender;
 use tokio_stream::StreamExt;
 
-use crate::provider::NodeProvider;
-
 use super::NetworkEvent;
 
-pub async fn stream_pending_transactions<T: NodeProvider>(
-    provider: T,
+pub async fn stream_pending_transactions<M>(
+    provider: M,
     event_sender: Sender<NetworkEvent>,
     filter_to_addresses: Option<Vec<String>>,
-) {
-    let ws: &Arc<Provider<Ws>> = provider.raw_ws_provider();
-
+) where
+    M: Middleware,
+    M::Provider: PubsubClient,
+{
     //let mut stream = ws.subscribe_pending_txs().await.unwrap();
     //let mut stream = stream.transactions_unordered(256).fuse();
 
+    /*
     let mut stream = match provider.name() {
         "Alchemy" => {
             let alchemy_event: Value = utils::serialize(&"alchemy_pendingTransactions");
@@ -29,12 +29,31 @@ pub async fn stream_pending_transactions<T: NodeProvider>(
                 vec![alchemy_event]
             };
 
-            ws.subscribe(sub_params).await.unwrap()
+            provider.subscribe(sub_params).await.unwrap()
         }
-        _ => ws.subscribe_full_pending_txs().await.unwrap(),
+        _ => provider.subscribe_full_pending_txs().await.unwrap(),
     };
+    */
 
+    let filter_to_addresses: Option<Vec<Address>> = filter_to_addresses.map(|filter_to_addresses| {
+        filter_to_addresses
+            .iter()
+            .map(|a| Address::from_str(a).unwrap())
+            .collect()
+    });
+
+    let mut stream = provider.subscribe_full_pending_txs().await.unwrap();
     while let Some(tx) = stream.next().await {
+        let Some(to) = tx.to else {
+            continue;
+        };
+
+        if let Some(ref filter_to_addresses) = filter_to_addresses {
+            if !filter_to_addresses.contains(&to) {
+                continue;
+            }
+        }
+
         if event_sender.send(NetworkEvent::PendingTx(tx)).is_err() {
             continue;
         }

@@ -1,11 +1,10 @@
 use ethers::types::Filter;
+use ethers_providers::{Middleware, PubsubClient};
 use tokio::sync::broadcast::Receiver;
 use tokio::{
     sync::broadcast::Sender,
     task::{JoinError, JoinSet},
 };
-
-use crate::provider::NodeProvider;
 
 use super::log_stream::stream_log_event;
 use super::network_event::NetworkEvent;
@@ -18,13 +17,17 @@ pub struct NetworkStreamsManager {
 }
 
 impl NetworkStreamsManager {
-    pub(super) fn new<T: 'static + NodeProvider>(
-        provider: T,
+    pub(super) fn new<M>(
+        provider: M,
         event_sender: Sender<NetworkEvent>,
         new_blocks: bool,
         pending_transactions: Option<Vec<String>>,
         events: Option<Vec<Option<Filter>>>,
-    ) -> Self {
+    ) -> Self
+    where
+        M: Middleware + Clone + 'static,
+        M::Provider: PubsubClient,
+    {
         let mut set: JoinSet<()> = JoinSet::new();
 
         if new_blocks {
@@ -41,11 +44,7 @@ impl NetworkStreamsManager {
 
         if let Some(events) = events {
             for event in events {
-                set.spawn(stream_log_event(
-                    provider.clone(),
-                    event_sender.clone(),
-                    event.unwrap(),
-                ));
+                set.spawn(stream_log_event(provider.clone(), event_sender.clone(), event.unwrap()));
             }
         }
 

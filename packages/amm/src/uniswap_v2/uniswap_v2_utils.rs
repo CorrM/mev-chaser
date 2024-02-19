@@ -2,25 +2,19 @@ use std::sync::{Arc, RwLock};
 
 use anyhow::Result;
 use contracts::UniswapV2PairAbi;
-use ethers::{
-    abi::Token,
-    providers::{Http, Provider},
-    types::Bytes,
-};
+use ethers::abi::Token;
+use ethers::types::Bytes;
 use ethers_contract::Multicall;
-
-use shared::provider::{NodeProvider, NormalNodeProvider};
+use ethers_providers::Middleware;
 
 use crate::AmmPool;
 
 // TODO: Should change `dyn AmmPool` to `UniswapV2Pool`
 
-async fn get_uniswap_v2_reserves(provider: &NormalNodeProvider, pools: Vec<Arc<RwLock<dyn AmmPool>>>) {
-    let client: &Arc<Provider<Http>> = provider.raw_http_provider();
-
-    let mut multicall: Multicall<Provider<Http>> = Multicall::new(Arc::clone(client), None).await.unwrap();
+async fn get_uniswap_v2_reserves<M: Middleware>(provider: Arc<M>, pools: Vec<Arc<RwLock<dyn AmmPool>>>) {
+    let mut multicall = Multicall::<M>::new(Arc::clone(&provider), None).await.unwrap();
     for pool in &pools {
-        let contract = UniswapV2PairAbi::new(*pool.read().unwrap().address(), client.clone());
+        let contract = UniswapV2PairAbi::new(*pool.read().unwrap().address(), Arc::clone(&provider));
         multicall.add_call(contract.get_reserves(), false);
     }
 
@@ -38,7 +32,7 @@ async fn get_uniswap_v2_reserves(provider: &NormalNodeProvider, pools: Vec<Arc<R
     }
 }
 
-pub async fn batch_update_uniswap_v2_pools(provider: &NormalNodeProvider, pools: &[Arc<RwLock<dyn AmmPool>>]) {
+pub async fn batch_update_uniswap_v2_pools<M: Middleware>(provider: Arc<M>, pools: &[Arc<RwLock<dyn AmmPool>>]) {
     let pools_cnt = pools.len() as f32;
     let batch: f32 = (pools_cnt / 250_f32).ceil();
     let pools_per_batch: usize = (pools_cnt / batch).ceil() as usize;
@@ -47,6 +41,6 @@ pub async fn batch_update_uniswap_v2_pools(provider: &NormalNodeProvider, pools:
     for i in 0..(batch as usize) {
         let start_idx: usize = i * pools_per_batch;
         let end_idx: usize = std::cmp::min(start_idx + pools_per_batch, pools_cnt);
-        get_uniswap_v2_reserves(provider, pools[start_idx..end_idx].to_vec()).await;
+        get_uniswap_v2_reserves(Arc::clone(&provider), pools[start_idx..end_idx].to_vec()).await;
     }
 }

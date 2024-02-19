@@ -1,33 +1,43 @@
-use std::{collections::HashMap, sync::{Arc, RwLock}};
+use std::{
+    collections::HashMap,
+    sync::{Arc, RwLock},
+};
 
 use anyhow::Result;
 use ethers::types::{U256, U64};
-use ethers_core::{abi::{decode, ParamType, Token}, types::{Address, Filter, Log, H160}};
-use ethers_providers::{Middleware, Provider, Ws};
+use ethers_core::{
+    abi::{decode, ParamType, Token},
+    types::{Address, Filter, Log, H160},
+};
+use ethers_providers::Middleware;
 
 use crate::AmmPool;
 
-pub async fn update_touched_pool_reserves(
-    provider: &Arc<Provider<Ws>>,
+pub async fn update_touched_pool_reserves<M>(
+    provider: &Arc<M>,
     block_number: U64,
-    pools: &mut HashMap<Address, Arc<RwLock<dyn AmmPool>>>
-) -> Result<()> {
-    let sync_event: &str = "Sync(uint112,uint112)";
+    pools: &mut HashMap<Address, Arc<RwLock<dyn AmmPool>>>,
+) -> Result<()>
+where
+    M: Middleware + 'static,
+{
+    const SYNC_EVENT: &str = "Sync(uint112,uint112)";
     let event_filter: Filter = Filter::new()
         .from_block(block_number)
         .to_block(block_number)
-        .event(sync_event);
+        .event(SYNC_EVENT);
 
     let mut tx_idx: HashMap<H160, U64> = HashMap::new();
-    
+
     let logs: Vec<Log> = provider.get_logs(&event_filter).await?;
     for log in &logs {
         let pool: Option<&mut Arc<RwLock<dyn AmmPool>>> = pools.get_mut(&log.address);
         if pool.is_none() {
             continue;
         }
-        
-        let decoded: Result<Vec<Token>, ethers_core::abi::Error> = decode(&[ParamType::Uint(256), ParamType::Uint(256)], &log.data);
+
+        let decoded: Result<Vec<Token>, ethers_core::abi::Error> =
+            decode(&[ParamType::Uint(256), ParamType::Uint(256)], &log.data);
         let Ok(data) = decoded else { continue };
 
         let idx: U64 = log.transaction_index.unwrap_or_default();

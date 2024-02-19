@@ -9,7 +9,7 @@ use ethers_core::{
     types::{Address, Bytes},
     utils::to_checksum,
 };
-use ethers_providers::{Http, Provider};
+use ethers_providers::{Http, Middleware, Provider};
 use shared::network::NetworkKind;
 
 use crate::database::{Database, DbDex, DbDexNetwork, DbDexProtocol, DbToken};
@@ -27,12 +27,12 @@ fn generate_pairs<T>(list: &[T]) -> Vec<(&T, &T)> {
 pub struct GenPoolCommand;
 
 impl GenPoolCommand {
-    async fn add_uniswap_v2_pools(
+    async fn add_uniswap_v2_pools<M: Middleware>(
         token_pairs: &[(&String, &String)],
         db_dex: &DbDex,
         db: &Database,
         target_network: &NetworkKind,
-        provider: &Arc<Provider<Http>>,
+        provider: &Arc<M>,
     ) -> Result<()> {
         let db_dex_network: Option<DbDexNetwork> = db.get_dex_network(db_dex.id, target_network)?;
         if db_dex_network.is_none() {
@@ -59,7 +59,7 @@ impl GenPoolCommand {
                 "[-] Getting pools [{} -> {}] addresses for dex '{}'",
                 start_idx, end_idx, db_dex.name
             );
-            let mut multicall: Multicall<Provider<Http>> = Multicall::new(Arc::clone(provider), None).await.unwrap();
+            let mut multicall: Multicall<M> = Multicall::new(Arc::clone(provider), None).await.unwrap();
             for (token_a, token_b) in pairs_chank {
                 // Can't execlude pairs here, because it will cause an error in the next for loop
                 let token_a: Address = Address::from_str(token_a).unwrap();
@@ -167,7 +167,7 @@ impl GenPoolCommand {
         Ok(())
     }
 
-    pub async fn process(db: &Database, target_network: &NetworkKind, provider: Arc<Provider<Http>>) -> Result<()> {
+    pub async fn process<M: Middleware>(db: &Database, target_network: &NetworkKind, provider: Arc<M>) -> Result<()> {
         let tokens_address: Vec<String> = db
             .get_tokens(target_network)?
             .iter()
