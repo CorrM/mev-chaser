@@ -1,15 +1,14 @@
 use std::sync::Arc;
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use ethers::{
     middleware::SignerMiddleware,
     signers::{LocalWallet, Signer, Wallet},
 };
 use ethers_contract::ContractError;
 use ethers_core::{
-    abi::Token,
     k256::ecdsa::SigningKey,
-    types::{Address, Bytes, TxHash, U256},
+    types::{Address, TxHash, U256},
 };
 use ethers_providers::Middleware;
 

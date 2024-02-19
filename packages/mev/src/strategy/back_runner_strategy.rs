@@ -175,8 +175,6 @@ where
             return;
         };
 
-        println!("touched_paths: {}", touched_paths.len());
-
         let native_token: &Arc<CryptoToken> = self.token_manager.native_token();
         let mut best_profit_in_native: std::sync::Mutex<i128> = std::sync::Mutex::new(0_i128);
         let mut best_path: std::sync::Mutex<Option<(&Arc<PoolPath>, U256, U256)>> = std::sync::Mutex::new(None);
@@ -224,6 +222,7 @@ where
 
         let best_profit: i128 = *best_profit_in_native.get_mut().unwrap();
         if best_profit == 0 {
+            println!("touched_paths: {}", touched_paths.len());
             return;
         }
 
@@ -260,13 +259,11 @@ where
             return;
         }
 
-        let start = Instant::now();
         let swaps: Result<(Vec<OneSwapInfo>, bool)> = swap_path.make_swaps(swap_input_amount, swap_output_amount);
         let Ok(swaps) = swaps else {
             println!("Failed to make swap information: {:?}", swaps.unwrap_err());
             return;
         };
-        println!("make_swaps_took: {}ms", start.elapsed().as_millis());
 
         let swaps_to_execute: Vec<OneSwapInfo> = swaps.0;
         let swaps_are_chained: bool = swaps.1;
@@ -290,6 +287,7 @@ where
                 .await
         };
 
+        println!("touched_paths: {}", touched_paths.len());
         println!("input_token: {}", swap_path.get_input_token().symbol());
         println!("best_net_profit: {}", net_profit);
         println!(
@@ -370,8 +368,6 @@ where
                         continue;
                     }
 
-                    let start = Instant::now();
-
                     let frame: Result<Option<CallFrame>> = ProviderHelper::debug_trace_call(Arc::clone(&debug_provider), tx, None).await;
                     if frame.is_err() {
                         println!("[?] Error from debug_trace_call: {:?}", frame.unwrap_err());
@@ -390,14 +386,8 @@ where
                         continue;
                     }
 
-                    println!("debug_trace_call took: {}ms", start.elapsed().as_millis());
-
-                    let start = Instant::now();
-
                     let mut trace_logs: Vec<CallLogFrame> = Vec::new();
                     ProviderHelper::extract_trace_logs(&frame, &mut trace_logs);
-
-                    println!("extract_trace_logs took: {}ms", start.elapsed().as_millis());
 
                     let start = Instant::now();
 
