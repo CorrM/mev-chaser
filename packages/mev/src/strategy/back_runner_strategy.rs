@@ -5,7 +5,7 @@ use std::{collections::HashMap, sync::Arc};
 use anyhow::Result;
 use ethers_core::{
     abi::Log,
-    types::{Address, CallFrame, CallLogFrame, Transaction, U256},
+    types::{Address, CallFrame, CallLogFrame, Transaction, U256, U64},
     utils::to_checksum,
 };
 use ethers_providers::{Middleware, PubsubClient};
@@ -149,6 +149,8 @@ where
         let start = Instant::now();
         const ZERO: U256 = U256::zero();
 
+        let touched_path_time = Instant::now();
+
         let native_token: &Arc<CryptoToken> = self.token_manager.native_token();
         let mut best_profit_in_native: std::sync::Mutex<U256> = std::sync::Mutex::new(ZERO);
         let mut best_path: std::sync::Mutex<Option<(&Arc<PoolPath>, U256)>> = std::sync::Mutex::new(None);
@@ -192,6 +194,8 @@ where
             *best_profit_lock = profit_in_native;
         });
 
+        println!("Touched path time: {}ms", touched_path_time.elapsed().as_millis());
+
         let best_profit: U256 = *best_profit_in_native.get_mut().unwrap();
         if best_profit.is_zero() {
             println!("touched_paths: {}", touched_paths.len());
@@ -201,10 +205,10 @@ where
         // Get gas cost
         let estimated_gas_usage: U256 = U256::from(550_000);
         let legacy_tx: bool = tx.transaction_type.is_none();
-        let gas_cost_in_wei_native: U256 = if legacy_tx {
-            tx.gas_price.unwrap() * estimated_gas_usage
-        } else {
-            (tx.max_fee_per_gas.unwrap() + tx.max_priority_fee_per_gas.unwrap()) * estimated_gas_usage
+        let gas_cost_in_wei_native: U256 = match tx.transaction_type.map(|t| t.as_u64()) {
+            None | Some(1) => tx.gas_price.unwrap() * estimated_gas_usage,
+            Some(2) => (tx.max_fee_per_gas.unwrap() + tx.max_priority_fee_per_gas.unwrap()) * estimated_gas_usage,
+            _ => return,
         };
 
         // get net profit

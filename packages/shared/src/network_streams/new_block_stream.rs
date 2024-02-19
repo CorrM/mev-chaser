@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use ethers::types::{Block, H256, U256, U64};
 use ethers_providers::{Middleware, PubsubClient};
 use tokio::sync::broadcast::Sender;
