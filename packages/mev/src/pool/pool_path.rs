@@ -108,12 +108,11 @@ impl PoolPath {
         Some(amount_out)
     }
 
-    pub fn find_optimal_input(&self, max_count_in: u64, step_size: usize) -> (U256, U256, U256) {
+    pub fn find_optimal_input(&self, max_count_in: u64, step_size: usize) -> (U256, U256) {
         let input_token: Arc<CryptoToken> = self.get_input_token();
         let input_token_unit: U256 = U256::from(10).pow(U256::from(input_token.decimals()));
 
         let mut optimized_in: U256 = U256::zero();
-        let mut amount_min_out: U256 = U256::zero();
         let mut profit: i128 = 0;
 
         for amount_in in (0..max_count_in).step_by(step_size) {
@@ -128,14 +127,13 @@ impl PoolPath {
 
             if this_profit >= profit {
                 optimized_in = amount_in;
-                amount_min_out = amount_out;
                 profit = this_profit;
             } else {
                 break;
             }
         }
 
-        (optimized_in, amount_min_out, U256::from(profit))
+        (optimized_in, U256::from(profit))
     }
 
     pub fn make_swaps(&self, input_amount: U256, output_amount: U256) -> Result<(Vec<OneSwapInfo>, bool)> {

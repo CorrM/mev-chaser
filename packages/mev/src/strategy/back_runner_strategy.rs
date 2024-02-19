@@ -3,7 +3,6 @@ use std::time::Instant;
 use std::{collections::HashMap, sync::Arc};
 
 use anyhow::Result;
-use ethers_core::types::U64;
 use ethers_core::{
     abi::Log,
     types::{Address, CallFrame, CallLogFrame, Transaction, U256},
@@ -26,13 +25,6 @@ use shared::{
 
 use crate::pool::{generate_pool_paths, PoolPath, PoolPathsContainer};
 use crate::{PriceManager, ProviderHelper};
-
-fn submit_slippage(amount: U256) -> U256 {
-    // 0.5% slippage (995/1000)
-    // 5.0% slippage (95/100)
-    let final_amount: U256 = (amount * 995) / 1000;
-    final_amount
-}
 
 pub struct BackRunnerStrategy<M>
 where
@@ -146,28 +138,7 @@ where
         }
     }
 
-    async fn on_new_pending_tx_with_sync_event(&self, tx: &Transaction, sync_log: &(Address, Log)) {
-        let tx_hash: String = format!("{:?}", tx.hash);
-        let (pool_address, log): &(Address, Log) = sync_log;
-        println!(
-            "tx_hash: {}\npool_address: {}",
-            tx_hash,
-            to_checksum(pool_address, None)
-        );
-
-        let Some(local_pool) = self.pools.get(pool_address) else {
-            return;
-        };
-
-        // Update pool
-        let ethers_core::abi::Token::Uint(reserve0) = log.params[0].value else {
-            panic!("reserve0 is not uint")
-        };
-        let ethers_core::abi::Token::Uint(reserve1) = log.params[1].value else {
-            panic!("reserve1 is not uint")
-        };
-        local_pool.write().unwrap().update_reserve(&reserve0, &reserve1);
-
+    async fn on_new_pending_tx_with_sync_event(&self, tx: &Transaction, pool_address: &Address) {
         // Get paths
         let touched_paths: Option<&Vec<Arc<PoolPath>>> = self.paths_container.get_paths_containing_pool(pool_address);
         let Some(touched_paths) = touched_paths else {
@@ -175,27 +146,30 @@ where
             return;
         };
 
+        let start = Instant::now();
+        const ZERO: U256 = U256::zero();
+
         let native_token: &Arc<CryptoToken> = self.token_manager.native_token();
-        let mut best_profit_in_native: std::sync::Mutex<i128> = std::sync::Mutex::new(0_i128);
-        let mut best_path: std::sync::Mutex<Option<(&Arc<PoolPath>, U256, U256)>> = std::sync::Mutex::new(None);
+        let mut best_profit_in_native: std::sync::Mutex<U256> = std::sync::Mutex::new(ZERO);
+        let mut best_path: std::sync::Mutex<Option<(&Arc<PoolPath>, U256)>> = std::sync::Mutex::new(None);
         touched_paths.par_iter().for_each(|path: &Arc<PoolPath>| {
             let input_token: Arc<CryptoToken> = path.get_input_token();
 
-            let amount_in: U256 = input_token.convert_to_amount(1_f64);
+            let amount_in: U256 = input_token.one_token_amount();
             let Some(amount_out) = path.get_amount_out_v2(amount_in) else {
                 // TODO: Fix fees in this function
                 return;
             };
 
+            // TODO: Do benchmark to check if I128 is faster than U256
             let _in: i128 = amount_in.as_u128() as i128;
             let _out: i128 = amount_out.as_u128() as i128;
             let spread: i128 = _out - _in;
-
             if spread <= 0 {
                 return;
             }
 
-            let (optimized_in, _amount_min_out, profit) = path.find_optimal_input(1000, 10);
+            let (optimized_in, profit) = path.find_optimal_input(1000, 10);
             if optimized_in.is_zero() {
                 return;
             }
@@ -205,9 +179,8 @@ where
                 .price_manager
                 .get_native_token_price(input_token.address())
                 .unwrap();
-            let profit_in_native: i128 = native_token
-                .convert_to_amount(input_token.convert_to_decimal(profit) / native_token_price)
-                .as_u128() as i128;
+            let profit_in_native: U256 = native_token
+                .convert_to_amount(input_token.convert_to_decimal(profit) / native_token_price);
 
             // Lock from here to the end of the socpe so that we can check without other threads messing with it
             let mut best_profit_lock = best_profit_in_native.lock().unwrap();
@@ -215,34 +188,32 @@ where
                 return;
             }
 
-            // amount_min_out are just input + cost of the transaction, then AMM will give use max output
-            *best_path.lock().unwrap() = Some((path, optimized_in, optimized_in + profit_in_native));
+            *best_path.lock().unwrap() = Some((path, optimized_in));
             *best_profit_lock = profit_in_native;
         });
 
-        let best_profit: i128 = *best_profit_in_native.get_mut().unwrap();
-        if best_profit == 0 {
+        let best_profit: U256 = *best_profit_in_native.get_mut().unwrap();
+        if best_profit.is_zero() {
             println!("touched_paths: {}", touched_paths.len());
             return;
         }
 
         // Get gas cost
-        let legacy_tx: bool = tx.transaction_type.unwrap_or(U64::from(0)) == U64::from(0);
-        let gas_price: (U256, U256) = if legacy_tx {
-            (tx.gas_price.unwrap(), U256::from(0))
-        } else {
-            (tx.max_fee_per_gas.unwrap(), tx.max_priority_fee_per_gas.unwrap())
-        };
         let estimated_gas_usage: U256 = U256::from(550_000);
-        let gas_cost_in_wei_native: U256 = (gas_price.0 + gas_price.1) * estimated_gas_usage;
+        let legacy_tx: bool = tx.transaction_type.is_none();
+        let gas_cost_in_wei_native: U256 = if legacy_tx {
+            tx.gas_price.unwrap() * estimated_gas_usage
+        } else {
+            (tx.max_fee_per_gas.unwrap() + tx.max_priority_fee_per_gas.unwrap()) * estimated_gas_usage
+        };
 
         // get net profit
-        let net_profit: i128 = best_profit - (gas_cost_in_wei_native.as_u128() as i128);
-        if net_profit <= 0 {
+        let net_profit: U256 = best_profit - gas_cost_in_wei_native;
+        if net_profit <= ZERO {
             return;
         }
 
-        let best_path: &Option<(&Arc<PoolPath>, U256, U256)> = best_path.get_mut().unwrap();
+        let best_path: &Option<(&Arc<PoolPath>, U256)> = best_path.get_mut().unwrap();
         let Some(best_path) = best_path else {
             return;
         };
@@ -250,12 +221,12 @@ where
         // Execute swap
         let swap_path: &Arc<PoolPath> = best_path.0;
         let swap_input_amount: U256 = best_path.1;
-        let swap_output_amount: U256 = best_path.2;
-        let input_token = swap_path.get_input_token();
-
+        let swap_output_amount: U256 = swap_input_amount + gas_cost_in_wei_native; // amount_min_out AMM will give use max output
+        let swap_input_token: Arc<CryptoToken> = swap_path.get_input_token();
+        
         // TODO: That's only valid for stable coins
-        if input_token.convert_to_amount(0.5_f64).as_u128() as i128 > net_profit {
-            println!("Min profit not reached: {net_profit}");
+        if swap_input_token.convert_to_amount(0.5_f64) > net_profit {
+            println!("Min profit not reached: {}", net_profit);
             return;
         }
 
@@ -267,8 +238,6 @@ where
 
         let swaps_to_execute: Vec<OneSwapInfo> = swaps.0;
         let swaps_are_chained: bool = swaps.1;
-
-        let start = Instant::now();
 
         let tx_hash = if legacy_tx {
             self.solidity_bridge
@@ -287,16 +256,11 @@ where
                 .await
         };
 
+        println!("make_tx_took: {}ms", start.elapsed().as_millis());
         println!("touched_paths: {}", touched_paths.len());
         println!("input_token: {}", swap_path.get_input_token().symbol());
         println!("best_net_profit: {}", net_profit);
-        println!(
-            "path: {:?}\nback_running_tx_hash: ({:?}) {:?}\nmake_tx_took: {}ms",
-            swap_path,
-            tx.hash,
-            tx_hash,
-            start.elapsed().as_millis()
-        );
+        println!("back_running_tx_hash: ({:?}) {:?}", tx.hash, tx_hash,);
     }
 
     async fn on_new_block(&mut self, provider: &Arc<M>, block: &NewBlock) {
@@ -359,6 +323,8 @@ where
                     self.on_new_block(&provider, &block).await;
                 }
                 NetworkEvent::PendingTx(ref tx) => {
+                    let start = Instant::now();
+
                     let Some(to) = tx.to else {
                         continue;
                     };
@@ -368,7 +334,8 @@ where
                         continue;
                     }
 
-                    let frame: Result<Option<CallFrame>> = ProviderHelper::debug_trace_call(Arc::clone(&debug_provider), tx, None).await;
+                    let frame: Result<Option<CallFrame>> =
+                        ProviderHelper::debug_trace_call(Arc::clone(&debug_provider), tx, None).await;
                     if frame.is_err() {
                         println!("[?] Error from debug_trace_call: {:?}", frame.unwrap_err());
                         continue;
@@ -389,28 +356,41 @@ where
                     let mut trace_logs: Vec<CallLogFrame> = Vec::new();
                     ProviderHelper::extract_trace_logs(&frame, &mut trace_logs);
 
-                    let start = Instant::now();
-
                     // TODO: Use to_address to determine which dex to `decode_pair_trace_logs`
-                    let mut all_sync_logs: Mutex<Vec<(Address, Log)>> = Mutex::new(Vec::new());
+                    let mut thouched_pools: Mutex<Vec<Address>> = Mutex::new(Vec::new());
                     trace_logs.par_iter().for_each(|trace_log| {
-                        let logs: Option<(Address, Log)> = UniswapV2Protocol::decode_pair_trace_log("Sync", trace_log);
-                        let Some(logs) = logs else {
+                        let sync_log: Option<(Address, Log)> =
+                            UniswapV2Protocol::decode_pair_trace_log("Sync", trace_log);
+                        let Some(sync_log) = sync_log else {
                             return;
                         };
 
-                        all_sync_logs.lock().unwrap().push(logs);
+                        let (pool_address, log): &(Address, Log) = &sync_log;
+                        let Some(local_pool) = self.pools.get(pool_address) else {
+                            return;
+                        };
+
+                        // Update pool
+                        let ethers_core::abi::Token::Uint(reserve0) = log.params[0].value else {
+                            panic!("reserve0 is not uint")
+                        };
+                        let ethers_core::abi::Token::Uint(reserve1) = log.params[1].value else {
+                            panic!("reserve1 is not uint")
+                        };
+                        local_pool.write().unwrap().update_reserve(&reserve0, &reserve1);
+
+                        thouched_pools.lock().unwrap().push(*pool_address);
                     });
-                    let all_sync_logs: &mut Vec<(Address, Log)> = all_sync_logs.get_mut().unwrap();
+                    let thouched_pools: &Vec<Address> = thouched_pools.get_mut().unwrap();
 
                     async_scoped::TokioScope::scope_and_block(|s| {
-                        for logs in all_sync_logs {
-                            s.spawn(self.on_new_pending_tx_with_sync_event(tx, logs));
+                        for touched_pool in thouched_pools {
+                            s.spawn(self.on_new_pending_tx_with_sync_event(tx, touched_pool));
                         }
                     });
 
                     println!(
-                        "Back running took: {}ms, trace_logs: {}",
+                        "⌚ Back running took: {}ms, trace_logs: {}",
                         start.elapsed().as_millis(),
                         trace_logs.len()
                     );

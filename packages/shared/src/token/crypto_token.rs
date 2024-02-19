@@ -12,6 +12,7 @@ pub struct CryptoToken {
     symbol: String,
     decimals: u8,
     decimals_pow: f64,
+    one_token_amount: U256,
 }
 
 impl CryptoToken {
@@ -22,13 +23,15 @@ impl CryptoToken {
         symbol: impl Into<String>,
         decimals: u8,
     ) -> Result<Self> {
+        let decimals_pow: f64 = 10_f64.powi(decimals as i32);
         Ok(Self {
             network: *network,
             address: Address::from_str(&address.into())?,
             name: name.into(),
             symbol: symbol.into(),
             decimals,
-            decimals_pow: (10 as f64).powi(decimals as i32),
+            decimals_pow,
+            one_token_amount: U256::from((1_f64 * decimals_pow) as i128)
         })
     }
 
@@ -50,6 +53,10 @@ impl CryptoToken {
 
     pub fn decimals(&self) -> u8 {
         self.decimals
+    }
+    
+    pub fn one_token_amount(&self) -> U256 {
+        self.one_token_amount
     }
 
     pub fn convert_to_decimal(&self, value: U256) -> f64 {
