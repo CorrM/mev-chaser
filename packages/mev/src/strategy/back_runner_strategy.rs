@@ -139,6 +139,8 @@ where
     }
 
     async fn on_new_pending_tx_with_sync_event(&self, tx: &Transaction, pool_address: &Address) {
+        println!("0");
+
         // Get paths
         let touched_paths: Option<&Vec<Arc<PoolPath>>> = self.paths_container.get_paths_containing_pool(pool_address);
         let Some(touched_paths) = touched_paths else {
@@ -150,6 +152,7 @@ where
         const ZERO: U256 = U256::zero();
 
         let touched_path_time = Instant::now();
+        println!("1");
 
         let native_token: &Arc<CryptoToken> = self.token_manager.native_token();
         let mut best_profit_in_native: std::sync::Mutex<U256> = std::sync::Mutex::new(ZERO);
@@ -181,8 +184,8 @@ where
                 .price_manager
                 .get_native_token_price(input_token.address())
                 .unwrap();
-            let profit_in_native: U256 = native_token
-                .convert_to_amount(input_token.convert_to_decimal(profit) / native_token_price);
+            let profit_in_native: U256 =
+                native_token.convert_to_amount(input_token.convert_to_decimal(profit) / native_token_price);
 
             // Lock from here to the end of the socpe so that we can check without other threads messing with it
             let mut best_profit_lock = best_profit_in_native.lock().unwrap();
@@ -227,7 +230,7 @@ where
         let swap_input_amount: U256 = best_path.1;
         let swap_output_amount: U256 = swap_input_amount + gas_cost_in_wei_native; // amount_min_out AMM will give use max output
         let swap_input_token: Arc<CryptoToken> = swap_path.get_input_token();
-        
+
         // TODO: That's only valid for stable coins
         if swap_input_token.convert_to_amount(0.5_f64) > net_profit {
             println!("Min profit not reached: {}", net_profit);
@@ -329,7 +332,7 @@ where
                 NetworkEvent::PendingTx(ref tx) => {
                     let start = Instant::now();
 
-                    // TODO: No need for this as NetworkStreamsManager filters pending transactions 
+                    // TODO: No need for this as NetworkStreamsManager filters pending transactions
                     //let Some(to) = tx.to else {
                     //    continue;
                     //};
