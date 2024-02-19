@@ -139,8 +139,6 @@ where
     }
 
     async fn on_new_pending_tx_with_sync_event(&self, tx: &Transaction, pool_address: &Address) {
-        println!("0");
-
         // Get paths
         let touched_paths: Option<&Vec<Arc<PoolPath>>> = self.paths_container.get_paths_containing_pool(pool_address);
         let Some(touched_paths) = touched_paths else {
@@ -149,13 +147,10 @@ where
         };
 
         let start = Instant::now();
-        const ZERO: U256 = U256::zero();
-
         let touched_path_time = Instant::now();
-        println!("1");
 
         let native_token: &Arc<CryptoToken> = self.token_manager.native_token();
-        let mut best_profit_in_native: std::sync::Mutex<U256> = std::sync::Mutex::new(ZERO);
+        let mut best_profit_in_native: std::sync::Mutex<i128> = std::sync::Mutex::new(0_i128);
         let mut best_path: std::sync::Mutex<Option<(&Arc<PoolPath>, U256)>> = std::sync::Mutex::new(None);
         touched_paths.par_iter().for_each(|path: &Arc<PoolPath>| {
             let input_token: Arc<CryptoToken> = path.get_input_token();
@@ -184,8 +179,9 @@ where
                 .price_manager
                 .get_native_token_price(input_token.address())
                 .unwrap();
-            let profit_in_native: U256 =
-                native_token.convert_to_amount(input_token.convert_to_decimal(profit) / native_token_price);
+            let profit_in_native: i128 =
+                native_token.convert_to_amount(input_token.convert_to_decimal(profit) / native_token_price)
+                .as_u128() as i128;
 
             // Lock from here to the end of the socpe so that we can check without other threads messing with it
             let mut best_profit_lock = best_profit_in_native.lock().unwrap();
@@ -199,8 +195,8 @@ where
 
         println!("Touched path time: {}ms", touched_path_time.elapsed().as_millis());
 
-        let best_profit: U256 = *best_profit_in_native.get_mut().unwrap();
-        if best_profit.is_zero() {
+        let best_profit: i128 = *best_profit_in_native.get_mut().unwrap();
+        if best_profit == 0 {
             println!("touched_paths: {}", touched_paths.len());
             return;
         }
@@ -213,10 +209,11 @@ where
             Some(2) => (tx.max_fee_per_gas.unwrap() + tx.max_priority_fee_per_gas.unwrap()) * estimated_gas_usage,
             _ => return,
         };
+        let gas_cost_in_wei_native: i128 = gas_cost_in_wei_native.as_u128() as i128;
 
         // get net profit
-        let net_profit: U256 = best_profit - gas_cost_in_wei_native;
-        if net_profit <= ZERO {
+        let net_profit: i128 = best_profit - gas_cost_in_wei_native;
+        if net_profit <= 0 {
             return;
         }
 
@@ -232,7 +229,7 @@ where
         let swap_input_token: Arc<CryptoToken> = swap_path.get_input_token();
 
         // TODO: That's only valid for stable coins
-        if swap_input_token.convert_to_amount(0.5_f64) > net_profit {
+        if swap_input_token.convert_to_amount(0.5_f64).as_u128() as i128 > net_profit {
             println!("Min profit not reached: {}", net_profit);
             return;
         }
