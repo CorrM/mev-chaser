@@ -19,12 +19,24 @@ use amm::{
 use contracts::OneSwapInfo;
 use shared::{
     network_streams::{NetworkEvent, NetworkStreamManagerBuilder, NetworkStreamsManager, NewBlock},
-    solidity_bridge::SolidityBridge,
     token::{CryptoToken, TokenManager},
 };
 
 use crate::pool::{generate_pool_paths, PoolPath, PoolPathsContainer};
-use crate::{PriceManager, ProviderHelper};
+use crate::{PriceManager, ProviderHelper, SolidityBridge};
+
+//fn submit_slippage(amount: U256) -> U256 {
+//    // 0.5% slippage (995/1000)
+//    // 5.0% slippage (95/100)
+//    let final_amount: U256 = (amount * 10) / 100;
+//    final_amount
+//}
+
+fn submit_slippage(amount: i128) -> i128 {
+    // 0.5% slippage (995/1000)
+    // 5.0% slippage (95/100)
+    (amount * 10) / 100
+}
 
 struct BackrunningSwapInfo {
     swaps_to_execute: Vec<OneSwapInfo>,
@@ -155,7 +167,7 @@ where
 
         let start = Instant::now();
         let touched_path_time = Instant::now();
-        
+
         let native_token: &Arc<CryptoToken> = self.token_manager.native_token();
         let best_swap: Option<(&Arc<PoolPath>, U256, i128)> = touched_paths
             .par_iter()
@@ -253,10 +265,124 @@ where
             });
     }
 
-    pub async fn run<MD>(&mut self, provider: Arc<M>, debug_provider: Arc<MD>) -> Result<()>
-    where
-        MD: Middleware + 'static,
-    {
+    async fn on_pending_tx(&mut self, tx: &Transaction, debug_provider: &Arc<M>) {
+        let start = Instant::now();
+
+        // TODO: No need for this as NetworkStreamsManager filters pending transactions
+        //let Some(to) = tx.to else {
+        //    continue;
+        //};
+        //let is_router_address: bool = router_addresses.contains(&to);
+        //if !is_router_address {
+        //    continue;
+        //}
+
+        let frame: Result<Option<CallFrame>> =
+            ProviderHelper::debug_trace_call(Arc::clone(debug_provider), tx, None).await;
+        if frame.is_err() {
+            println!("[?] Error from debug_trace_call: {:?}", frame.unwrap_err());
+            return;
+        }
+
+        let Some(frame) = frame.unwrap() else {
+            return;
+        };
+
+        if frame.error.is_some() {
+            println!(
+                "[?] Error from transaction when calling debug_trace_call: {:?}",
+                frame.error
+            );
+            return;
+        }
+
+        let mut trace_logs: Vec<CallLogFrame> = Vec::new();
+        ProviderHelper::extract_trace_logs(&frame, &mut trace_logs);
+
+        // Update and get touched pools
+        let thouched_pools: Vec<Address> = trace_logs
+            .par_iter()
+            .filter_map(|trace_log| {
+                let sync_log: Option<(Address, Log)> = UniswapV2Protocol::decode_pair_trace_log("Sync", trace_log);
+                let Some(sync_log) = sync_log else {
+                    return None;
+                };
+
+                let (pool_address, log): &(Address, Log) = &sync_log;
+                let Some(local_pool) = self.pools.get(pool_address) else {
+                    return None;
+                };
+
+                // Update pool
+                let ethers_core::abi::Token::Uint(reserve0) = log.params[0].value else {
+                    panic!("reserve0 is not uint")
+                };
+                let ethers_core::abi::Token::Uint(reserve1) = log.params[1].value else {
+                    panic!("reserve1 is not uint")
+                };
+                local_pool.write().unwrap().update_reserve(&reserve0, &reserve1);
+
+                Some(*pool_address)
+            })
+            .collect();
+
+        // Get most profitable swap
+        let most_proftable_swap: Option<BackrunningSwapInfo> = thouched_pools
+            .par_iter()
+            .filter_map(|touched_pool| self.get_backrunning_swap(tx, touched_pool))
+            .max_by_key(|s| s.profit_in_native);
+
+        let Some(most_proftable_swap) = most_proftable_swap else {
+            println!(
+                "⏳ Back running took: {}ms, trace_logs: {}",
+                start.elapsed().as_millis(),
+                trace_logs.len()
+            );
+            return;
+        };
+
+        // Execute swap
+        let bid_amount: U256 =
+            U256::from(most_proftable_swap.profit_in_native - submit_slippage(most_proftable_swap.profit_in_native));
+        let tx_hash = if most_proftable_swap.swaps_are_legacy {
+            self.solidity_bridge
+                .get_loan_then_swap_chain_bundle(
+                    tx,
+                    bid_amount,
+                    most_proftable_swap.swaps_to_execute,
+                    most_proftable_swap.swaps_are_chained,
+                    false,
+                    tx.gas_price,
+                    None,
+                    None,
+                )
+                .await
+        } else {
+            self.solidity_bridge
+                .get_loan_then_swap_chain_bundle(
+                    tx,
+                    bid_amount,
+                    most_proftable_swap.swaps_to_execute,
+                    most_proftable_swap.swaps_are_chained,
+                    false,
+                    None,
+                    tx.max_fee_per_gas,
+                    tx.max_priority_fee_per_gas,
+                )
+                .await
+        };
+
+        println!(
+            "⌚ Back running took: {}ms, trace_logs: {}",
+            start.elapsed().as_millis(),
+            trace_logs.len()
+        );
+
+        println!("back_running_tx_hash: ({:?}) {:?}", tx.hash, tx_hash);
+        println!("============");
+    }
+
+    pub async fn run(&mut self, provider: Arc<M>, debug_provider: Arc<M>) -> Result<()> {
         let router_addresses: Vec<Address> = self
             .dexes
             .iter()
@@ -305,112 +431,7 @@ where
                     self.on_new_block(&provider, &block).await;
                 }
                 NetworkEvent::PendingTx(ref tx) => {
-                    let start = Instant::now();
-
-                    // TODO: No need for this as NetworkStreamsManager filters pending transactions
-                    //let Some(to) = tx.to else {
-                    //    continue;
-                    //};
-                    //let is_router_address: bool = router_addresses.contains(&to);
-                    //if !is_router_address {
-                    //    continue;
-                    //}
-
-                    let frame: Result<Option<CallFrame>> =
-                        ProviderHelper::debug_trace_call(Arc::clone(&debug_provider), tx, None).await;
-                    if frame.is_err() {
-                        println!("[?] Error from debug_trace_call: {:?}", frame.unwrap_err());
-                        continue;
-                    }
-
-                    let Some(frame) = frame.unwrap() else {
-                        continue;
-                    };
-
-                    if frame.error.is_some() {
-                        println!(
-                            "[?] Error from transaction when calling debug_trace_call: {:?}",
-                            frame.error
-                        );
-                        continue;
-                    }
-
-                    let mut trace_logs: Vec<CallLogFrame> = Vec::new();
-                    ProviderHelper::extract_trace_logs(&frame, &mut trace_logs);
-
-                    let thouched_pools: Vec<Address> = trace_logs
-                        .par_iter()
-                        .filter_map(|trace_log| {
-                            let sync_log: Option<(Address, Log)> =
-                                UniswapV2Protocol::decode_pair_trace_log("Sync", trace_log);
-                            let Some(sync_log) = sync_log else {
-                                return None;
-                            };
-
-                            let (pool_address, log): &(Address, Log) = &sync_log;
-                            let Some(local_pool) = self.pools.get(pool_address) else {
-                                return None;
-                            };
-
-                            // Update pool
-                            let ethers_core::abi::Token::Uint(reserve0) = log.params[0].value else {
-                                panic!("reserve0 is not uint")
-                            };
-                            let ethers_core::abi::Token::Uint(reserve1) = log.params[1].value else {
-                                panic!("reserve1 is not uint")
-                            };
-                            local_pool.write().unwrap().update_reserve(&reserve0, &reserve1);
-
-                            Some(*pool_address)
-                        })
-                        .collect();
-
-                    let most_proftable_swap: Option<BackrunningSwapInfo> = thouched_pools
-                        .par_iter()
-                        .filter_map(|touched_pool| self.get_backrunning_swap(tx, touched_pool))
-                        .max_by_key(|s| s.profit_in_native);
-
-                    let Some(most_proftable_swap) = most_proftable_swap else {
-                        println!(
-                            "⌚ Back running took: {}ms, trace_logs: {}",
-                            start.elapsed().as_millis(),
-                            trace_logs.len()
-                        );
-                        continue;
-                    };
-
-                    let tx_hash = if most_proftable_swap.swaps_are_legacy {
-                        self.solidity_bridge
-                            .get_loan_then_swap_chain(
-                                most_proftable_swap.swaps_to_execute,
-                                most_proftable_swap.swaps_are_chained,
-                                false,
-                                tx.gas_price,
-                                None,
-                                None,
-                            )
-                            .await
-                    } else {
-                        self.solidity_bridge
-                            .get_loan_then_swap_chain(
-                                most_proftable_swap.swaps_to_execute,
-                                most_proftable_swap.swaps_are_chained,
-                                false,
-                                None,
-                                tx.max_fee_per_gas,
-                                tx.max_priority_fee_per_gas,
-                            )
-                            .await
-                    };
-
-                    println!(
-                        "⌚ Back running took: {}ms, trace_logs: {}",
-                        start.elapsed().as_millis(),
-                        trace_logs.len()
-                    );
-
-                    println!("back_running_tx_hash: ({:?}) {:?}", tx.hash, tx_hash);
-                    println!("============");
+                    self.on_pending_tx(tx, &debug_provider).await;
                 }
                 NetworkEvent::Log(_) => {}
             }
