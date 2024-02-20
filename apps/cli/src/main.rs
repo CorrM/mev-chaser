@@ -7,9 +7,7 @@ use anyhow::{anyhow, Result};
 use ethers_core::types::Address;
 
 use amm::{AmmProtocol, UniswapV2Pool, UniswapV2Protocol};
-use contracts::OneSwapInfo;
-use mev::BackRunnerStrategy;
-use shared::solidity_bridge::SolidityBridge;
+use mev::{BackRunnerStrategy, SolidityBridge};
 use shared::{
     network::NetworkKind,
     provider::{NodeProvider, NodeProviderManager, NodeProviderNetworkInfo},
