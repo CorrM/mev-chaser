@@ -1,11 +1,11 @@
-use std::sync::{Mutex, RwLock};
+use std::sync::RwLock;
 use std::time::Instant;
 use std::{collections::HashMap, sync::Arc};
 
 use anyhow::Result;
 use ethers_core::{
     abi::Log,
-    types::{Address, CallFrame, CallLogFrame, Transaction, U256, U64},
+    types::{Address, CallFrame, CallLogFrame, Transaction, U256},
     utils::to_checksum,
 };
 use ethers_providers::{Middleware, PubsubClient};
@@ -25,6 +25,13 @@ use shared::{
 
 use crate::pool::{generate_pool_paths, PoolPath, PoolPathsContainer};
 use crate::{PriceManager, ProviderHelper};
+
+struct BackrunningSwapInfo {
+    swaps_to_execute: Vec<OneSwapInfo>,
+    swaps_are_chained: bool,
+    swaps_are_legacy: bool,
+    profit_in_native: i128,
+}
 
 pub struct BackRunnerStrategy<M>
 where
@@ -138,12 +145,12 @@ where
         }
     }
 
-    async fn on_new_pending_tx_with_sync_event(&self, tx: &Transaction, pool_address: &Address) {
+    fn get_backrunning_swap(&self, tx: &Transaction, pool_address: &Address) -> Option<BackrunningSwapInfo> {
         // Get paths
         let touched_paths: Option<&Vec<Arc<PoolPath>>> = self.paths_container.get_paths_containing_pool(pool_address);
         let Some(touched_paths) = touched_paths else {
             // No path with this pool
-            return;
+            return None;
         };
 
         let start = Instant::now();
@@ -152,52 +159,6 @@ where
         let native_token: &Arc<CryptoToken> = self.token_manager.native_token();
         let mut best_profit_in_native: std::sync::Mutex<i128> = std::sync::Mutex::new(0_i128);
         let mut best_path: std::sync::Mutex<Option<(&Arc<PoolPath>, U256)>> = std::sync::Mutex::new(None);
-        async_scoped::TokioScope::scope_and_block(|s| {
-            for path in touched_paths {
-                s.spawn(async {
-                    let input_token: &CryptoToken = path.get_input_token();
-
-                    let amount_in: U256 = input_token.one_token_amount();
-                    let Some(amount_out) = path.get_amount_out_v2(amount_in) else {
-                        // TODO: Fix fees in this function
-                        return;
-                    };
-
-                    // TODO: Do benchmark to check if I128 is faster than U256
-                    let _in: i128 = amount_in.as_u128() as i128;
-                    let _out: i128 = amount_out.as_u128() as i128;
-                    let spread: i128 = _out - _in;
-                    if spread <= 0 {
-                        return;
-                    }
-
-                    let (optimized_in, profit) = path.find_optimal_input(1000, 10);
-                    if optimized_in.is_zero() {
-                        return;
-                    }
-
-                    // Convert profit to native so we can get the most profitable path
-                    let native_token_price: f64 = self
-                        .price_manager
-                        .get_native_token_price(input_token.address())
-                        .unwrap();
-                    let profit_in_native: i128 = native_token
-                        .convert_to_amount(input_token.convert_to_decimal(profit) / native_token_price)
-                        .as_u128() as i128;
-
-                    // Lock from here to the end of the socpe so that we can check without other threads messing with it
-                    let mut best_profit_lock = best_profit_in_native.lock().unwrap();
-                    if *best_profit_lock > profit_in_native {
-                        return;
-                    }
-
-                    *best_path.lock().unwrap() = Some((path, optimized_in));
-                    *best_profit_lock = profit_in_native;
-                });
-            }
-        });
-
-        /*
         touched_paths.par_iter().for_each(|path: &Arc<PoolPath>| {
             let input_token: &CryptoToken = path.get_input_token();
 
@@ -238,14 +199,13 @@ where
             *best_path.lock().unwrap() = Some((path, optimized_in));
             *best_profit_lock = profit_in_native;
         });
-        */
 
         println!("touched_paths_time: {}ms", touched_path_time.elapsed().as_millis());
 
         let best_profit: i128 = *best_profit_in_native.get_mut().unwrap();
         if best_profit == 0 {
             println!("touched_paths: {}", touched_paths.len());
-            return;
+            return None;
         }
 
         // Get gas cost
@@ -254,19 +214,19 @@ where
         let gas_cost_in_wei_native: U256 = match tx.transaction_type.map(|t| t.as_u64()) {
             None | Some(1) => tx.gas_price.unwrap() * estimated_gas_usage,
             Some(2) => (tx.max_fee_per_gas.unwrap() + tx.max_priority_fee_per_gas.unwrap()) * estimated_gas_usage,
-            _ => return,
+            _ => return None,
         };
         let gas_cost_in_wei_native: i128 = gas_cost_in_wei_native.as_u128() as i128;
 
         // get net profit
-        let net_profit: i128 = best_profit - gas_cost_in_wei_native;
-        if net_profit <= 0 {
-            return;
+        let net_profit_in_native: i128 = best_profit - gas_cost_in_wei_native;
+        if net_profit_in_native <= 0 {
+            return None;
         }
 
         let best_path: &Option<(&Arc<PoolPath>, U256)> = best_path.get_mut().unwrap();
         let Some(best_path) = best_path else {
-            return;
+            return None;
         };
 
         // Execute swap
@@ -276,42 +236,25 @@ where
         let swap_input_token: &CryptoToken = swap_path.get_input_token();
 
         // TODO: That's only valid for stable coins
-        if swap_input_token.convert_to_amount(0.5_f64).as_u128() as i128 > net_profit {
-            println!("Min profit not reached: {}", net_profit);
-            return;
+        if swap_input_token.convert_to_amount(0.5_f64).as_u128() as i128 > net_profit_in_native {
+            println!("Min profit not reached: {}", net_profit_in_native);
+            return None;
         }
 
         let swaps: Result<(Vec<OneSwapInfo>, bool)> = swap_path.make_swaps(swap_input_amount, swap_output_amount);
         let Ok(swaps) = swaps else {
             println!("Failed to make swap information: {:?}", swaps.unwrap_err());
-            return;
-        };
-
-        let swaps_to_execute: Vec<OneSwapInfo> = swaps.0;
-        let swaps_are_chained: bool = swaps.1;
-
-        let tx_hash = if legacy_tx {
-            self.solidity_bridge
-                .get_loan_then_swap_chain(swaps_to_execute, swaps_are_chained, false, tx.gas_price, None, None)
-                .await
-        } else {
-            self.solidity_bridge
-                .get_loan_then_swap_chain(
-                    swaps_to_execute,
-                    swaps_are_chained,
-                    false,
-                    None,
-                    tx.max_fee_per_gas,
-                    tx.max_priority_fee_per_gas,
-                )
-                .await
+            return None;
         };
 
         println!("processing: {}ms", start.elapsed().as_millis());
         println!("touched_paths: {}", touched_paths.len());
-        println!("input_token: {}", swap_path.get_input_token().symbol());
-        println!("best_net_profit: {}", net_profit);
-        println!("back_running_tx_hash: ({:?}) {:?}", tx.hash, tx_hash,);
+        Some(BackrunningSwapInfo {
+            swaps_to_execute: swaps.0,
+            swaps_are_chained: swaps.1,
+            swaps_are_legacy: legacy_tx,
+            profit_in_native: net_profit_in_native,
+        })
     }
 
     async fn on_new_block(&mut self, provider: &Arc<M>, block: &NewBlock) {
@@ -407,74 +350,73 @@ where
                     let mut trace_logs: Vec<CallLogFrame> = Vec::new();
                     ProviderHelper::extract_trace_logs(&frame, &mut trace_logs);
 
-                    let mut thouched_pools: Mutex<Vec<Address>> = Mutex::new(Vec::new());
-                    async_scoped::TokioScope::scope_and_block(|s| {
-                        for trace_log in &trace_logs {
-                            s.spawn(async {
-                                let sync_log: Option<(Address, Log)> =
-                                    UniswapV2Protocol::decode_pair_trace_log("Sync", trace_log);
-                                let Some(sync_log) = sync_log else {
-                                    return;
-                                };
-    
-                                let (pool_address, log): &(Address, Log) = &sync_log;
-                                let Some(local_pool) = self.pools.get(pool_address) else {
-                                    return;
-                                };
-    
-                                // Update pool
-                                let ethers_core::abi::Token::Uint(reserve0) = log.params[0].value else {
-                                    panic!("reserve0 is not uint")
-                                };
-                                let ethers_core::abi::Token::Uint(reserve1) = log.params[1].value else {
-                                    panic!("reserve1 is not uint")
-                                };
-                                local_pool.write().unwrap().update_reserve(&reserve0, &reserve1);
-    
-                                thouched_pools.lock().unwrap().push(*pool_address);
-                            });
-                        }
-                    });
+                    let thouched_pools: Vec<Address> = trace_logs
+                        .par_iter()
+                        .filter_map(|trace_log| {
+                            let sync_log: Option<(Address, Log)> =
+                                UniswapV2Protocol::decode_pair_trace_log("Sync", trace_log);
+                            let Some(sync_log) = sync_log else {
+                                return None;
+                            };
 
-                    /*
-                    trace_logs.par_iter().for_each(|trace_log| {
-                        let sync_log: Option<(Address, Log)> =
-                            UniswapV2Protocol::decode_pair_trace_log("Sync", trace_log);
-                        let Some(sync_log) = sync_log else {
-                            return;
-                        };
+                            let (pool_address, log): &(Address, Log) = &sync_log;
+                            let Some(local_pool) = self.pools.get(pool_address) else {
+                                return None;
+                            };
 
-                        let (pool_address, log): &(Address, Log) = &sync_log;
-                        let Some(local_pool) = self.pools.get(pool_address) else {
-                            return;
-                        };
+                            // Update pool
+                            let ethers_core::abi::Token::Uint(reserve0) = log.params[0].value else {
+                                panic!("reserve0 is not uint")
+                            };
+                            let ethers_core::abi::Token::Uint(reserve1) = log.params[1].value else {
+                                panic!("reserve1 is not uint")
+                            };
+                            local_pool.write().unwrap().update_reserve(&reserve0, &reserve1);
 
-                        // Update pool
-                        let ethers_core::abi::Token::Uint(reserve0) = log.params[0].value else {
-                            panic!("reserve0 is not uint")
-                        };
-                        let ethers_core::abi::Token::Uint(reserve1) = log.params[1].value else {
-                            panic!("reserve1 is not uint")
-                        };
-                        local_pool.write().unwrap().update_reserve(&reserve0, &reserve1);
+                            Some(*pool_address)
+                        })
+                        .collect();
 
-                        thouched_pools.lock().unwrap().push(*pool_address);
-                    });
-                    */
-                    
-                    let thouched_pools: &Vec<Address> = thouched_pools.get_mut().unwrap();
+                    let most_proftable_swap: Option<BackrunningSwapInfo> = thouched_pools
+                        .par_iter()
+                        .filter_map(|touched_pool| self.get_backrunning_swap(tx, touched_pool))
+                        .max_by_key(|s| s.profit_in_native);
 
-                    async_scoped::TokioScope::scope_and_block(|s| {
-                        for touched_pool in thouched_pools {
-                            s.spawn(self.on_new_pending_tx_with_sync_event(tx, touched_pool));
-                        }
-                    });
+                    let Some(most_proftable_swap) = most_proftable_swap else {
+                        continue;
+                    };
+
+                    let tx_hash = if most_proftable_swap.swaps_are_legacy {
+                        self.solidity_bridge
+                            .get_loan_then_swap_chain(
+                                most_proftable_swap.swaps_to_execute,
+                                most_proftable_swap.swaps_are_chained,
+                                false,
+                                tx.gas_price,
+                                None,
+                                None,
+                            )
+                            .await
+                    } else {
+                        self.solidity_bridge
+                            .get_loan_then_swap_chain(
+                                most_proftable_swap.swaps_to_execute,
+                                most_proftable_swap.swaps_are_chained,
+                                false,
+                                None,
+                                tx.max_fee_per_gas,
+                                tx.max_priority_fee_per_gas,
+                            )
+                            .await
+                    };
 
                     println!(
                         "⌚ Back running took: {}ms, trace_logs: {}",
                         start.elapsed().as_millis(),
                         trace_logs.len()
                     );
+
+                    println!("back_running_tx_hash: ({:?}) {:?}", tx.hash, tx_hash);
                     println!("============");
                 }
                 NetworkEvent::Log(_) => {}
