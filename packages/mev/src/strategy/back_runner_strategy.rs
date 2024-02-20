@@ -155,58 +155,51 @@ where
 
         let start = Instant::now();
         let touched_path_time = Instant::now();
-
+        
         let native_token: &Arc<CryptoToken> = self.token_manager.native_token();
-        let mut best_profit_in_native: std::sync::Mutex<i128> = std::sync::Mutex::new(0_i128);
-        let mut best_path: std::sync::Mutex<Option<(&Arc<PoolPath>, U256)>> = std::sync::Mutex::new(None);
-        touched_paths.par_iter().for_each(|path: &Arc<PoolPath>| {
-            let input_token: &CryptoToken = path.get_input_token();
+        let best_swap: Option<(&Arc<PoolPath>, U256, i128)> = touched_paths
+            .par_iter()
+            .filter_map(|path: &Arc<PoolPath>| {
+                let input_token: &CryptoToken = path.get_input_token();
 
-            let amount_in: U256 = input_token.one_token_amount();
-            let Some(amount_out) = path.get_amount_out_v2(amount_in) else {
-                // TODO: Fix fees in this function
-                return;
-            };
+                let amount_in: U256 = input_token.one_token_amount();
+                let Some(amount_out) = path.get_amount_out_v2(amount_in) else {
+                    // TODO: Fix fees in this function
+                    return None;
+                };
 
-            // TODO: Do benchmark to check if I128 is faster than U256
-            let _in: i128 = amount_in.as_u128() as i128;
-            let _out: i128 = amount_out.as_u128() as i128;
-            let spread: i128 = _out - _in;
-            if spread <= 0 {
-                return;
-            }
+                // TODO: Do benchmark to check if I128 is faster than U256
+                let _in: i128 = amount_in.as_u128() as i128;
+                let _out: i128 = amount_out.as_u128() as i128;
+                let spread: i128 = _out - _in;
+                if spread <= 0 {
+                    return None;
+                }
 
-            let (optimized_in, profit) = path.find_optimal_input(1000, 10);
-            if optimized_in.is_zero() {
-                return;
-            }
+                let (optimized_in, profit) = path.find_optimal_input(1000, 10);
+                if optimized_in.is_zero() {
+                    return None;
+                }
 
-            // Convert profit to native so we can get the most profitable path
-            let native_token_price: f64 = self
-                .price_manager
-                .get_native_token_price(input_token.address())
-                .unwrap();
-            let profit_in_native: i128 = native_token
-                .convert_to_amount(input_token.convert_to_decimal(profit) / native_token_price)
-                .as_u128() as i128;
+                // Convert profit to native so we can get the most profitable path
+                let native_token_price: f64 = self
+                    .price_manager
+                    .get_native_token_price(input_token.address())
+                    .unwrap();
+                let profit_in_native: i128 = native_token
+                    .convert_to_amount(input_token.convert_to_decimal(profit) / native_token_price)
+                    .as_u128() as i128;
 
-            // Lock from here to the end of the socpe so that we can check without other threads messing with it
-            let mut best_profit_lock = best_profit_in_native.lock().unwrap();
-            if *best_profit_lock > profit_in_native {
-                return;
-            }
-
-            *best_path.lock().unwrap() = Some((path, optimized_in));
-            *best_profit_lock = profit_in_native;
-        });
+                Some((path, optimized_in, profit_in_native))
+            })
+            .max_by_key(|(_, _, profit)| *profit);
 
         println!("touched_paths_time: {}ms", touched_path_time.elapsed().as_millis());
 
-        let best_profit: i128 = *best_profit_in_native.get_mut().unwrap();
-        if best_profit == 0 {
+        let Some(best_swap) = best_swap else {
             println!("touched_paths: {}", touched_paths.len());
             return None;
-        }
+        };
 
         // Get gas cost
         let estimated_gas_usage: U256 = U256::from(550_000);
@@ -219,19 +212,14 @@ where
         let gas_cost_in_wei_native: i128 = gas_cost_in_wei_native.as_u128() as i128;
 
         // get net profit
-        let net_profit_in_native: i128 = best_profit - gas_cost_in_wei_native;
+        let net_profit_in_native: i128 = best_swap.2 - gas_cost_in_wei_native;
         if net_profit_in_native <= 0 {
             return None;
         }
 
-        let best_path: &Option<(&Arc<PoolPath>, U256)> = best_path.get_mut().unwrap();
-        let Some(best_path) = best_path else {
-            return None;
-        };
-
         // Execute swap
-        let swap_path: &Arc<PoolPath> = best_path.0;
-        let swap_input_amount: U256 = best_path.1;
+        let swap_path: &Arc<PoolPath> = best_swap.0;
+        let swap_input_amount: U256 = best_swap.1;
         let swap_output_amount: U256 = swap_input_amount + gas_cost_in_wei_native; // amount_min_out AMM will give use max output
         let swap_input_token: &CryptoToken = swap_path.get_input_token();
 
@@ -383,6 +371,11 @@ where
                         .max_by_key(|s| s.profit_in_native);
 
                     let Some(most_proftable_swap) = most_proftable_swap else {
+                        println!(
+                            "⌚ Back running took: {}ms, trace_logs: {}",
+                            start.elapsed().as_millis(),
+                            trace_logs.len()
+                        );
                         continue;
                     };
 
