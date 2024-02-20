@@ -166,10 +166,14 @@ where
         let signed_string: String = format!("0x{}", utils::hex::encode(&signed_bytes));
         //let signed_tx: Transaction = utils::rlp::decode(&signed_bytes).expect("Failed to decode signed transaction");
 
-        let opp_tx_hash: [u8; 32] = ethers::utils::keccak256(opp_tx.rlp());
         let tx_hash: TxHash = self
             .fast_lane_contract
-            .submit_flash_bid(bid_amount, opp_tx_hash, self.contract.address(), signed_bytes)
+            .submit_flash_bid(
+                bid_amount,
+                opp_tx.hash().to_fixed_bytes(),
+                self.contract.address(),
+                signed_bytes,
+            )
             .send()
             .await?
             .tx_hash();
