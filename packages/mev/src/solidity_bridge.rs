@@ -166,15 +166,22 @@ where
 
         let function_call_data: Bytes = my_contract_call.calldata().unwrap();
 
-        let submit_flash_bid_tx: TypedTransaction = self
-            .fast_lane_contract
-            .submit_flash_bid(
-                bid_amount,
-                opp_tx.hash().to_fixed_bytes(),
-                self.contract.address(),
-                function_call_data,
-            )
-            .tx;
+        let mut submit_flash_bid_call = self.fast_lane_contract.submit_flash_bid(
+            bid_amount,
+            opp_tx.hash().to_fixed_bytes(),
+            self.contract.address(),
+            function_call_data,
+        );
+
+        if gas_price.is_some() {
+            submit_flash_bid_call = submit_flash_bid_call.legacy().gas_price(gas_price.unwrap());
+        } else {
+            let tx = submit_flash_bid_call.tx.as_eip1559_mut().unwrap();
+            tx.max_fee_per_gas = max_fee_per_gas;
+            tx.max_priority_fee_per_gas = max_priority_fee_per_gas;
+        }
+
+        let submit_flash_bid_tx: TypedTransaction = submit_flash_bid_call.tx;
 
         //let signed_bytes: Bytes = self.signer.sign_transaction(&submit_flash_bid_tx, self.signer.address()).await;
         let signed_bytes: Bytes = submit_flash_bid_tx.rlp();
