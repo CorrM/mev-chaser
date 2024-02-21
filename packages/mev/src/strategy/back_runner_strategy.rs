@@ -298,6 +298,8 @@ where
             ];
 
             let legacy_tx: bool = tx.transaction_type.is_none();
+            println!("legacy_tx: {}", legacy_tx);
+            
             let result = if legacy_tx {
                 self.solidity_bridge
                     .get_loan_then_swap_chain_bundle(
