@@ -129,12 +129,14 @@ contract BalancerFlashLoanRecipient is IFlashLoanRecipient {
 
     IVault private immutable _vault;
     address private immutable _owner;
+    IERC20 private immutable WMATIC;
 
     constructor() {
         require(msg.sender != address(0), "constructor sender invalid address");
 
         _owner = msg.sender;
         _vault = IVault(0xBA12222222228d8Ba445958a75a0704d566BF2C8);
+        WMATIC = IERC20(0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270);
     }
 
     modifier onlyOwner() {
@@ -398,5 +400,28 @@ contract BalancerFlashLoanRecipient is IFlashLoanRecipient {
         require(tokens[0].transfer(vault, amountToPayback), "repay failed");
 
         //console2.log("Pay the loan done");
+    }
+
+    function fastLaneCall(
+        address,
+        uint256 bidAmount,
+        bytes memory data
+    ) external payable returns (bool, bytes memory) {
+        address payable fastLaneAddress = payable(msg.sender);
+
+        // Call the function
+        // https://medium.com/@solidity101/100daysofsolidity-understanding-the-call-function-in-solidity-interacting-with-contracts-4ccd216b1dfe
+        (bool success, ) = address(this).call(data);
+        if (!success) {
+            return (false, bytes("call failed"));
+        }
+
+        // Check the balance
+        uint256 balance = WMATIC.balanceOf(address(this));
+
+        require(balance > bidAmount, "<B");
+        fastLaneAddress.transfer(bidAmount);
+
+        return (true, new bytes(0));
     }
 }
