@@ -183,13 +183,23 @@ async fn main() -> Result<()> {
     let target_network: NetworkKind = unsafe { std::mem::transmute(env.chain_id) };
     //let provider_manager: NodeProviderManager = create_node_provider_manager(&env, &target_network).await?;
 
+    //let provider: NodeProvider = NodeProvider::new(
+    //    "Local",
+    //    NodeProviderNetworkInfo {
+    //        network: target_network,
+    //        http_url: None,
+    //        ws_url: None,
+    //        ipc_path: Some("/var/lib/bor/bor.ipc".to_string()),
+    //    },
+    //)
+    //.await?;
     let provider: NodeProvider = NodeProvider::new(
-        "Local",
+        "Alchemy",
         NodeProviderNetworkInfo {
             network: target_network,
-            http_url: None,
-            ws_url: None,
-            ipc_path: Some("/var/lib/bor/bor.ipc".to_string()),
+            http_url: Some(env.https_url.clone()),
+            ws_url: Some(env.wss_url.clone()),
+            ipc_path: None,
         },
     )
     .await?;
@@ -205,7 +215,7 @@ async fn main() -> Result<()> {
             GenPoolCommand::process(
                 &db,
                 &target_network,
-                Arc::clone(provider_manager.get_next().raw_ipc_provider()),
+                Arc::clone(provider_manager.get_next().raw_ws_provider()),
             )
             .await?;
 

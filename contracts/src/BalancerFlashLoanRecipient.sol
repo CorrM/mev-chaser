@@ -411,9 +411,9 @@ contract BalancerFlashLoanRecipient is IFlashLoanRecipient {
 
         // Call the function
         // https://medium.com/@solidity101/100daysofsolidity-understanding-the-call-function-in-solidity-interacting-with-contracts-4ccd216b1dfe
-        (bool success, ) = address(this).call(data);
+        (bool success, bytes memory returnedData) = address(this).call(data);
         if (!success) {
-            return (false, bytes("call failed"));
+            return (false, returnedData);
         }
 
         // Check the balance
