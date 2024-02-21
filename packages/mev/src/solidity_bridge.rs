@@ -153,7 +153,7 @@ where
         max_fee_per_gas: Option<U256>,
         max_priority_fee_per_gas: Option<U256>,
     ) -> Result<TxHash> {
-        let my_tx_call = self.get_loan_then_swap_chain_call(
+        let my_contract_call = self.get_loan_then_swap_chain_call(
             swaps,
             chain_swaps,
             return_output,
@@ -162,27 +162,28 @@ where
             max_priority_fee_per_gas,
         );
 
-        let signed_bytes: Bytes = my_tx_call.calldata().unwrap();
-        let signed_string: String = format!("0x{}", utils::hex::encode(&signed_bytes));
+        let function_call_data: Bytes = my_contract_call.calldata().unwrap();
+        //let signed_string: String = format!("0x{}", utils::hex::encode(&signed_bytes));
         //let signed_tx: Transaction = utils::rlp::decode(&signed_bytes).expect("Failed to decode signed transaction");
 
-        let tx_hash: TxHash = self
+        let signed_bytes: Bytes = self
             .fast_lane_contract
             .submit_flash_bid(
                 bid_amount,
                 opp_tx.hash().to_fixed_bytes(),
                 self.contract.address(),
-                signed_bytes,
-            )
-            .send()
-            .await?
-            .tx_hash();
+                function_call_data,
+            ).calldata().unwrap();
+        let signed_string: String = format!("0x{}", utils::hex::encode(&signed_bytes));
 
         let target_signed_string: String = format!("0x{}", utils::hex::encode(opp_tx.rlp()));
-        self.bundle_provider
+        let relay_response: String = self
+            .bundle_provider
             .send_flashbid_bundle(vec![target_signed_string, signed_string])
             .await?;
 
-        Ok(tx_hash)
+        println!("relay_response: {}", relay_response);
+
+        Ok(TxHash::zero())
     }
 }

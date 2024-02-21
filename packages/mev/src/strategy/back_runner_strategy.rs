@@ -1,3 +1,4 @@
+use std::str::FromStr;
 use std::sync::RwLock;
 use std::time::Instant;
 use std::{collections::HashMap, sync::Arc};
@@ -84,6 +85,8 @@ where
         let mut pools_to_remove: Vec<usize> = Vec::new();
         for (idx, pool) in pools.iter().enumerate() {
             let pool_read_lock = pool.read().unwrap();
+
+            // TODO: Maybe check if the reservers are worth 1000USDT
 
             if pool_read_lock.reserve0().is_zero() || pool_read_lock.reserve1().is_zero() {
                 pools_to_remove.push(idx);
@@ -269,6 +272,38 @@ where
 
     async fn on_pending_tx(&mut self, tx: &Transaction, debug_provider: &Arc<M>) {
         let start = Instant::now();
+
+        {
+            let swaps: Vec<OneSwapInfo> = vec![
+                PoolPath::make_uniswap_v2_protocol_swap_info(
+                    Address::from_str("0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff").unwrap(),
+                    vec![
+                        Address::from_str("0xc2132D05D31c914a87C6611C10748AEb04B58e8F").unwrap(),
+                        Address::from_str("0x346404079b3792a6c548B072B9C4DDdFb92948d5").unwrap(),
+                    ],
+                    10000000,
+                    0,
+                )
+                .unwrap(),
+                PoolPath::make_uniswap_v2_protocol_swap_info(
+                    Address::from_str("0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff").unwrap(),
+                    vec![
+                        Address::from_str("0x346404079b3792a6c548B072B9C4DDdFb92948d5").unwrap(),
+                        Address::from_str("0xc2132D05D31c914a87C6611C10748AEb04B58e8F").unwrap(),
+                    ],
+                    0,
+                    1000000,
+                )
+                .unwrap(),
+            ];
+
+            let result = self
+                .solidity_bridge
+                .get_loan_then_swap_chain_bundle(tx, U256::from(100_000), swaps, false, false, tx.gas_price, None, None)
+                .await;
+
+            println!("get_loan_then_swap_chain_bundle: {:?}", result);
+        }
 
         // TODO: No need for this as NetworkStreamsManager filters pending transactions
         //let Some(to) = tx.to else {
