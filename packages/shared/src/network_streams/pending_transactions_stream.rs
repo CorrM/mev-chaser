@@ -1,8 +1,9 @@
 use std::str::FromStr;
 
+use ethers::utils;
 use ethers_core::types::Address;
 use ethers_providers::{Middleware, PubsubClient};
-use serde_json::from_str;
+use serde_json::{json, Value};
 use tokio::sync::broadcast::Sender;
 use tokio_stream::StreamExt;
 
@@ -19,21 +20,18 @@ pub async fn stream_pending_transactions<M>(
     //let mut stream = ws.subscribe_pending_txs().await.unwrap();
     //let mut stream = stream.transactions_unordered(256).fuse();
 
-    /*
-    let mut stream = match provider.name() {
-        "Alchemy" => {
-            let alchemy_event: Value = utils::serialize(&"alchemy_pendingTransactions");
-            let sub_params: Vec<Value> = if let Some(filter_to_addresses) = filter_to_addresses {
-                vec![alchemy_event, json!({ "toAddress": filter_to_addresses })]
-            } else {
-                vec![alchemy_event]
-            };
+    let mut stream = if cfg!(debug_assertions) {
+        let alchemy_event: Value = utils::serialize(&"alchemy_pendingTransactions");
+        let sub_params: Vec<Value> = if let Some(filter_to_addresses) = &filter_to_addresses {
+            vec![alchemy_event, json!({ "toAddress": filter_to_addresses })]
+        } else {
+            vec![alchemy_event]
+        };
 
-            provider.subscribe(sub_params).await.unwrap()
-        }
-        _ => provider.subscribe_full_pending_txs().await.unwrap(),
+        provider.subscribe(sub_params).await.unwrap()
+    } else {
+        provider.subscribe_full_pending_txs().await.unwrap()
     };
-    */
 
     let filter_to_addresses: Option<Vec<Address>> = filter_to_addresses.map(|filter_to_addresses| {
         filter_to_addresses
@@ -42,7 +40,6 @@ pub async fn stream_pending_transactions<M>(
             .collect()
     });
 
-    let mut stream = provider.subscribe_full_pending_txs().await.unwrap();
     while let Some(tx) = stream.next().await {
         let Some(to) = tx.to else {
             continue;

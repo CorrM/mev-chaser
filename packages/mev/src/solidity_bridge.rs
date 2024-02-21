@@ -12,7 +12,7 @@ use ethers_core::{
     k256::ecdsa::SigningKey,
     types::{Address, TxHash, U256},
 };
-use ethers_providers::{Middleware, ProviderError, RawCall};
+use ethers_providers::Middleware;
 
 use contracts::{BalancerFlashLoanRecipientAbi, FastLaneAuctionHandlerAbi, OneSwapInfo};
 
@@ -23,6 +23,7 @@ type GetLoanThenSwapChainCall<M> =
 
 pub struct SolidityBridge<M: Middleware> {
     signer: Arc<SignerMiddleware<Arc<M>, Wallet<SigningKey>>>,
+    chain_id: u64,
     contract: BalancerFlashLoanRecipientAbi<SignerMiddleware<Arc<M>, Wallet<SigningKey>>>,
     fast_lane_contract: FastLaneAuctionHandlerAbi<SignerMiddleware<Arc<M>, Wallet<SigningKey>>>,
     bundle_provider: Arc<BundleProvider>,
@@ -35,7 +36,7 @@ where
     pub async fn new(address: Address, provider: Arc<M>, wallet_private_key: String) -> Result<Self> {
         let chain_id: U256 = provider.get_chainid().await?;
 
-        let mut wallet_private_key = wallet_private_key;
+        let mut wallet_private_key: String = wallet_private_key;
         if wallet_private_key.starts_with("0x") {
             wallet_private_key = wallet_private_key.split_off(2);
         }
@@ -52,6 +53,7 @@ where
 
         Ok(Self {
             signer,
+            chain_id: chain_id.as_u64(),
             contract,
             fast_lane_contract,
             bundle_provider: fast_bundle_provider().await,
@@ -180,7 +182,8 @@ where
             tx.max_priority_fee_per_gas = max_priority_fee_per_gas;
         }
 
-        let submit_flash_bid_tx: TypedTransaction = submit_flash_bid_call.tx;
+        let mut submit_flash_bid_tx: TypedTransaction = submit_flash_bid_call.tx;
+        submit_flash_bid_tx.set_chain_id(self.chain_id);
 
         let sig: Signature = self.signer.sign_transaction(&submit_flash_bid_tx, self.signer.address()).await?;
         let signed_bytes: Bytes = submit_flash_bid_tx.rlp_signed(&sig);
