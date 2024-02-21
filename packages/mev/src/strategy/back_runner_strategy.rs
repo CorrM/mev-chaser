@@ -297,12 +297,37 @@ where
                 .unwrap(),
             ];
 
-            let result = self
-                .solidity_bridge
-                .get_loan_then_swap_chain_bundle(tx, U256::from(100_000), swaps, false, false, tx.gas_price, None, None)
-                .await;
-
+            let legacy_tx: bool = tx.transaction_type.is_none();
+            let result = if legacy_tx {
+                self.solidity_bridge
+                    .get_loan_then_swap_chain_bundle(
+                        tx,
+                        U256::from(100_000),
+                        swaps,
+                        false,
+                        false,
+                        tx.gas_price,
+                        None,
+                        None,
+                    )
+                    .await
+            } else {
+                self.solidity_bridge
+                    .get_loan_then_swap_chain_bundle(
+                        tx,
+                        U256::from(100_000),
+                        swaps,
+                        false,
+                        false,
+                        None,
+                        tx.max_fee_per_gas,
+                        tx.max_priority_fee_per_gas,
+                    )
+                    .await
+            };
             println!("get_loan_then_swap_chain_bundle: {:?}", result);
+
+            return;
         }
 
         // TODO: No need for this as NetworkStreamsManager filters pending transactions
