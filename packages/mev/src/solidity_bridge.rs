@@ -48,7 +48,7 @@ where
         let signer = Arc::new(SignerMiddleware::new(provider, wallet));
         let contract = BalancerFlashLoanRecipientAbi::new(address, Arc::clone(&signer));
 
-        let fast_lane_address: Address = Address::from_str("0xf5DF545113DeE4DF10f8149090Aa737dDC05070a")?;
+        let fast_lane_address: Address = Address::from_str("0xCACe8D78269ba00f1C4D5Fc3B1228C7DF0a7C8BA")?;
         let fast_lane_contract = FastLaneAuctionHandlerAbi::new(fast_lane_address, Arc::clone(&signer));
 
         Ok(Self {
