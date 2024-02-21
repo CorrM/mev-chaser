@@ -183,6 +183,19 @@ async fn main() -> Result<()> {
     let target_network: NetworkKind = unsafe { std::mem::transmute(env.chain_id) };
     //let provider_manager: NodeProviderManager = create_node_provider_manager(&env, &target_network).await?;
 
+    #[cfg(debug_assertions)]
+    let provider: NodeProvider = NodeProvider::new(
+        "Alchemy",
+        NodeProviderNetworkInfo {
+            network: target_network,
+            http_url: Some(env.https_url.clone()),
+            ws_url: Some(env.wss_url.clone()),
+            ipc_path: None,
+        },
+    )
+    .await?;
+
+    #[cfg(not(debug_assertions))]
     let provider: NodeProvider = NodeProvider::new(
         "Local",
         NodeProviderNetworkInfo {
@@ -193,17 +206,14 @@ async fn main() -> Result<()> {
         },
     )
     .await?;
-    //let provider: NodeProvider = NodeProvider::new(
-    //    "Alchemy",
-    //    NodeProviderNetworkInfo {
-    //        network: target_network,
-    //        http_url: Some(env.https_url.clone()),
-    //        ws_url: Some(env.wss_url.clone()),
-    //        ipc_path: None,
-    //    },
-    //)
-    //.await?;
+
     let provider_manager = NodeProviderManager::new(vec![provider.clone()], vec![provider])?;
+
+    #[cfg(debug_assertions)]
+    let raw_provider = Arc::clone(provider_manager.get_next().raw_ws_provider());
+
+    #[cfg(not(debug_assertions))]
+    let raw_provider = Arc::clone(provider_manager.get_next().raw_ipc_provider());
 
     //test_contract(&env, &provider_manager).await;
     //return Ok(());
@@ -211,14 +221,8 @@ async fn main() -> Result<()> {
     // CLI commands
     let args: Vec<String> = env::args().collect();
     if args.len() > 1 {
-        #[cfg(debug_assertions)]
-        let p = Arc::clone(provider_manager.get_next().raw_ws_provider());
-
-        #[cfg(not(debug_assertions))]
-        let p = Arc::clone(provider_manager.get_next().raw_ipc_provider());
-
         if args[1] == "gen_pools" {
-            GenPoolCommand::process(&db, &target_network, p).await?;
+            GenPoolCommand::process(&db, &target_network, raw_provider).await?;
 
             return Ok(());
         }
@@ -228,13 +232,7 @@ async fn main() -> Result<()> {
             let tokens: String = std::fs::read_to_string(file_name).expect("Something went wrong reading the file");
             let tokens: Vec<&str> = tokens.lines().filter(|s| !s.is_empty()).collect();
 
-            AddTokenCommand::process(
-                tokens,
-                &db,
-                &target_network,
-                p,
-            )
-            .await?;
+            AddTokenCommand::process(tokens, &db, &target_network, raw_provider).await?;
 
             return Ok(());
         }
@@ -243,7 +241,7 @@ async fn main() -> Result<()> {
     let token_manager = TokenManager::new(get_tokens(&db, &target_network)?, &target_network);
     let solidity_bridge = SolidityBridge::new(
         Address::from_str(&env.bot_address).unwrap(),
-        Arc::clone(provider_manager.get_next().raw_ipc_provider()),
+        Arc::clone(&raw_provider),
         env.private_key,
     )
     .await?;
@@ -262,7 +260,7 @@ async fn main() -> Result<()> {
     println!("[-] Prepare strategy");
     let mut strategy = BackRunnerStrategy::new(
         solidity_bridge,
-        provider_manager.get_next().raw_ipc_provider(),
+        &raw_provider,
         token_manager,
         amms,
         3,
@@ -271,10 +269,17 @@ async fn main() -> Result<()> {
     .await;
 
     println!("[+] Start strategy");
+
+    #[cfg(debug_assertions)]
+    let debug_raw_provider = provider_manager.get_next_debug_trace_call().raw_ws_provider();
+
+    #[cfg(not(debug_assertions))]
+    let debug_raw_provider = provider_manager.get_next_debug_trace_call().raw_ipc_provider();
+
     strategy
         .run(
-            Arc::clone(provider_manager.get_next().raw_ipc_provider()),
-            Arc::clone(provider_manager.get_next_debug_trace_call().raw_ipc_provider()),
+            raw_provider,
+            Arc::clone(&debug_raw_provider),
         )
         .await?;
 

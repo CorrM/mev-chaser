@@ -4,7 +4,7 @@ use anyhow::Result;
 use ethers::{
     middleware::SignerMiddleware,
     signers::{LocalWallet, Signer, Wallet},
-    types::{transaction::eip2718::TypedTransaction, Bytes, Transaction, I256},
+    types::{transaction::eip2718::TypedTransaction, Bytes, Signature, Transaction, I256},
     utils,
 };
 use ethers_contract::{ContractError, FunctionCall};
@@ -163,7 +163,6 @@ where
             max_fee_per_gas,
             max_priority_fee_per_gas,
         );
-
         let function_call_data: Bytes = my_contract_call.calldata().unwrap();
 
         let mut submit_flash_bid_call = self.fast_lane_contract.submit_flash_bid(
@@ -183,8 +182,8 @@ where
 
         let submit_flash_bid_tx: TypedTransaction = submit_flash_bid_call.tx;
 
-        //let signed_bytes: Bytes = self.signer.sign_transaction(&submit_flash_bid_tx, self.signer.address()).await;
-        let signed_bytes: Bytes = submit_flash_bid_tx.rlp();
+        let sig: Signature = self.signer.sign_transaction(&submit_flash_bid_tx, self.signer.address()).await?;
+        let signed_bytes: Bytes = submit_flash_bid_tx.rlp_signed(&sig);
         let signed_string: String = format!("0x{}", utils::hex::encode(&signed_bytes));
         //let signed_tx: Transaction = utils::rlp::decode(&signed_bytes).expect("Failed to decode signed transaction");
 
