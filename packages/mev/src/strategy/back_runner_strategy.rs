@@ -90,6 +90,8 @@ where
             }
         }
 
+        pools_to_remove.reverse();
+
         for idx in pools_to_remove {
             pools.remove(idx);
         }
