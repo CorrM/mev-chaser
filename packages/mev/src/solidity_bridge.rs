@@ -4,7 +4,7 @@ use anyhow::Result;
 use ethers::{
     middleware::SignerMiddleware,
     signers::{LocalWallet, Signer, Wallet},
-    types::{Bytes, Transaction, I256},
+    types::{transaction::eip2718::TypedTransaction, Bytes, Transaction, I256},
     utils,
 };
 use ethers_contract::{ContractError, FunctionCall};
@@ -12,7 +12,7 @@ use ethers_core::{
     k256::ecdsa::SigningKey,
     types::{Address, TxHash, U256},
 };
-use ethers_providers::Middleware;
+use ethers_providers::{Middleware, ProviderError, RawCall};
 
 use contracts::{BalancerFlashLoanRecipientAbi, FastLaneAuctionHandlerAbi, OneSwapInfo};
 
@@ -22,6 +22,7 @@ type GetLoanThenSwapChainCall<M> =
     FunctionCall<Arc<SignerMiddleware<Arc<M>, Wallet<SigningKey>>>, SignerMiddleware<Arc<M>, Wallet<SigningKey>>, I256>;
 
 pub struct SolidityBridge<M: Middleware> {
+    signer: Arc<SignerMiddleware<Arc<M>, Wallet<SigningKey>>>,
     contract: BalancerFlashLoanRecipientAbi<SignerMiddleware<Arc<M>, Wallet<SigningKey>>>,
     fast_lane_contract: FastLaneAuctionHandlerAbi<SignerMiddleware<Arc<M>, Wallet<SigningKey>>>,
     bundle_provider: Arc<BundleProvider>,
@@ -47,9 +48,10 @@ where
         let contract = BalancerFlashLoanRecipientAbi::new(address, Arc::clone(&signer));
 
         let fast_lane_address: Address = Address::from_str("0xf5DF545113DeE4DF10f8149090Aa737dDC05070a")?;
-        let fast_lane_contract = FastLaneAuctionHandlerAbi::new(fast_lane_address, signer);
+        let fast_lane_contract = FastLaneAuctionHandlerAbi::new(fast_lane_address, Arc::clone(&signer));
 
         Ok(Self {
+            signer,
             contract,
             fast_lane_contract,
             bundle_provider: fast_bundle_provider().await,
@@ -163,18 +165,21 @@ where
         );
 
         let function_call_data: Bytes = my_contract_call.calldata().unwrap();
-        //let signed_string: String = format!("0x{}", utils::hex::encode(&signed_bytes));
-        //let signed_tx: Transaction = utils::rlp::decode(&signed_bytes).expect("Failed to decode signed transaction");
 
-        let signed_bytes: Bytes = self
+        let submit_flash_bid_tx: TypedTransaction = self
             .fast_lane_contract
             .submit_flash_bid(
                 bid_amount,
                 opp_tx.hash().to_fixed_bytes(),
                 self.contract.address(),
                 function_call_data,
-            ).calldata().unwrap();
+            )
+            .tx;
+
+        //let signed_bytes: Bytes = self.signer.sign_transaction(&submit_flash_bid_tx, self.signer.address()).await;
+        let signed_bytes: Bytes = submit_flash_bid_tx.rlp();
         let signed_string: String = format!("0x{}", utils::hex::encode(&signed_bytes));
+        //let signed_tx: Transaction = utils::rlp::decode(&signed_bytes).expect("Failed to decode signed transaction");
 
         let target_signed_string: String = format!("0x{}", utils::hex::encode(opp_tx.rlp()));
         let relay_response: String = self

@@ -54,7 +54,7 @@ impl BundleProvider {
             PostData::Marlin(_) => MARLIN_RELAY,
         };
 
-        println!("{}", post_data.to_json());
+        println!("post_data: {}", post_data.to_json());
 
         self.client
             .post(relay)
