@@ -212,10 +212,16 @@ async fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
     if args.len() > 1 {
         if args[1] == "gen_pools" {
+            #[cfg(debug_assertions)]
+            let p = Arc::clone(provider_manager.get_next().raw_ws_provider());
+
+            #[cfg(not(debug_assertions))]
+            let p = Arc::clone(provider_manager.get_next().raw_ipc_provider());
+            
             GenPoolCommand::process(
                 &db,
                 &target_network,
-                Arc::clone(provider_manager.get_next().raw_ws_provider()),
+                p,
             )
             .await?;
 
