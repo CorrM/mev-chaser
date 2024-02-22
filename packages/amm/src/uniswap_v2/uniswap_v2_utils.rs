@@ -1,7 +1,7 @@
 use std::sync::{Arc, RwLock};
 
 use anyhow::Result;
-use contracts::UniswapV2PairAbi;
+use contracts::uniswap_v2_pair::UniswapV2PairAbi;
 use ethers::abi::Token;
 use ethers::types::Bytes;
 use ethers_contract::Multicall;

@@ -1,5 +1,5 @@
 use anyhow::Result;
-use contracts::UNISWAPV2PAIRABI_ABI;
+use contracts::uniswap_v2_pair::UNISWAPV2PAIRABI_ABI;
 use ethers_core::{
     abi::{Log, RawLog},
     types::{Address, CallLogFrame},
@@ -39,6 +39,7 @@ impl UniswapV2Protocol {
         })
     }
 
+    #[inline]
     pub fn decode_pair_trace_logs(trace_log: &CallLogFrame) -> Option<HashMap<String, (Address, Log)>> {
         let mut ret: HashMap<String, (Address, Log)> = HashMap::new();
 
@@ -68,6 +69,7 @@ impl UniswapV2Protocol {
         Some(ret)
     }
 
+    #[inline]
     pub fn decode_pair_trace_log(event_name: &str, trace_log: &CallLogFrame) -> Option<(Address, Log)> {
         let Some(ref topics) = trace_log.topics else {
             return None;
@@ -98,14 +100,17 @@ impl UniswapV2Protocol {
         Some((trace_log.address.unwrap(), log))
     }
 
+    #[inline]
     pub fn factory(&self) -> &Address {
         &self.factory
     }
 
+    #[inline]
     pub fn router(&self) -> &Address {
         &self.router
     }
 
+    #[inline]
     pub fn add_pool(&mut self, pool: UniswapV2Pool) {
         self.pools.push(Arc::new(RwLock::new(pool)));
     }

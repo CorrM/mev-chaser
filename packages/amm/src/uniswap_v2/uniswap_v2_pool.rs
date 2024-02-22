@@ -42,34 +42,42 @@ impl AmmPool for UniswapV2Pool {
         AmmPoolKind::UniswapV2
     }
 
+    #[inline]
     fn address(&self) -> &Address {
         &self.address
     }
 
+    #[inline]
     fn dex(&self) -> Arc<dyn AmmProtocol> {
         self.dex.clone()
     }
 
+    #[inline]
     fn network(&self) -> &NetworkKind {
         &self.network
     }
 
+    #[inline]
     fn token0(&self) -> &Arc<CryptoToken> {
         &self.token0
     }
 
+    #[inline]
     fn token1(&self) -> &Arc<CryptoToken> {
         &self.token1
     }
 
+    #[inline]
     fn reserve0(&self) -> U256 {
         self.reserve0
     }
 
+    #[inline]
     fn reserve1(&self) -> U256 {
         self.reserve1
     }
 
+    #[inline]
     fn update_reserve(&mut self, reserve0: &U256, reserve1: &U256) {
         self.reserve0 = *reserve0;
         self.reserve1 = *reserve1;

@@ -1,5 +1,5 @@
 [package]
-name = "shared"
+name = "evm_simulator"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,17 +7,11 @@ edition = "2021"
 contracts = { path = "../contracts" }
 
 anyhow = { workspace = true }
-serde_json = { workspace = true }
-rand = { workspace = true }
-
+bytes = { workspace = true }
+hashbrown = { workspace = true }
 tokio = { workspace = true }
-tokio-stream = { workspace = true }
-
-ethers-core = { workspace = true }
 ethers-providers = { workspace = true }
+ethers-core = { workspace = true }
 ethers-contract = { workspace = true }
 ethers = { workspace = true }
-
-log = { workspace = true }
-fern = { workspace = true }
-chrono = { workspace = true }
+revm = { workspace = true }

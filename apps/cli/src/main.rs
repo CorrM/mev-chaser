@@ -180,7 +180,7 @@ fn get_dexes(db: &Database, network: &NetworkKind, token_manager: &TokenManager)
 async fn main() -> Result<()> {
     let env: Env = read_env_file()?;
     let db = Database::new(Path::new("./Main.db"))?;
-    let target_network: NetworkKind = unsafe { std::mem::transmute(env.chain_id) };
+    let target_network = NetworkKind::from(env.chain_id);
     //let provider_manager: NodeProviderManager = create_node_provider_manager(&env, &target_network).await?;
 
     #[cfg(debug_assertions)]
@@ -279,7 +279,7 @@ async fn main() -> Result<()> {
     strategy
         .run(
             raw_provider,
-            Arc::clone(&debug_raw_provider),
+            Arc::clone(debug_raw_provider),
         )
         .await?;
 

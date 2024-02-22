@@ -2,7 +2,7 @@ use std::{str::FromStr, sync::Arc};
 
 use anyhow::Result;
 
-use contracts::ERC20TokenAbi;
+use contracts::erc20_token::ERC20TokenAbi;
 use ethers_contract::Multicall;
 use ethers_core::{
     abi::Token,

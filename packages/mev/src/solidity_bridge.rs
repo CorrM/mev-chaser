@@ -1,6 +1,7 @@
 use std::{str::FromStr, sync::Arc};
 
 use anyhow::Result;
+use contracts::{balancer_flash_loan_recipient::{BalancerFlashLoanRecipientAbi, OneSwapInfo}, fastlane_auction_handler::FastLaneAuctionHandlerAbi};
 use ethers::{
     middleware::SignerMiddleware,
     signers::{LocalWallet, Signer, Wallet},
@@ -13,8 +14,6 @@ use ethers_core::{
     types::{Address, TxHash, U256},
 };
 use ethers_providers::Middleware;
-
-use contracts::{BalancerFlashLoanRecipientAbi, FastLaneAuctionHandlerAbi, OneSwapInfo};
 
 use crate::{fast_bundle_provider, BundleProvider};
 

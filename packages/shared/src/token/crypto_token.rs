@@ -38,38 +38,47 @@ impl CryptoToken {
         })
     }
 
+    #[inline]
     pub fn network(&self) -> &NetworkKind {
         &self.network
     }
 
+    #[inline]
     pub fn address(&self) -> &Address {
         &self.address
     }
 
+    #[inline]
     pub fn name(&self) -> &str {
         &self.name
     }
 
+    #[inline]
     pub fn symbol(&self) -> &str {
         &self.symbol
     }
 
+    #[inline]
     pub fn decimals(&self) -> u8 {
         self.decimals
     }
 
+    #[inline]
     pub fn one_token_amount(&self) -> U256 {
         self.one_token_amount
     }
     
+    #[inline]
     pub fn input_token_unit(&self) -> U256 {
         self.input_token_unit
     }
 
+    #[inline]
     pub fn convert_to_decimal(&self, value: U256) -> f64 {
         (value.as_u64() as f64) / self.decimals_pow
     }
 
+    #[inline]
     pub fn convert_to_amount(&self, value: f64) -> U256 {
         U256::from((value * self.decimals_pow) as i128)
     }

@@ -3,6 +3,7 @@ use std::time::Instant;
 use std::{collections::HashMap, sync::Arc};
 
 use anyhow::Result;
+use contracts::balancer_flash_loan_recipient::OneSwapInfo;
 use ethers_core::{
     abi::Log,
     types::{Address, CallFrame, CallLogFrame, Transaction, U256},
@@ -16,7 +17,6 @@ use amm::{
     uniswap_v2_utils::batch_update_uniswap_v2_pools, update_touched_pool_reserves, AmmPool, AmmProtocol,
     AmmProtocolKind, UniswapV2Protocol,
 };
-use contracts::OneSwapInfo;
 use shared::{
     network_streams::{NetworkEvent, NetworkStreamManagerBuilder, NetworkStreamsManager, NewBlock},
     token::{CryptoToken, TokenManager},

@@ -12,10 +12,12 @@ pub struct TokenManager {
 }
 
 impl TokenManager {
+    #[inline]
     pub fn tokens(&self) -> &Vec<Arc<CryptoToken>> {
         &self.tokens
     }
 
+    #[inline]
     pub fn native_token(&self) -> &Arc<CryptoToken> {
         &self.native_token
     }

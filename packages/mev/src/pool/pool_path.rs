@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use amm::{AmmProtocol, UniswapV2Protocol, UniswapV2Simulator};
 use anyhow::{anyhow, Result};
-use contracts::OneSwapInfo;
+use contracts::balancer_flash_loan_recipient::OneSwapInfo;
 use ethers_core::{
     abi::Token,
     types::{Address, Bytes, U256},
@@ -71,10 +71,12 @@ impl PoolPath {
         false
     }
 
+    #[inline]
     pub fn get_input_token(&self) -> &CryptoToken {
         &self.input_token
     }
 
+    #[inline]
     pub fn get_amount_out_v2(&self, amount_in: U256) -> Option<U256> {
         let mut amount_out: U256 = amount_in;
 
@@ -112,6 +114,7 @@ impl PoolPath {
         Some(amount_out)
     }
 
+    #[inline]
     pub fn find_optimal_input(&self, max_count_in: u64, step_size: usize) -> (U256, U256) {
         let input_token: &CryptoToken = self.get_input_token();
         let input_token_unit: U256 = input_token.input_token_unit();
@@ -140,6 +143,7 @@ impl PoolPath {
         (optimized_in, U256::from(profit))
     }
 
+    #[inline]
     pub fn make_swaps(&self, input_amount: U256, output_amount: U256) -> Result<(Vec<OneSwapInfo>, bool)> {
         if self.path.len() < 2 {
             return Err(anyhow!("Not enough paths"));
