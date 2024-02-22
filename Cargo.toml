@@ -22,9 +22,9 @@ rand = "0.8.5"
 
 # Logging
 colored = "2.1.0"
-log = "0.4.17"
+log = "0.4.20"
 fern = {version = "0.6.2", features = ["colored"]}
-chrono = "0.4.23"
+chrono = "0.4.34"
 
 # EVM
 ethers = { version = "2.0", features = [

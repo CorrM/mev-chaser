@@ -14,7 +14,7 @@ impl Logger {
             warn: Color::Red,
             error: Color::BrightRed,
         };
-    
+
         fern::Dispatch::new()
             .format(move |out, message, record| {
                 out.finish(format_args!(
@@ -25,10 +25,9 @@ impl Logger {
                 ))
             })
             .chain(std::io::stdout())
-            .level(log::LevelFilter::Error)
-            .level_for("revm_is_all_you_need", LevelFilter::Info)
+            .level(log::LevelFilter::Info)
             .apply()?;
-    
+
         Ok(())
     }
 }
