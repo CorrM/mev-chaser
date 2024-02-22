@@ -144,6 +144,8 @@ contract BalancerFlashLoanRecipient is IFlashLoanRecipient {
         _;
     }
 
+    receive() external payable {}
+
     function _checkOwner() internal view virtual {
         require(msg.sender == _owner, "You are not the owner");
     }
