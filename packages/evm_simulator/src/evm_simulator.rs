@@ -6,26 +6,26 @@ use ethers::{
 };
 use revm::{
     db::{CacheDB, EmptyDB, InMemoryDB},
-    primitives::{CfgEnv, ExecutionResult, Output, TransactTo},
+    primitives::{CfgEnv, ExecutionResult, Output, ResultAndState, TransactTo, TxEnv},
     Evm,
 };
 
 use crate::TxResult;
 
-pub struct EvmSimulator<'a> {
-    evm: Evm<'a, (), InMemoryDB>,
+pub struct EvmSimulator {
+    evm: Evm<'static, (), InMemoryDB>,
 }
 
-impl<'a> Default for EvmSimulator<'a> {
+impl Default for EvmSimulator {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<'a> EvmSimulator<'a> {
+impl EvmSimulator {
     pub fn new() -> Self {
         let db: InMemoryDB = CacheDB::new(EmptyDB::default());
-        let mut evm: Evm<'a, (), InMemoryDB> = Evm::builder().with_db(db).build();
+        let mut evm: Evm<'static, (), InMemoryDB> = Evm::builder().with_db(db).build();
 
         // overriding some default env values to make it more efficient for testing
         let evm_cfg: &mut CfgEnv = evm.cfg_mut();
@@ -39,12 +39,13 @@ impl<'a> EvmSimulator<'a> {
     pub fn get_token_balance(&mut self, token: Address, account: Address) -> Result<U256> {
         let calldata: Vec<u8> = BalanceOfCall { who: account }.encode();
 
-        self.evm.context.evm.env.tx.caller = account.0.into();
-        self.evm.context.evm.env.tx.transact_to = TransactTo::Call(token.0.into());
-        self.evm.context.evm.env.tx.data = calldata.into();
+        let tx: &mut TxEnv = self.evm.tx_mut();
+        tx.caller = account.0.into();
+        tx.transact_to = TransactTo::Call(token.0.into());
+        tx.data = calldata.into();
 
         // This will fail, because the token contract has not been deployed yet
-        let result_and_state = match self.evm.transact_preverified() {
+        let result_and_state: ResultAndState = match self.evm.transact_preverified() {
             Ok(result) => result,
             Err(e) => return Err(anyhow!("EVM call failed: {e:?}")),
         };

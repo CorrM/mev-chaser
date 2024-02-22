@@ -234,7 +234,7 @@ where
             return None;
         }
 
-        // Execute swap
+        // Make swaps
         let swap_path: &Arc<PoolPath> = best_swap.0;
         let swap_input_amount: U256 = best_swap.1;
         let swap_output_amount: U256 = swap_input_amount + gas_cost_in_wei_native; // amount_min_out AMM will give use max output

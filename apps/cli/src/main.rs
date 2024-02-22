@@ -7,7 +7,9 @@ use anyhow::{anyhow, Result};
 use ethers_core::types::Address;
 
 use amm::{AmmProtocol, UniswapV2Pool, UniswapV2Protocol};
+use evm_simulator::EvmSimulator;
 use mev::{BackRunnerStrategy, SolidityBridge};
+use shared::logger::{info, Logger};
 use shared::{
     network::NetworkKind,
     provider::{NodeProvider, NodeProviderManager, NodeProviderNetworkInfo},
@@ -178,6 +180,21 @@ fn get_dexes(db: &Database, network: &NetworkKind, token_manager: &TokenManager)
 
 #[tokio::main]
 async fn main() -> Result<()> {
+
+    let Ok(_) = Logger::setup_logger() else {
+        return Err(anyhow!("Failed to setup logger"));
+    };
+
+    let mut simulator = EvmSimulator::new();
+
+    let user = Address::from_str("0xfF8F0eB5E721D7E3c6a39efb5aF797C94e32A25F").unwrap();
+    let wmatic = Address::from_str("0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270").unwrap();
+
+    let wmatic_balance = simulator.get_token_balance(wmatic, user);
+    info!("WMATIC balance: {:?}", wmatic_balance);
+
+    return Ok(());
+
     let env: Env = read_env_file()?;
     let db = Database::new(Path::new("./Main.db"))?;
     let target_network = NetworkKind::from(env.chain_id);

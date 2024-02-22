@@ -8,6 +8,7 @@ shared = { path = "../../packages/shared" }
 amm = { path = "../../packages/amm" }
 mev = { path = "../../packages/mev" }
 contracts = { path = "../../packages/contracts" }
+evm_simulator = { path = "../../packages/evm_simulator" }
 
 anyhow = { workspace = true }
 serde_json = { workspace = true }
