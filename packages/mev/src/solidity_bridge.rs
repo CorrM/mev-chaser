@@ -198,6 +198,6 @@ where
 
         println!("relay_response: {}", relay_response);
 
-        Ok(TxHash::zero())
+        Ok(submit_flash_bid_tx.hash(&sig))
     }
 }

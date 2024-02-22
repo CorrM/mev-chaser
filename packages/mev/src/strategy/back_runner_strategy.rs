@@ -273,6 +273,8 @@ where
     async fn on_pending_tx(&mut self, tx: &Transaction, debug_provider: &Arc<M>) {
         let start = Instant::now();
 
+        /*
+        // Tests
         {
             let swaps: Vec<OneSwapInfo> = vec![
                 PoolPath::make_uniswap_v2_protocol_swap_info(
@@ -299,7 +301,7 @@ where
 
             let legacy_tx: bool = tx.transaction_type.is_none();
             println!("legacy_tx: {}", legacy_tx);
-            
+
             let result = if legacy_tx {
                 self.solidity_bridge
                     .get_loan_then_swap_chain_bundle(
@@ -331,6 +333,7 @@ where
 
             return;
         }
+        */
 
         // TODO: No need for this as NetworkStreamsManager filters pending transactions
         //let Some(to) = tx.to else {
