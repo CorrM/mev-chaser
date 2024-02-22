@@ -167,12 +167,15 @@ where
         );
         let function_call_data: Bytes = my_contract_call.calldata().unwrap();
 
-        let mut submit_flash_bid_call = self.fast_lane_contract.submit_flash_bid(
-            bid_amount,
-            opp_tx.hash().to_fixed_bytes(),
-            self.contract.address(),
-            function_call_data,
-        );
+        let mut submit_flash_bid_call = self
+            .fast_lane_contract
+            .submit_flash_bid(
+                bid_amount,
+                opp_tx.hash().to_fixed_bytes(),
+                self.contract.address(),
+                function_call_data,
+            )
+            .gas(2_000_000);
 
         if gas_price.is_some() {
             submit_flash_bid_call = submit_flash_bid_call.legacy().gas_price(gas_price.unwrap());
@@ -185,7 +188,10 @@ where
         let mut submit_flash_bid_tx: TypedTransaction = submit_flash_bid_call.tx;
         submit_flash_bid_tx.set_chain_id(self.chain_id);
 
-        let sig: Signature = self.signer.sign_transaction(&submit_flash_bid_tx, self.signer.address()).await?;
+        let sig: Signature = self
+            .signer
+            .sign_transaction(&submit_flash_bid_tx, self.signer.address())
+            .await?;
         let signed_bytes: Bytes = submit_flash_bid_tx.rlp_signed(&sig);
         let signed_string: String = format!("0x{}", utils::hex::encode(&signed_bytes));
         //let signed_tx: Transaction = utils::rlp::decode(&signed_bytes).expect("Failed to decode signed transaction");
