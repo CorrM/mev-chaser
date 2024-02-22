@@ -193,7 +193,8 @@ where
                     return None;
                 }
 
-                let (optimized_in, profit) = path.find_optimal_input(1000, 10);
+                // step_size: 2 for stable coins means start with 2$ and increase
+                let (optimized_in, profit) = path.find_optimal_input(1000, 2);
                 if optimized_in.is_zero() {
                     return None;
                 }
