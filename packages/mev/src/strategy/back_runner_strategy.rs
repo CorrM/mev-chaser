@@ -239,13 +239,6 @@ where
         let swap_path: &Arc<PoolPath> = best_swap.0;
         let swap_input_amount: U256 = best_swap.1;
         let swap_output_amount: U256 = swap_input_amount + gas_cost_in_wei_native; // amount_min_out AMM will give use max output
-        let swap_input_token: &CryptoToken = swap_path.get_input_token();
-
-        // TODO: That's only valid for stable coins
-        if swap_input_token.convert_to_amount(0.5_f64).as_u128() as i128 > net_profit_in_native {
-            println!("Min profit not reached: {}", net_profit_in_native);
-            return None;
-        }
 
         let swaps: Result<(Vec<OneSwapInfo>, bool)> = swap_path.make_swaps(swap_input_amount, swap_output_amount);
         let Ok(swaps) = swaps else {
@@ -440,6 +433,7 @@ where
                 .await
         };
 
+        println!("best_profit: {:?} WEI", most_proftable_swap.profit_in_native);
         println!(
             "⌚ Back running took: {}ms, trace_logs: {}",
             start.elapsed().as_millis(),
