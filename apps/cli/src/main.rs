@@ -279,7 +279,7 @@ async fn main() -> Result<()> {
     strategy
         .run(
             raw_provider,
-            Arc::clone(&debug_raw_provider),
+            Arc::clone(debug_raw_provider),
         )
         .await?;
 
