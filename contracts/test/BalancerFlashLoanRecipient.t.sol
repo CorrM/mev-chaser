@@ -2,6 +2,7 @@
 pragma solidity ^0.8.23;
 
 import {Test, console2} from "forge-std/Test.sol";
+import "../src/Swapper.sol";
 import "../src/BalancerFlashLoanRecipient.sol";
 
 contract BalancerFlashLoanRecipientTest is Test {
