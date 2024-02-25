@@ -1,5 +1,4 @@
 use fern::colors::{Color, ColoredLevelConfig};
-use log::LevelFilter;
 
 pub use log::{debug, error, info, trace, warn};
 

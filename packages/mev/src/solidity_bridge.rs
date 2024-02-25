@@ -169,6 +169,11 @@ where
         );
         let function_call_data: Bytes = my_contract_call.calldata().unwrap();
 
+        let nonce: U256 = self.signer
+            .get_transaction_count(self.signer.address(), None)
+            .await
+            .unwrap_or_default();
+
         let mut submit_flash_bid_call = self
             .fast_lane_contract
             .submit_flash_bid(
@@ -177,7 +182,8 @@ where
                 self.contract.address(),
                 function_call_data,
             )
-            .gas(2_000_000); // R4015 -> searcherTx validation failed - intrinsic gas too low: needed 31380, allowed 0
+            .gas(2_000_000) // R4015 -> searcherTx validation failed - intrinsic gas too low: needed 31380, allowed 0
+            .nonce(nonce + 1); // R4015 searcherTx validation failed - nonce too low: next nonce 125, tx nonce 0
 
         if gas_price.is_some() {
             submit_flash_bid_call = submit_flash_bid_call.legacy().gas_price(gas_price.unwrap());

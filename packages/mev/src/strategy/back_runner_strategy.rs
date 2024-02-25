@@ -10,7 +10,8 @@ use ethers_core::{
     utils::to_checksum,
 };
 use ethers_providers::{Middleware, PubsubClient};
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
+use rayon::slice::ParallelSlice;
 use tokio::sync::broadcast::Receiver;
 
 use amm::{
@@ -174,7 +175,7 @@ where
 
         let native_token: &Arc<CryptoToken> = self.token_manager.native_token();
         let best_swap: Option<(&Arc<PoolPath>, U256, i128)> = touched_paths
-            .par_iter()
+            .par_iter()//.par_chunks(50)
             .filter_map(|path: &Arc<PoolPath>| {
                 let input_token: &CryptoToken = path.get_input_token();
 
@@ -198,7 +199,7 @@ where
                     return None;
                 }
 
-                // Convert profit to native so we can get the most profitable path
+                // Convert profit to native, so we can get the most profitable path
                 let native_token_price: f64 = self
                     .price_manager
                     .get_native_token_price(input_token.address())
@@ -387,12 +388,12 @@ where
             .collect();
 
         // Get most profitable swap
-        let most_proftable_swap: Option<BackrunningSwapInfo> = thouched_pools
+        let most_profitable_swap: Option<BackrunningSwapInfo> = thouched_pools
             .par_iter()
             .filter_map(|touched_pool| self.get_backrunning_swap(tx, touched_pool))
             .max_by_key(|s| s.profit_in_native);
 
-        let Some(most_proftable_swap) = most_proftable_swap else {
+        let Some(most_profitable_swap) = most_profitable_swap else {
             println!(
                 "⏳ Back running took: {}ms, trace_logs: {}",
                 start.elapsed().as_millis(),
@@ -403,14 +404,14 @@ where
 
         // Execute swap
         let bid_amount: U256 =
-            U256::from(most_proftable_swap.profit_in_native - submit_slippage(most_proftable_swap.profit_in_native));
-        let tx_hash = if most_proftable_swap.swaps_are_legacy {
+            U256::from(most_profitable_swap.profit_in_native - submit_slippage(most_profitable_swap.profit_in_native));
+        let tx_hash = if most_profitable_swap.swaps_are_legacy {
             self.solidity_bridge
                 .get_loan_then_swap_chain_bundle(
                     tx,
                     bid_amount,
-                    most_proftable_swap.swaps_to_execute,
-                    most_proftable_swap.swaps_are_chained,
+                    most_profitable_swap.swaps_to_execute,
+                    most_profitable_swap.swaps_are_chained,
                     false,
                     tx.gas_price,
                     None,
@@ -422,8 +423,8 @@ where
                 .get_loan_then_swap_chain_bundle(
                     tx,
                     bid_amount,
-                    most_proftable_swap.swaps_to_execute,
-                    most_proftable_swap.swaps_are_chained,
+                    most_profitable_swap.swaps_to_execute,
+                    most_profitable_swap.swaps_are_chained,
                     false,
                     None,
                     tx.max_fee_per_gas,
@@ -432,7 +433,7 @@ where
                 .await
         };
 
-        println!("best_profit: {:?} WEI", most_proftable_swap.profit_in_native);
+        println!("best_profit: {:?} WEI", most_profitable_swap.profit_in_native);
         println!(
             "⌚ Back running took: {}ms, trace_logs: {}",
             start.elapsed().as_millis(),

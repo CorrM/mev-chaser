@@ -4,12 +4,15 @@ use std::sync::Arc;
 use std::{env::VarError, path::Path};
 
 use anyhow::{anyhow, Result};
-use ethers_core::types::Address;
+use ethers::prelude::H256;
+use ethers::types::U256;
+use ethers_core::types::{Address, Block, BlockNumber};
+use ethers_providers::Middleware;
 
 use amm::{AmmProtocol, UniswapV2Pool, UniswapV2Protocol};
 use evm_simulator::EvmSimulator;
 use mev::{BackRunnerStrategy, SolidityBridge};
-use shared::logger::{info, Logger};
+use shared::logger::{error, info, Logger};
 use shared::{
     network::NetworkKind,
     provider::{NodeProvider, NodeProviderManager, NodeProviderNetworkInfo},
@@ -180,21 +183,6 @@ fn get_dexes(db: &Database, network: &NetworkKind, token_manager: &TokenManager)
 
 #[tokio::main]
 async fn main() -> Result<()> {
-
-    let Ok(_) = Logger::setup_logger() else {
-        return Err(anyhow!("Failed to setup logger"));
-    };
-
-    let mut simulator = EvmSimulator::new();
-
-    let user = Address::from_str("0xfF8F0eB5E721D7E3c6a39efb5aF797C94e32A25F").unwrap();
-    let wmatic = Address::from_str("0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270").unwrap();
-
-    let wmatic_balance = simulator.get_token_balance(wmatic, user);
-    info!("WMATIC balance: {:?}", wmatic_balance);
-
-    return Ok(());
-
     let env: Env = read_env_file()?;
     let db = Database::new(Path::new("./Main.db"))?;
     let target_network = NetworkKind::from(env.chain_id);
@@ -232,8 +220,46 @@ async fn main() -> Result<()> {
     #[cfg(not(debug_assertions))]
     let raw_provider = Arc::clone(provider_manager.get_next().raw_ipc_provider());
 
-    //test_contract(&env, &provider_manager).await;
-    //return Ok(());
+    let Ok(_) = Logger::setup_logger() else {
+        return Err(anyhow!("Failed to setup logger"));
+    };
+
+    let mut simulator = EvmSimulator::new();
+
+    let user = Address::from_str("0x9cf277A22EB4c551c6E18F7a6C0ee1893bcB034f").unwrap();
+    let weth = Address::from_str("0x7ceb23fd6bc0add59e62ac25578270cff1b9f619").unwrap();
+    let usdc = Address::from_str("0x3c499c542cef5e3811e1192ce70d8cc03d5c3359").unwrap();
+    let usdt = Address::from_str("0xc2132D05D31c914a87C6611C10748AEb04B58e8F").unwrap();
+
+    let block: Block<H256> = raw_provider
+        .get_block(BlockNumber::Latest)
+        .await?
+        .ok_or(anyhow!("failed to retrieve block"))?;
+
+    //let weth_balance: Result<U256> = simulator.get_token_balance(weth, user);
+    //info!("WETH balance: {:?}", weth_balance);
+
+    match simulator.revm_contract_deploy_and_tracing(Arc::clone(&raw_provider), weth, user).await {
+        Ok(_) => {}
+        Err(e) => info!("Tracing error: {e:?}"),
+    }
+    
+    match simulator.revm_contract_deploy_and_tracing(Arc::clone(&raw_provider), weth, user).await {
+        Ok(_) => {}
+        Err(e) => info!("Tracing error: {e:?}"),
+    }
+
+    match simulator.get_proxy_implementation(Arc::clone(&raw_provider), usdc, block.number.unwrap()).await {
+        Ok(implementation) => info!("Proxy implementation: {:?}", implementation),
+        Err(e) => error!("Proxy implementation error: {e:?}"),
+    }
+
+    match simulator.get_proxy_implementation(Arc::clone(&raw_provider), usdt, block.number.unwrap()).await {
+        Ok(implementation) => info!("Proxy implementation: {:?}", implementation),
+        Err(e) => error!("Proxy implementation error: {e:?}"),
+    }
+
+    return Ok(());
 
     // CLI commands
     let args: Vec<String> = env::args().collect();

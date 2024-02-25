@@ -14,6 +14,7 @@ pub struct CryptoToken {
     decimals_pow: f64,
     one_token_amount: U256,
     input_token_unit: U256,
+    input_balance_contract_slot: i32
 }
 
 impl CryptoToken {
@@ -35,6 +36,7 @@ impl CryptoToken {
             decimals_pow,
             one_token_amount: U256::from((1_f64 * decimals_pow) as i128),
             input_token_unit: U256::from(10).pow(U256::from(decimals)),
+            input_balance_contract_slot: panic!("input_balance_contract_slot not implemented"),
         })
     }
 

@@ -98,9 +98,6 @@ impl BundleProvider {
         // let json_post = post_data_fast_lane.to_json();
         // write_to_json("test.json", &json_post);
 
-        match self.send_bundle(post_data_fast_lane).await {
-            Ok(r) => r,
-            Err(e) => e.to_string(),
-        }
+        self.send_bundle(post_data_fast_lane).await.unwrap_or_else(|e| e.to_string())
     }
 }

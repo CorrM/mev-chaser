@@ -5,3 +5,4 @@ pub mod uniswap_v2_factory;
 pub mod uniswap_v2_pair;
 pub mod uniswap_v2_router;
 pub mod weth;
+pub mod simulator;

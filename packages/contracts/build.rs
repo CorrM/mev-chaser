@@ -22,4 +22,5 @@ fn main() {
     gen_abi("UniswapV2RouterAbi", "UniswapV2Router.json", "uniswap_v2_router.rs");
     gen_abi("BalancerFlashLoanRecipientAbi", "BalancerFlashLoanRecipient.json", "balancer_flash_loan_recipient.rs");
     gen_abi("FastLaneAuctionHandlerAbi", "FastLaneAuctionHandlerAbi.json", "fastlane_auction_handler.rs");
+    gen_abi("SimulatorAbi", "Simulator.json", "simulator.rs");
 }

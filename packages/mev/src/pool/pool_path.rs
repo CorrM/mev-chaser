@@ -1,50 +1,54 @@
 use std::sync::Arc;
 
-use amm::{AmmProtocol, UniswapV2Protocol, UniswapV2Simulator};
 use anyhow::{anyhow, Result};
-use contracts::balancer_flash_loan_recipient::OneSwapInfo;
 use ethers_core::{
     abi::Token,
     types::{Address, Bytes, U256},
     utils::to_checksum,
 };
+
+use amm::{AmmProtocol, UniswapV2Protocol, UniswapV2Simulator};
+use contracts::balancer_flash_loan_recipient::OneSwapInfo;
 use shared::token::CryptoToken;
 
 use super::PoolPathItem;
 
+fn make_uniswap_v2_protocol_swap_info(
+    router: Address,
+    path: Vec<Address>,
+    amount_in: impl Into<U256>,
+    amount_out_min: impl Into<U256>,
+) -> Result<OneSwapInfo> {
+    if path.len() < 2 {
+        return Err(anyhow!("path must have at least 2 elements"));
+    }
+
+    let token_in: Address = path[0];
+    let path_token: Vec<Token> = path.into_iter().map(Token::Address).collect();
+    let addresses = Token::Array(path_token);
+    let encoded_path: Bytes = ethers::abi::encode(&[addresses]).into();
+
+    Ok(OneSwapInfo {
+        protocol: 0,
+        router,
+        token_in,
+        path: encoded_path,
+        amount_in: amount_in.into(),
+        amount_out_min: amount_out_min.into(),
+        deadline: U256::from(0),
+    })
+}
+
 #[derive(Debug, Clone)]
 pub struct PoolPath {
+    // TODO:
+    //swaps: Vec<OneSwapInfo>,
+    //chain_swaps: bool,
     path: Vec<PoolPathItem>,
     input_token: Arc<CryptoToken>,
 }
 
 impl PoolPath {
-    pub fn make_uniswap_v2_protocol_swap_info(
-        router: Address,
-        path: Vec<Address>,
-        amount_in: impl Into<U256>,
-        amount_out_min: impl Into<U256>,
-    ) -> Result<OneSwapInfo> {
-        if path.len() < 2 {
-            return Err(anyhow!("path must have at least 2 elements"));
-        }
-
-        let token_in: Address = path[0];
-        let path_token: Vec<Token> = path.into_iter().map(Token::Address).collect();
-        let addresses = Token::Array(path_token);
-        let encoded_path: Bytes = ethers::abi::encode(&[addresses]).into();
-
-        Ok(OneSwapInfo {
-            protocol: 0,
-            router,
-            token_in,
-            path: encoded_path,
-            amount_in: amount_in.into(),
-            amount_out_min: amount_out_min.into(),
-            deadline: U256::from(0),
-        })
-    }
-
     pub fn new(path: Vec<PoolPathItem>) -> Self {
         let first_path_item: &PoolPathItem = &path[0];
 
@@ -182,8 +186,7 @@ impl PoolPath {
                 path.push(*last_path_item.pool.read().unwrap().token0().address());
             }
 
-            let Ok(swap) = PoolPath::make_uniswap_v2_protocol_swap_info(router, path, input_amount, output_amount)
-            else {
+            let Ok(swap) = make_uniswap_v2_protocol_swap_info(router, path, input_amount, output_amount) else {
                 return Err(anyhow!("Failed to make UniswapV2ProtocolSwapInfo"));
             };
 
@@ -212,8 +215,7 @@ impl PoolPath {
                     U256::zero()
                 };
 
-                let Ok(swap) =
-                    PoolPath::make_uniswap_v2_protocol_swap_info(router, path, cur_intput_amount, cur_output_amount)
+                let Ok(swap) = make_uniswap_v2_protocol_swap_info(router, path, cur_intput_amount, cur_output_amount)
                 else {
                     return Err(anyhow!("Failed to make UniswapV2ProtocolSwapInfo"));
                 };
