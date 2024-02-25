@@ -8,8 +8,6 @@ shared = { path = "../shared" }
 amm = { path = "../amm" }
 contracts = { path = "../contracts" }
 
-async-scoped = { version = "0.9.0", features = ["use-tokio"] }
-
 anyhow = { workspace = true }
 rayon = { workspace = true }
 reqwest = { workspace = true }
@@ -17,6 +15,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 dashmap = { workspace = true }
 tokio = { workspace = true }
+async-scoped = { workspace = true }
 ethers-providers = { workspace = true }
 ethers-core = { workspace = true }
 ethers-contract = { workspace = true }

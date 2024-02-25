@@ -7,9 +7,12 @@ use anyhow::{anyhow, Result};
 use ethers::prelude::H256;
 use ethers::types::U256;
 use ethers_core::types::{Address, Block, BlockNumber};
-use ethers_providers::Middleware;
+use ethers_providers::{Middleware, Provider, Ws};
 
 use amm::{AmmProtocol, UniswapV2Pool, UniswapV2Protocol};
+use commands::{AddTokenCommand, GenPoolCommand};
+use contracts::erc20_token::BalanceOfReturn;
+use database::{Database, DbDex, DbDexPool, DbToken, DbTokenNetwork};
 use evm_simulator::EvmSimulator;
 use mev::{BackRunnerStrategy, SolidityBridge};
 use shared::logger::{error, info, Logger};
@@ -18,9 +21,6 @@ use shared::{
     provider::{NodeProvider, NodeProviderManager, NodeProviderNetworkInfo},
     token::{CryptoToken, TokenManager},
 };
-
-use commands::{AddTokenCommand, GenPoolCommand};
-use database::{Database, DbDex, DbDexPool, DbToken, DbTokenNetwork};
 use utils::env::Env;
 
 mod commands;
@@ -67,6 +67,12 @@ async fn get_node_providers(env: &Env, target_network: &NetworkKind) -> Result<V
     Ok(providers)
 }
 
+async fn create_node_provider_manager(env: &Env, target_network: &NetworkKind) -> Result<NodeProviderManager> {
+    let providers: Vec<NodeProvider> = get_node_providers(env, target_network).await?;
+    NodeProviderManager::new(providers, get_debug_node_providers(env, target_network).await?)
+}
+*/
+
 async fn get_debug_node_providers(env: &Env, target_network: &NetworkKind) -> Result<Vec<NodeProvider>> {
     let blockpi_network_subdomain: String = match target_network {
         NetworkKind::Ethereum => "ethereum".to_string(),
@@ -75,28 +81,25 @@ async fn get_debug_node_providers(env: &Env, target_network: &NetworkKind) -> Re
 
     let blockpi_net_info: NodeProviderNetworkInfo = NodeProviderNetworkInfo {
         network: *target_network,
-        http_url: format!(
-            "https://{}.blockpi.network/v1/rpc/{}",
-            blockpi_network_subdomain, env.blockpi_api_key
-        )
-        .to_string(),
-        ws_url: format!(
-            "wss://{}.blockpi.network/v1/ws/{}",
-            blockpi_network_subdomain, env.blockpi_api_key
-        )
-        .to_string(),
+        http_url: Some(
+            format!(
+                "https://{}.blockpi.network/v1/rpc/{}",
+                blockpi_network_subdomain, env.blockpi_api_key
+            )
+            .to_string(),
+        ),
+        ws_url: Some(
+            format!(
+                "wss://{}.blockpi.network/v1/ws/{}",
+                blockpi_network_subdomain, env.blockpi_api_key
+            )
+            .to_string(),
+        ),
+        ipc_path: None,
     };
 
-    Ok(vec![
-        NodeProvider::new("blockpi", blockpi_net_info).await?,
-    ])
+    Ok(vec![NodeProvider::new("blockpi", blockpi_net_info).await?])
 }
-
-async fn create_node_provider_manager(env: &Env, target_network: &NetworkKind) -> Result<NodeProviderManager> {
-    let providers: Vec<NodeProvider> = get_node_providers(env, target_network).await?;
-    NodeProviderManager::new(providers, get_debug_node_providers(env, target_network).await?)
-}
-*/
 
 fn get_tokens(db: &Database, network: &NetworkKind) -> Result<Vec<CryptoToken>> {
     let db_tokens: Vec<(DbToken, DbTokenNetwork)> = db.get_tokens(network)?;
@@ -224,9 +227,10 @@ async fn main() -> Result<()> {
         return Err(anyhow!("Failed to setup logger"));
     };
 
-    let mut simulator = EvmSimulator::new();
+    let debug_provider: Arc<Provider<Ws>> =
+        Arc::clone(get_debug_node_providers(&env, &target_network).await?[0].raw_ws_provider());
+    let simulator = EvmSimulator::new(debug_provider).await;
 
-    let user = Address::from_str("0x9cf277A22EB4c551c6E18F7a6C0ee1893bcB034f").unwrap();
     let weth = Address::from_str("0x7ceb23fd6bc0add59e62ac25578270cff1b9f619").unwrap();
     let usdc = Address::from_str("0x3c499c542cef5e3811e1192ce70d8cc03d5c3359").unwrap();
     let usdt = Address::from_str("0xc2132D05D31c914a87C6611C10748AEb04B58e8F").unwrap();
@@ -239,22 +243,17 @@ async fn main() -> Result<()> {
     //let weth_balance: Result<U256> = simulator.get_token_balance(weth, user);
     //info!("WETH balance: {:?}", weth_balance);
 
-    match simulator.revm_contract_deploy_and_tracing(Arc::clone(&raw_provider), weth, user).await {
-        Ok(_) => {}
-        Err(e) => info!("Tracing error: {e:?}"),
-    }
-    
-    match simulator.revm_contract_deploy_and_tracing(Arc::clone(&raw_provider), weth, user).await {
-        Ok(_) => {}
+    match simulator.get_token_balance_slot(weth, user).await {
+        Ok(idx) => println!("Balance storage slot: {:?}", idx),
         Err(e) => info!("Tracing error: {e:?}"),
     }
 
-    match simulator.get_proxy_implementation(Arc::clone(&raw_provider), usdc, block.number.unwrap()).await {
+    match simulator.get_proxy_implementation(usdc, block.number.unwrap()).await {
         Ok(implementation) => info!("Proxy implementation: {:?}", implementation),
         Err(e) => error!("Proxy implementation error: {e:?}"),
     }
 
-    match simulator.get_proxy_implementation(Arc::clone(&raw_provider), usdt, block.number.unwrap()).await {
+    match simulator.get_proxy_implementation(usdt, block.number.unwrap()).await {
         Ok(implementation) => info!("Proxy implementation: {:?}", implementation),
         Err(e) => error!("Proxy implementation error: {e:?}"),
     }
@@ -301,15 +300,8 @@ async fn main() -> Result<()> {
 
     // 2 are triangle arbitrage
     println!("[-] Prepare strategy");
-    let mut strategy = BackRunnerStrategy::new(
-        solidity_bridge,
-        &raw_provider,
-        token_manager,
-        amms,
-        3,
-        start_tokens,
-    )
-    .await;
+    let mut strategy =
+        BackRunnerStrategy::new(solidity_bridge, &raw_provider, token_manager, amms, 3, start_tokens).await;
 
     println!("[+] Start strategy");
 
@@ -319,12 +311,7 @@ async fn main() -> Result<()> {
     #[cfg(not(debug_assertions))]
     let debug_raw_provider = provider_manager.get_next_debug_trace_call().raw_ipc_provider();
 
-    strategy
-        .run(
-            raw_provider,
-            Arc::clone(debug_raw_provider),
-        )
-        .await?;
+    strategy.run(raw_provider, Arc::clone(debug_raw_provider)).await?;
 
     println!("[+] Done");
 

@@ -1,169 +1,98 @@
+use std::collections::btree_map::Keys;
+use std::collections::BTreeMap;
+use std::str::FromStr;
 use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 use ethers::{
-    abi::{self, AbiDecode, AbiEncode},
+    abi::{self, AbiEncode},
     types::{Address, Block, BlockNumber, H256, U256},
     utils::keccak256,
 };
-use ethers_core::types::{BigEndianHash, spoof, TxHash, U64};
-use ethers_providers::Middleware;
-use revm::primitives::Storage;
-use revm::{
-    db::{CacheDB, EmptyDB, EthersDB, InMemoryDB},
-    primitives::{AccountInfo, CfgEnv, ExecutionResult, Output, ResultAndState, TransactTo, TxEnv},
-    ContextWithHandlerCfg, Database, Evm,
+use ethers_core::abi::AbiDecode;
+use ethers_core::types::spoof::State;
+use ethers_core::types::transaction::eip2930::AccessList;
+use ethers_core::types::{
+    spoof, AccountState, BigEndianHash, BlockId, Bytes, Eip1559TransactionRequest, GethDebugBuiltInTracerType,
+    GethDebugTracerType, GethDebugTracingCallOptions, GethDebugTracingOptions, GethTrace, GethTraceFrame,
+    NameOrAddress, PreStateFrame, PreStateMode, TransactionRequest, TxHash, U64,
 };
-use tokio::task::JoinSet;
+use ethers_core::types::transaction::eip2718::TypedTransaction;
+use ethers_providers::{Middleware, RawCall};
 
 use contracts::erc20_token::{BalanceOfCall, BalanceOfReturn};
+use contracts::simulator::{SimulateMultiSwapCall, SimulateMultiSwapReturn, SIMULATORABI_BYTECODE};
 
-use crate::tx_result::TxResult;
+static TEN_ETH: U256 = U256::from(10).checked_mul(U256::from(10).pow(U256::from(18))).unwrap();
+static GAS_PRICE: U256 = U256::from(100).checked_mul(U256::from(10).pow(U256::from(9))).unwrap();
 
-pub struct EvmSimulator {
-    ctx_with_handler: ContextWithHandlerCfg<(), InMemoryDB>,
+pub struct EvmSimulator<M>
+where
+    M: Middleware + 'static,
+{
+    chain: U64,
+    account: Address,
+    state_override_set: State,
+    simulator_address: Address,
+    provider: Arc<M>,
 }
 
-impl EvmSimulator {
-    pub fn new() -> Self {
-        // https://github.com/bluealloy/revm/issues/1062
-        let db: InMemoryDB = CacheDB::new(EmptyDB::default());
-        let mut evm: Evm<'static, (), InMemoryDB> = Evm::builder().with_db(db).build();
+impl<M> EvmSimulator<M>
+where
+    M: Middleware + 'static,
+{
+    pub async fn new(provider: Arc<M>) -> Self {
+        let chain: U64 = provider.get_chainid().await.unwrap().as_u64().into();
 
-        // overriding some default env values to make it more efficient for testing
-        let evm_cfg: &mut CfgEnv = evm.cfg_mut();
-        evm_cfg.limit_contract_code_size = None;
-        evm_cfg.disable_block_gas_limit = true;
-        evm_cfg.disable_base_fee = true;
+        let mut state_override_set: State = spoof::state();
+        let account = Address::from_str("0x9cf277A22EB4c551c6E18F7a6C0ee1893bcB034f").unwrap();
+        
+        // Spoof user balance with 10 ETH (for gas fees)
+        state_override_set.account(account).balance(TEN_ETH).nonce(0.into());
 
-        let ctx_with_handler: ContextWithHandlerCfg<(), InMemoryDB> = evm.into_context_with_handler_cfg();
-        Self { ctx_with_handler }
-    }
+        // Create Simulator contract with bytecode injection
+        let simulator_address = Address::from_str("0xF2d01Ee818509a9540d8324a5bA52329af27D19E").unwrap();
+        state_override_set
+            .account(simulator_address)
+            .code(SIMULATORABI_BYTECODE.clone());
 
-    fn get_evm(&self) -> Evm<'static, (), InMemoryDB> {
-        let cfg = ContextWithHandlerCfg::new(self.ctx_with_handler.context.clone(), self.ctx_with_handler.cfg.clone());
-        Evm::builder().with_context_with_handler_cfg(cfg).build()
-    }
-
-    pub fn get_token_balance(&self, token: Address, account: Address) -> Result<U256> {
-        let calldata: Vec<u8> = BalanceOfCall { who: account }.encode();
-
-        let mut evm: Evm<(), InMemoryDB> = self.get_evm();
-        let tx: &mut TxEnv = evm.tx_mut();
-        tx.caller = account.0.into();
-        tx.transact_to = TransactTo::Call(token.0.into());
-        tx.data = calldata.into();
-
-        // This will fail, because the token contract has not been deployed yet
-        let result_and_state: ResultAndState = match evm.transact_preverified() {
-            Ok(result) => result,
-            Err(e) => return Err(anyhow!("EVM call failed: {e:?}")),
-        };
-        let tx_result = match result_and_state.result {
-            ExecutionResult::Success {
-                gas_used,
-                gas_refunded,
-                output,
-                logs,
-                ..
-            } => match output {
-                Output::Call(o) => TxResult {
-                    output: o,
-                    logs: Some(logs),
-                    gas_used,
-                    gas_refunded,
-                },
-                Output::Create(o, _) => TxResult {
-                    output: o,
-                    logs: Some(logs),
-                    gas_used,
-                    gas_refunded,
-                },
-            },
-            ExecutionResult::Revert { gas_used, output } => {
-                return Err(anyhow!("EVM REVERT: {:?} / Gas used: {:?}", output, gas_used));
-            }
-            ExecutionResult::Halt { reason, gas_used } => {
-                return Err(anyhow!("EVM HALT: {:?} / Gas used: {:?}", reason, gas_used));
-            }
-        };
-
-        let Ok(decoded_output) = BalanceOfReturn::decode(&tx_result.output) else {
-            return Err(anyhow!("Failed to decode output"));
-        };
-
-        Ok(decoded_output.0)
-    }
-
-    pub async fn revm_contract_deploy_and_tracing<M: Middleware + 'static>(
-        &self,
-        provider: Arc<M>,
-        token: Address,
-        account: Address,
-    ) -> Result<i32> {
-        let token: revm::primitives::Address = token.0.into();
-        let mut evm: Evm<(), InMemoryDB> = self.get_evm();
-
-        // Deploy contract to EVM then insert account using ethers middleware
-        let block: Block<H256> = provider
-            .get_block(BlockNumber::Latest)
-            .await?
-            .ok_or(anyhow!("failed to retrieve block"))?;
-
-        // TEEEEES: Use eth_call this with `debug.traceCall` prestateTracer to make the state, then simulate swaps, EZ support for all AMMs
-        let mut state = spoof::state();
-        state.account(account).store(
-            input_balance_slot.into(),
-            H256::from_low_u64_be(ten_eth.as_u64()),
-        );
-
-        let mut ethersdb: EthersDB<M> =
-            EthersDB::new(provider, Some(block.number.unwrap().into())).unwrap();
-        let token_acc_info: AccountInfo = ethersdb.basic(token).unwrap().unwrap();
-        evm.context.evm.db.insert_account_info(token, token_acc_info);
-
-        // Call balanceOf
-        let calldata: Vec<u8> = BalanceOfCall { who: account }.encode();
-
-        let tx: &mut TxEnv = evm.tx_mut();
-        tx.caller = account.0.into();
-        tx.transact_to = TransactTo::Call(token);
-        tx.data = calldata.into();
-
-        let result_and_state: ResultAndState = match evm.transact_preverified() {
-            Ok(result) => result,
-            Err(e) => return Err(anyhow!("EVM call failed: {e:?}")),
-        };
-
-        // Get touched storage
-        let token_acc: &revm::primitives::Account = result_and_state.state.get(&token).unwrap();
-        let touched_storage: &Storage = &token_acc.storage;
-        println!("Touched storage slots: {:?}", touched_storage);
-
-        for i in 0..20 {
-            let slot: [u8; 32] = keccak256(&abi::encode(&[
-                abi::Token::Address(account),
-                abi::Token::Uint(U256::from(i)),
-            ]));
-
-            let slot: revm::primitives::U256 = revm::primitives::U256::from_be_bytes(slot);
-            if touched_storage.get(&slot).is_none() {
-                continue;
-            };
-
-            println!("Balance storage slot: {:?} ({:?})", i, slot);
-            return Ok(i);
+        Self {
+            chain,
+            account,
+            state_override_set,
+            simulator_address,
+            provider,
         }
-
-        Ok(0)
     }
 
-    pub async fn get_proxy_implementation<M: Middleware + 'static>(
-        &self,
-        provider: Arc<M>,
-        token: Address,
-        block_number: U64,
-    ) -> Result<Option<Address>> {
+    async fn get_state_diff(&self, tx: Eip1559TransactionRequest, block_number: U64) -> Result<GethTrace> {
+        let trace: GethTrace = self
+            .provider
+            .debug_trace_call(
+                tx,
+                Some(block_number.into()),
+                GethDebugTracingCallOptions {
+                    tracing_options: GethDebugTracingOptions {
+                        disable_storage: None,
+                        disable_stack: None,
+                        enable_memory: None,
+                        enable_return_data: None,
+                        tracer: Some(GethDebugTracerType::BuiltInTracer(
+                            GethDebugBuiltInTracerType::PreStateTracer,
+                        )),
+                        tracer_config: None,
+                        timeout: None,
+                    },
+                    state_overrides: None,
+                    block_overrides: None,
+                },
+            )
+            .await?;
+
+        Ok(trace)
+    }
+
+    pub async fn get_proxy_implementation(&self, token: Address, block_number: U64) -> Result<Option<Address>> {
         // adapted from: https://github.com/gnosis/evm-proxy-detection/blob/main/src/index.ts
         let eip_1967_logic_slot: U256 =
             U256::from("0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc");
@@ -181,19 +110,19 @@ impl EvmSimulator {
             eip_1822_logic_slot,
         ];
 
-        let mut set = JoinSet::new();
-        for slot in implementation_slots {
-            let _provider = Arc::clone(&provider);
-            let fut = tokio::spawn(async move {
-                _provider
-                    .get_storage_at(token, TxHash::from_uint(&slot), Some(block_number.into()))
-                    .await
-            });
-            set.spawn(fut);
-        }
+        let slots = async_scoped::TokioScope::scope_and_block(|s| {
+            for slot in &implementation_slots {
+                s.spawn(async {
+                    self.provider
+                        .get_storage_at(token, TxHash::from_uint(slot), Some(block_number.into()))
+                        .await
+                });
+            }
+        })
+        .1;
 
-        while let Some(res) = set.join_next().await {
-            let out: TxHash = res???;
+        for slot in slots {
+            let out: TxHash = slot??;
             let implementation = Address::from(out);
             if implementation != Address::zero() {
                 return Ok(Some(implementation));
@@ -202,10 +131,123 @@ impl EvmSimulator {
 
         Ok(None)
     }
-}
 
-impl Default for EvmSimulator {
-    fn default() -> Self {
-        Self::new()
+    pub async fn get_token_balance_slot(&self, token: Address, account: Address) -> Result<i32> {
+        let calldata: Bytes = BalanceOfCall { who: account }.encode().into();
+
+        let block_task = self.provider.get_block(BlockNumber::Latest);
+        let nonce_task = self
+            .provider
+            .get_transaction_count(account, Some(BlockId::Number(BlockNumber::Latest)));
+
+        //let provider_c = provider.clone();
+        //tokio::spawn(async move {
+        //    provider_c.get_block(BlockNumber::Latest);
+        //});
+
+        let (block, nonce) = tokio::join!(block_task, nonce_task);
+        let block: Block<H256> = block?.ok_or(anyhow!("failed to retrieve block"))?;
+        let nonce: U256 = nonce?;
+
+        let tx = Eip1559TransactionRequest {
+            chain_id: Some(self.chain),
+            nonce: Some(nonce),
+            from: Some(account),
+            to: Some(NameOrAddress::Address(token)),
+            gas: None,
+            value: None,
+            data: Some(calldata),
+            max_priority_fee_per_gas: None,
+            max_fee_per_gas: None,
+            access_list: AccessList::default(),
+        };
+        let geth_trace: GethTrace = self.get_state_diff(tx, block.number.unwrap()).await?;
+        let prestate: PreStateMode = match geth_trace {
+            GethTrace::Known(GethTraceFrame::PreStateTracer(PreStateFrame::Default(prestate_mode))) => {
+                Some(prestate_mode)
+            }
+            _ => None,
+        }
+        .unwrap();
+
+        let geth_touched_accs: Keys<Address, AccountState> = prestate.0.keys();
+        println!("Geth trace: {:?}", geth_touched_accs);
+
+        let token_acc_state: &AccountState = prestate.0.get(&token).ok_or(anyhow!("no token key"))?;
+        let token_touched_storage: &BTreeMap<H256, H256> =
+            token_acc_state.storage.as_ref().ok_or(anyhow!("no storage values"))?;
+
+        for i in 0..20 {
+            let slot: [u8; 32] = keccak256(&abi::encode(&[
+                abi::Token::Address(account),
+                abi::Token::Uint(U256::from(i)),
+            ]));
+
+            if token_touched_storage.get(&slot.into()).is_none() {
+                continue;
+            }
+
+            println!(
+                "Balance storage slot: {:?} ({:?})",
+                i,
+                BalanceOfReturn::decode(slot).unwrap().0
+            );
+            return Ok(i);
+        }
+
+        Ok(0)
+    }
+
+    pub async fn eth_call_simulate_multi_swap(
+        &mut self,
+        target_pair: Address,
+        input_token: Address,
+        output_token: Address,
+        input_token_balance_slot: i32,
+    ) -> Result<U256> {
+        // Shows how you can spoof multiple storage slots
+        // but also shows that you can only test one transaction at a time
+        let block = self
+            .provider
+            .get_block(BlockNumber::Latest)
+            .await?
+            .ok_or(anyhow!("failed to retrieve block"))?;
+
+        // Spoof simulator input token balance
+        let input_balance_slot: [u8; 32] = keccak256(&abi::encode(&[
+            abi::Token::Address(self.simulator_address),
+            abi::Token::Uint(U256::from(input_token_balance_slot)),
+        ]));
+        self.state_override_set
+            .account(input_token)
+            .store(input_balance_slot.into(), H256::from_low_u64_be(TEN_ETH.as_u64()));
+
+        let calldata = SimulateMultiSwapCall {
+            swaps: vec![],
+            chain_swaps: true,
+        }
+        .encode();
+
+        let tx: TypedTransaction = TransactionRequest::default()
+            .from(self.account)
+            .to(self.simulator_address)
+            .value(U256::zero())
+            .data(calldata)
+            .nonce(U256::zero())
+            .gas(5000000)
+            .gas_price(GAS_PRICE)
+            .chain_id(1)
+            .into();
+        let result = self
+            .provider
+            .provider()
+            .call_raw(&tx)
+            .state(&self.state_override_set)
+            .block(block.number.unwrap().into())
+            .await?;
+        let out: U256 = SimulateMultiSwapReturn::decode(result)?.0;
+        println!("simulateMultiSwap eth_call result: {:?}", out);
+
+        Ok(out)
     }
 }

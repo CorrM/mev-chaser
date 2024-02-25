@@ -7,11 +7,9 @@ edition = "2021"
 contracts = { path = "../contracts" }
 
 anyhow = { workspace = true }
-bytes = { workspace = true }
-hashbrown = { workspace = true }
 tokio = { workspace = true }
+async-scoped = { workspace = true }
 ethers-providers = { workspace = true }
 ethers-core = { workspace = true }
 ethers-contract = { workspace = true }
 ethers = { workspace = true }
-revm = { workspace = true }
