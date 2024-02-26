@@ -11,25 +11,32 @@ use ethers::{
 };
 use ethers_core::abi::AbiDecode;
 use ethers_core::types::spoof::State;
+use ethers_core::types::transaction::eip2718::TypedTransaction;
 use ethers_core::types::transaction::eip2930::AccessList;
 use ethers_core::types::{
     spoof, AccountState, BigEndianHash, BlockId, Bytes, Eip1559TransactionRequest, GethDebugBuiltInTracerType,
     GethDebugTracerType, GethDebugTracingCallOptions, GethDebugTracingOptions, GethTrace, GethTraceFrame,
     NameOrAddress, PreStateFrame, PreStateMode, TransactionRequest, TxHash, U64,
 };
-use ethers_core::types::transaction::eip2718::TypedTransaction;
-use ethers_providers::{Middleware, RawCall};
+use ethers_core::utils::__serde_json::Value;
+use ethers_providers::{Middleware, ProviderError, RawCall, RpcError};
 
+use contracts::balancer_flash_loan_recipient::OneSwapInfo;
 use contracts::erc20_token::{BalanceOfCall, BalanceOfReturn};
-use contracts::simulator::{SimulateMultiSwapCall, SimulateMultiSwapReturn, SIMULATORABI_BYTECODE};
+use contracts::simulator::{
+    SimulateMultiSwapCall, SimulateMultiSwapReturn, SimulatorAbiErrors, SIMULATORABI_DEPLOYED_BYTECODE,
+};
 
-static TEN_ETH: U256 = U256::from(10).checked_mul(U256::from(10).pow(U256::from(18))).unwrap();
-static GAS_PRICE: U256 = U256::from(100).checked_mul(U256::from(10).pow(U256::from(9))).unwrap();
+struct Constants {
+    pub ten_eth: u64,
+    pub gas_price: U256,
+}
 
 pub struct EvmSimulator<M>
 where
     M: Middleware + 'static,
 {
+    constants: Constants,
     chain: U64,
     account: Address,
     state_override_set: State,
@@ -42,21 +49,28 @@ where
     M: Middleware + 'static,
 {
     pub async fn new(provider: Arc<M>) -> Self {
+        let ten_eth: U256 = U256::from(10).checked_mul(U256::from(10).pow(U256::from(18))).unwrap();
+        let gas_price: U256 = U256::from(100).checked_mul(U256::from(10).pow(U256::from(9))).unwrap();
+
         let chain: U64 = provider.get_chainid().await.unwrap().as_u64().into();
 
         let mut state_override_set: State = spoof::state();
         let account = Address::from_str("0x9cf277A22EB4c551c6E18F7a6C0ee1893bcB034f").unwrap();
-        
+
         // Spoof user balance with 10 ETH (for gas fees)
-        state_override_set.account(account).balance(TEN_ETH).nonce(0.into());
+        state_override_set.account(account).balance(ten_eth).nonce(0.into());
 
         // Create Simulator contract with bytecode injection
         let simulator_address = Address::from_str("0xF2d01Ee818509a9540d8324a5bA52329af27D19E").unwrap();
         state_override_set
             .account(simulator_address)
-            .code(SIMULATORABI_BYTECODE.clone());
+            .code(SIMULATORABI_DEPLOYED_BYTECODE.clone());
 
         Self {
+            constants: Constants {
+                ten_eth: ten_eth.as_u64(),
+                gas_price,
+            },
             chain,
             account,
             state_override_set,
@@ -66,27 +80,25 @@ where
     }
 
     async fn get_state_diff(&self, tx: Eip1559TransactionRequest, block_number: U64) -> Result<GethTrace> {
+        static OPTIONS: GethDebugTracingCallOptions = GethDebugTracingCallOptions {
+            tracing_options: GethDebugTracingOptions {
+                disable_storage: None,
+                disable_stack: None,
+                enable_memory: None,
+                enable_return_data: None,
+                tracer: Some(GethDebugTracerType::BuiltInTracer(
+                    GethDebugBuiltInTracerType::PreStateTracer,
+                )),
+                tracer_config: None,
+                timeout: None,
+            },
+            state_overrides: None,
+            block_overrides: None,
+        };
+
         let trace: GethTrace = self
             .provider
-            .debug_trace_call(
-                tx,
-                Some(block_number.into()),
-                GethDebugTracingCallOptions {
-                    tracing_options: GethDebugTracingOptions {
-                        disable_storage: None,
-                        disable_stack: None,
-                        enable_memory: None,
-                        enable_return_data: None,
-                        tracer: Some(GethDebugTracerType::BuiltInTracer(
-                            GethDebugBuiltInTracerType::PreStateTracer,
-                        )),
-                        tracer_config: None,
-                        timeout: None,
-                    },
-                    state_overrides: None,
-                    block_overrides: None,
-                },
-            )
+            .debug_trace_call(tx, Some(block_number.into()), OPTIONS.clone())
             .await?;
 
         Ok(trace)
@@ -199,34 +211,33 @@ where
     }
 
     pub async fn eth_call_simulate_multi_swap(
-        &mut self,
-        target_pair: Address,
-        input_token: Address,
-        output_token: Address,
+        &self,
+        block_number: U64,
+        swaps: Vec<OneSwapInfo>,
+        chain_swaps: bool,
         input_token_balance_slot: i32,
     ) -> Result<U256> {
-        // Shows how you can spoof multiple storage slots
-        // but also shows that you can only test one transaction at a time
-        let block = self
-            .provider
-            .get_block(BlockNumber::Latest)
-            .await?
-            .ok_or(anyhow!("failed to retrieve block"))?;
-
         // Spoof simulator input token balance
-        let input_balance_slot: [u8; 32] = keccak256(&abi::encode(&[
+        let input_balance_slot: [u8; 32] = keccak256(abi::encode(&[
             abi::Token::Address(self.simulator_address),
             abi::Token::Uint(U256::from(input_token_balance_slot)),
         ]));
-        self.state_override_set
-            .account(input_token)
-            .store(input_balance_slot.into(), H256::from_low_u64_be(TEN_ETH.as_u64()));
+        let mut state_override_set: State = self.state_override_set.clone();
+        state_override_set
+            .account(swaps[0].token_in)
+            .store(input_balance_slot.into(), H256::from_low_u64_be(self.constants.ten_eth));
 
-        let calldata = SimulateMultiSwapCall {
-            swaps: vec![],
-            chain_swaps: true,
+        let calldata: Vec<u8>;
+        unsafe {
+            let swaps: Vec<contracts::simulator::OneSwapInfo> =
+                (&swaps as *const _ as *const Vec<contracts::simulator::simulator_abi::OneSwapInfo>).read();
+
+            calldata = SimulateMultiSwapCall { swaps, chain_swaps }.encode();
         }
-        .encode();
+
+        // swaps already consumed in `calldata.encode()`, but rust will drop it when it goes out of scope,
+        // so we need to forget it
+        std::mem::forget(swaps);
 
         let tx: TypedTransaction = TransactionRequest::default()
             .from(self.account)
@@ -235,18 +246,42 @@ where
             .data(calldata)
             .nonce(U256::zero())
             .gas(5000000)
-            .gas_price(GAS_PRICE)
-            .chain_id(1)
+            .gas_price(self.constants.gas_price)
+            .chain_id(self.chain)
             .into();
-        let result = self
-            .provider
-            .provider()
-            .call_raw(&tx)
-            .state(&self.state_override_set)
-            .block(block.number.unwrap().into())
-            .await?;
+
+        let mut result: Option<Bytes> = None;
+        for _i in 0..4 {
+            let _result: Result<Bytes, ProviderError> = self
+                .provider
+                .provider()
+                .call_raw(&tx)
+                .state(&state_override_set)
+                .block(block_number.into())
+                .await;
+
+            if _result.is_ok() {
+                result = Some(_result.unwrap());
+                break;
+            }
+
+            // https://github.com/ledgerwatch/erigon/issues/7548
+            let error: ProviderError = _result.unwrap_err();
+            if error.to_string().contains("hex number with leading zero digits") {
+                println!("Ignoring hex number with leading zero digits error");
+                continue;
+            }
+            
+            println!("new error: {:?}", error);
+
+            let value: &Value = RpcError::as_error_response(&error).unwrap().data.as_ref().unwrap();
+            let error: SimulatorAbiErrors = SimulatorAbiErrors::decode_hex(value.as_str().unwrap()).unwrap();
+
+            return Err(anyhow!("failed to call eth_call: {:?}", error));
+        }
+
+        let result: Bytes = result.unwrap();
         let out: U256 = SimulateMultiSwapReturn::decode(result)?.0;
-        println!("simulateMultiSwap eth_call result: {:?}", out);
 
         Ok(out)
     }

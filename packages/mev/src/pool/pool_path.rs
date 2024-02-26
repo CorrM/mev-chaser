@@ -13,7 +13,7 @@ use shared::token::CryptoToken;
 
 use super::PoolPathItem;
 
-fn make_uniswap_v2_protocol_swap_info(
+pub fn make_uniswap_v2_protocol_swap_info(
     router: Address,
     path: Vec<Address>,
     amount_in: impl Into<U256>,

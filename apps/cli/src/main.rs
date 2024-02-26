@@ -6,15 +6,16 @@ use std::{env::VarError, path::Path};
 use anyhow::{anyhow, Result};
 use ethers::prelude::H256;
 use ethers::types::U256;
-use ethers_core::types::{Address, Block, BlockNumber};
-use ethers_providers::{Middleware, Provider, Ws};
+use ethers_core::types::{Address, Block, BlockNumber, spoof, TransactionRequest};
+use ethers_core::utils::Geth;
+use ethers_providers::{Http, Middleware, Provider, RawCall, Ws};
 
 use amm::{AmmProtocol, UniswapV2Pool, UniswapV2Protocol};
 use commands::{AddTokenCommand, GenPoolCommand};
-use contracts::erc20_token::BalanceOfReturn;
+use contracts::balancer_flash_loan_recipient::OneSwapInfo;
 use database::{Database, DbDex, DbDexPool, DbToken, DbTokenNetwork};
 use evm_simulator::EvmSimulator;
-use mev::{BackRunnerStrategy, SolidityBridge};
+use mev::{make_uniswap_v2_protocol_swap_info, BackRunnerStrategy, SolidityBridge};
 use shared::logger::{error, info, Logger};
 use shared::{
     network::NetworkKind,
@@ -231,6 +232,7 @@ async fn main() -> Result<()> {
         Arc::clone(get_debug_node_providers(&env, &target_network).await?[0].raw_ws_provider());
     let simulator = EvmSimulator::new(debug_provider).await;
 
+    let user = Address::from_str("0x9cf277A22EB4c551c6E18F7a6C0ee1893bcB034f").unwrap();
     let weth = Address::from_str("0x7ceb23fd6bc0add59e62ac25578270cff1b9f619").unwrap();
     let usdc = Address::from_str("0x3c499c542cef5e3811e1192ce70d8cc03d5c3359").unwrap();
     let usdt = Address::from_str("0xc2132D05D31c914a87C6611C10748AEb04B58e8F").unwrap();
@@ -243,9 +245,42 @@ async fn main() -> Result<()> {
     //let weth_balance: Result<U256> = simulator.get_token_balance(weth, user);
     //info!("WETH balance: {:?}", weth_balance);
 
-    match simulator.get_token_balance_slot(weth, user).await {
-        Ok(idx) => println!("Balance storage slot: {:?}", idx),
-        Err(e) => info!("Tracing error: {e:?}"),
+    //let slot_idx: i32 = match simulator.get_token_balance_slot(weth, user).await {
+    //    Ok(idx) => idx,
+    //    Err(e) => panic!("Tracing error: {e:?}"),
+    //};
+
+    let slot_idx: i32 = 0;
+    info!("Balance storage slot: {:?}", slot_idx);
+
+    let swaps: Vec<OneSwapInfo> = vec![
+        make_uniswap_v2_protocol_swap_info(
+            Address::from_str("0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff").unwrap(),
+            vec![
+                Address::from_str("0xc2132D05D31c914a87C6611C10748AEb04B58e8F").unwrap(),
+                Address::from_str("0x346404079b3792a6c548B072B9C4DDdFb92948d5").unwrap(),
+            ],
+            10_000_000,
+            0,
+        )
+        .unwrap(),
+        make_uniswap_v2_protocol_swap_info(
+            Address::from_str("0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff").unwrap(),
+            vec![
+                Address::from_str("0x346404079b3792a6c548B072B9C4DDdFb92948d5").unwrap(),
+                Address::from_str("0xc2132D05D31c914a87C6611C10748AEb04B58e8F").unwrap(),
+            ],
+            0,
+            1_000_000,
+        )
+        .unwrap(),
+    ];
+
+    for _i in 0..20 {
+        let result: Result<U256> = simulator
+            .eth_call_simulate_multi_swap(block.number.unwrap(), swaps.clone(), true, slot_idx)
+            .await;
+        info!("Result: {:?}", result);
     }
 
     match simulator.get_proxy_implementation(usdc, block.number.unwrap()).await {
