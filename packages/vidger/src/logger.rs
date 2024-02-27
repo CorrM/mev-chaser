@@ -1,5 +1,4 @@
 use fern::colors::{Color, ColoredLevelConfig};
-
 pub use log::{debug, error, info, trace, warn};
 
 pub struct Logger;
