@@ -11,7 +11,14 @@ tokio = { workspace = true }
 tokio-stream = { workspace = true }
 async-scoped = { workspace = true }
 
+# Logging
+colored = { workspace = true }
+log = { workspace = true }
+fern = { workspace = true }
+chrono = { workspace = true }
+
 anyhow = { workspace = true }
+async-trait = { workspace = true }
 dashmap = { workspace = true }
 hashbrown = { workspace = true }
 serde = { workspace = true }

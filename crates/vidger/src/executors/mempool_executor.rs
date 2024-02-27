@@ -12,11 +12,6 @@ use ethers::{
 
 use crate::core::Executor;
 
-/// An executor that sends transactions to the mempool.
-pub struct MempoolExecutor<M> {
-    client: Arc<M>,
-}
-
 /// Information about the gas bid for a transaction.
 #[derive(Debug, Clone)]
 pub struct GasBidInfo {
@@ -33,10 +28,12 @@ pub struct SubmitTxToMempool {
     pub gas_bid_info: Option<GasBidInfo>,
 }
 
-impl<M> MempoolExecutor<M>
-where
-    M: Middleware,
-{
+/// An executor that sends transactions to the mempool.
+pub struct MempoolExecutor<M> {
+    client: Arc<M>,
+}
+
+impl<M> MempoolExecutor<M> {
     pub fn new(client: Arc<M>) -> Self {
         Self { client }
     }

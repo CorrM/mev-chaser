@@ -10,12 +10,7 @@ use crate::types::NewBlock;
 
 /// A collector that listens for new blocks, and generates a stream of
 /// [events](NewBlock) which contain the block number and hash.
-pub struct BlockCollector<M>
-where
-    M: Middleware + 'static,
-    M::Provider: PubsubClient,
-    M::Error: 'static,
-{
+pub struct BlockCollector<M> {
     provider: Arc<M>,
 }
 

@@ -1,5 +1,6 @@
 use anyhow::anyhow;
 use ethers::types::{Block, H256, U256, U64};
+
 use vidger::types::NewBlock;
 
 /// Calculate the next block base fee
@@ -20,8 +21,8 @@ fn calculate_next_block_base_fee(block: &BlockInfo) -> U256 {
     let calculate_next_block_base_fee: U256 = if current_gas_used == current_gas_target {
         current_base_fee_per_gas
     } else if current_gas_used > current_gas_target {
-        let gas_used_delta = current_gas_used - current_gas_target;
-        let base_fee_per_gas_delta = current_base_fee_per_gas * gas_used_delta / current_gas_target / 8;
+        let gas_used_delta: U256 = current_gas_used - current_gas_target;
+        let base_fee_per_gas_delta: U256 = current_base_fee_per_gas * gas_used_delta / current_gas_target / 8;
 
         current_base_fee_per_gas + base_fee_per_gas_delta
     } else {
