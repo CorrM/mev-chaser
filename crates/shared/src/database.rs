@@ -5,7 +5,7 @@ use rusqlite::{params, Connection, OptionalExtension, Result, Statement};
 
 use vidger::types::{CryptoToken, NetworkKind};
 
-use crate::amm::{AmmProtocol, AmmProtocolKind};
+use crate::amm::AmmProtocolKind;
 
 #[derive(Debug)]
 pub struct DbNetwork {
@@ -380,9 +380,9 @@ impl Database {
         Ok(self.get_token_and_network(&token_address, token.network())?.unwrap())
     }
 
-    pub fn get_dex_protocol(&self, protocol: &impl AmmProtocol) -> Result<Option<DbDexProtocol>> {
+    pub fn get_dex_protocol(&self, protocol: &AmmProtocolKind) -> Result<Option<DbDexProtocol>> {
         let mut stmt: Statement = self.db.prepare("SELECT * FROM DexProtocols WHERE name = ? LIMIT 1")?;
-        stmt.query_row(params![protocol.kind().to_string()], DbDexProtocol::from_row)
+        stmt.query_row(params![protocol.to_string()], DbDexProtocol::from_row)
             .optional()
     }
 
@@ -674,7 +674,7 @@ impl Database {
         Ok(ret)
     }
 
-    pub fn add_dex(&self, dex: &impl AmmProtocol, options: impl Into<String>) -> Result<DbDex> {
+    pub fn add_dex(&self, dex: &AmmProtocolKind, options: impl Into<String>) -> Result<DbDex> {
         let dex_protocol_id: Option<DbDexProtocol> = self.get_dex_protocol(dex)?;
         if dex_protocol_id.is_none() {
             return Err(rusqlite::Error::QueryReturnedNoRows);

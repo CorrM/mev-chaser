@@ -8,17 +8,17 @@ use ethers::utils::to_checksum;
 
 use vidger::types::CryptoToken;
 
-use crate::amm::AmmPool;
+use crate::amm::AmmPoolKind;
 use crate::types::PoolPath;
 
 #[derive(Clone)]
 pub struct PoolPathItem {
-    pub pool: Arc<RwLock<dyn AmmPool>>,
+    pub pool: Arc<RwLock<AmmPoolKind>>,
     pub zero_are_input: bool,
 }
 
 impl PoolPathItem {
-    pub(crate) fn new(pool: Arc<RwLock<dyn AmmPool>>, zero_are_input: bool) -> Self {
+    pub(crate) fn new(pool: Arc<RwLock<AmmPoolKind>>, zero_are_input: bool) -> Self {
         Self { pool, zero_are_input }
     }
 }
@@ -33,7 +33,7 @@ impl Debug for PoolPathItem {
 }
 
 fn dfs(
-    token_pools: &Vec<Arc<RwLock<dyn AmmPool>>>,
+    token_pools: &Vec<Arc<RwLock<AmmPoolKind>>>,
     current_token: &Arc<CryptoToken>,
     output_token: &Arc<CryptoToken>,
     visited_pools: &mut HashSet<usize>,
@@ -104,7 +104,7 @@ fn dfs(
 }
 
 pub fn generate_pool_paths(
-    pools: &Vec<Arc<RwLock<dyn AmmPool>>>,
+    pools: &Vec<Arc<RwLock<AmmPoolKind>>>,
     input_token: &Arc<CryptoToken>,
     output_token: &Arc<CryptoToken>,
     max_multi_hop: i32,

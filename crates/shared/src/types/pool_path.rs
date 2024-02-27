@@ -1,16 +1,16 @@
-use std::sync::Arc;
+use std::sync::{Arc, RwLockReadGuard};
 
 use anyhow::{anyhow, Result};
 use ethers::{
     abi::Token,
     types::{Address, Bytes, U256},
-    utils::to_checksum,
 };
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
 use contracts::balancer_flash_loan_recipient::OneSwapInfo;
 use vidger::types::CryptoToken;
 
-use crate::amm::{AmmProtocol, UniswapV2Protocol, UniswapV2Simulator};
+use crate::amm::{AmmPoolKind, AmmProtocolKind};
 use crate::utilities::PoolPathItem;
 
 pub fn make_uniswap_v2_protocol_swap_info(
@@ -80,6 +80,8 @@ impl PoolPath {
         &self.input_token
     }
 
+    // TODO: Make it solidity simulation
+    /*
     #[inline]
     pub fn get_amount_out_v2(&self, amount_in: U256) -> Option<U256> {
         let mut amount_out: U256 = amount_in;
@@ -146,34 +148,32 @@ impl PoolPath {
 
         (optimized_in, U256::from(profit))
     }
+    */
 
-    #[inline]
     pub fn make_swaps(&self, input_amount: U256, output_amount: U256) -> Result<(Vec<OneSwapInfo>, bool)> {
         if self.path.len() < 2 {
             return Err(anyhow!("Not enough paths"));
         }
 
-        let first_path_dex: Arc<dyn AmmProtocol> = self.path[0].pool.read().unwrap().dex();
+        let first_path_dex: Arc<AmmProtocolKind> = Arc::clone(self.path[0].pool.read().unwrap().dex());
         let all_are_same_dex: bool = self.path.iter().all(|p| {
-            let pool_read_lock = p.pool.read().unwrap();
-            Arc::ptr_eq(&pool_read_lock.dex(), &first_path_dex)
+            let pool_read_lock: RwLockReadGuard<AmmPoolKind> = p.pool.read().unwrap();
+            Arc::ptr_eq(pool_read_lock.dex(), &first_path_dex)
         });
 
         let mut swaps: Vec<OneSwapInfo> = Vec::new();
         let mut chain_swaps: bool = false;
         if all_are_same_dex {
-            let v2_dex_ptr: *mut UniswapV2Protocol = &*first_path_dex as *const _ as *mut UniswapV2Protocol;
-            let router: Address = unsafe { *(*v2_dex_ptr).router() };
+            let router: Address = *first_path_dex.router();
 
             let mut path: Vec<Address> = self
                 .path
-                .iter()
-                .map(|p| {
-                    let pool_read_lock = p.pool.read().unwrap();
-                    if p.zero_are_input {
-                        *pool_read_lock.token0().address()
+                .par_iter()
+                .map(|path| {
+                    if path.zero_are_input {
+                        *path.pool.read().unwrap().token0().address()
                     } else {
-                        *pool_read_lock.token1().address()
+                        *path.pool.read().unwrap().token1().address()
                     }
                 })
                 .collect();
@@ -187,15 +187,13 @@ impl PoolPath {
             }
 
             let Ok(swap) = make_uniswap_v2_protocol_swap_info(router, path, input_amount, output_amount) else {
-                return Err(anyhow!("Failed to make UniswapV2ProtocolSwapInfo"));
+                return Err(anyhow!("make_uniswap_v2_protocol_swap_info failed"));
             };
 
             swaps.push(swap);
         } else {
             for (idx, path_item) in self.path.iter().enumerate() {
-                let v2_dex_ptr: *mut UniswapV2Protocol =
-                    &*path_item.pool.read().unwrap().dex() as *const _ as *mut UniswapV2Protocol;
-                let router: Address = unsafe { *(*v2_dex_ptr).router() };
+                let router: Address = *path_item.pool.read().unwrap().dex().router();
 
                 let path: Vec<Address> = if path_item.zero_are_input {
                     let pool_read_lock = path_item.pool.read().unwrap();
@@ -206,7 +204,7 @@ impl PoolPath {
                 };
 
                 // Its chain swap, so only first swap needs input amount
-                let cur_intput_amount: U256 = if idx == 0 { input_amount } else { U256::zero() };
+                let cur_input_amount: U256 = if idx == 0 { input_amount } else { U256::zero() };
 
                 // Its chain swap, so only last swap needs output amount
                 let cur_output_amount: U256 = if idx == self.path.len() - 1 {
@@ -215,9 +213,9 @@ impl PoolPath {
                     U256::zero()
                 };
 
-                let Ok(swap) = make_uniswap_v2_protocol_swap_info(router, path, cur_intput_amount, cur_output_amount)
+                let Ok(swap) = make_uniswap_v2_protocol_swap_info(router, path, cur_input_amount, cur_output_amount)
                 else {
-                    return Err(anyhow!("Failed to make UniswapV2ProtocolSwapInfo"));
+                    return Err(anyhow!("make_uniswap_v2_protocol_swap_info failed"));
                 };
 
                 swaps.push(swap);

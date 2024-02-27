@@ -10,8 +10,7 @@ use ethers::types::{
 use ethers::{
     abi,
     abi::{AbiDecode, AbiEncode},
-    middleware::Middleware,
-    providers::{ProviderError, RawCall, RpcError},
+    providers::{Middleware, ProviderError, RawCall, RpcError},
     types::spoof::State,
     types::transaction::eip2718::TypedTransaction,
     types::transaction::eip2930::AccessList,

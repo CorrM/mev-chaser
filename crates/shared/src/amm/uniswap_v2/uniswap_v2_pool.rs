@@ -1,22 +1,24 @@
+use std::sync::Arc;
+
 use anyhow::Result;
 use ethers::types::Address;
-use std::sync::Arc;
+
 use vidger::types::CryptoToken;
 
-use crate::amm::{AmmPool, AmmProtocol, UniswapV2Protocol};
+use crate::amm::{AmmPool, AmmProtocolKind};
 
 #[derive(Clone)]
 pub struct UniswapV2Pool {
     address: Address,
-    dex: Arc<UniswapV2Protocol>,
+    dex: Arc<AmmProtocolKind>,
     token0: Arc<CryptoToken>,
     token1: Arc<CryptoToken>,
 }
 
 impl UniswapV2Pool {
-    pub fn new(
+    pub(crate) fn new(
         address: Address,
-        dex: Arc<UniswapV2Protocol>,
+        dex: Arc<AmmProtocolKind>,
         token0: Arc<CryptoToken>,
         token1: Arc<CryptoToken>,
     ) -> Result<Self> {
@@ -36,8 +38,8 @@ impl AmmPool for UniswapV2Pool {
     }
 
     #[inline]
-    fn dex(&self) -> Arc<dyn AmmProtocol> {
-        self.dex.clone()
+    fn dex(&self) -> &Arc<AmmProtocolKind> {
+        &self.dex
     }
 
     #[inline]

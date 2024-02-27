@@ -1,29 +1,30 @@
-use amm::{AmmProtocol, UniswapV2Pool, UniswapV2Protocol};
+use std::env;
+use std::str::FromStr;
+use std::sync::Arc;
+use std::{env::VarError, path::Path};
+
 use anyhow::{anyhow, Result};
+use ethers::prelude::H256;
+use ethers::types::U256;
+
+use amm::{AmmProtocol, UniswapV2Pool, UniswapV2Protocol};
 use commands::{AddTokenCommand, GenPoolCommand};
 use contracts::balancer_flash_loan_recipient::OneSwapInfo;
 use database::{Database, DbDex, DbDexPool, DbToken, DbTokenNetwork};
-use ethers::prelude::H256;
-use ethers::types::U256;
-use ethers_core::types::{Address, Block, BlockNumber, spoof, TransactionRequest};
+use ethers_core::types::{spoof, Address, Block, BlockNumber, TransactionRequest};
 use ethers_core::utils::Geth;
 use ethers_providers::{Http, Middleware, Provider, RawCall, Ws};
 use evm_simulator::EvmSimulator;
-use mev::{BackRunnerStrategy, make_uniswap_v2_protocol_swap_info, SolidityBridge};
+use mev::{make_uniswap_v2_protocol_swap_info, BackRunnerStrategy, SolidityBridge};
+use shared::logger::{error, info, Logger};
 use shared::{
     network::NetworkKind,
     provider::{NodeProvider, NodeProviderManager, NodeProviderNetworkInfo},
     token::{CryptoToken, TokenManager},
 };
-use shared::logger::{error, info, Logger};
-use std::{env::VarError, path::Path};
-use std::env;
-use std::str::FromStr;
-use std::sync::Arc;
 use utilities::env::Env;
 
 mod commands;
-mod database;
 mod utilities;
 
 fn read_env_file() -> Result<Env> {

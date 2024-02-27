@@ -13,6 +13,7 @@ rayon = "1.5"
 reqwest = "0.11"
 rusqlite = { version = "0.31.0", features = ["bundled"] }
 dashmap = { version = "5.5", features = ["rayon"] }
+hashbrown = { version = "0.14", features = ["rayon", "inline-more"] }
 serde = "1.0"
 serde_json = "1.0"
 tokio = { version = "1.36", features = ["full"] }

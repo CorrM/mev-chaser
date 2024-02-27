@@ -1,8 +1,8 @@
+use std::sync::Arc;
+
 use anyhow::Result;
 use async_trait::async_trait;
-use ethers::middleware::Middleware;
-use ethers::providers::PubsubClient;
-use std::sync::Arc;
+use ethers::providers::{Middleware, PubsubClient};
 use tokio_stream::StreamExt;
 
 use crate::core::{Collector, CollectorStream};

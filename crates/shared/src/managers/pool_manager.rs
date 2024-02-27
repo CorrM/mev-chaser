@@ -1,22 +1,35 @@
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
+use ethers::providers::Middleware;
 use ethers::types::Address;
+use hashbrown::HashMap;
 
+use crate::amm::AmmPoolKind;
 use crate::types::PoolPath;
 
-pub struct PoolPathsManager {
+pub struct PoolManager<M> {
+    /// Provider
+    provider: Arc<M>,
+    /// Maps pool address to pool
+    pools: HashMap<Address, AmmPoolKind>,
+    /// Maps pool address to paths
     address_to_paths: HashMap<Address, Vec<Arc<PoolPath>>>,
 }
 
-impl PoolPathsManager {
-    pub fn new() -> Self {
-        PoolPathsManager {
+impl<M> PoolManager<M>
+where
+    M: Middleware + 'static,
+{
+    pub fn new(provider: Arc<M>) -> Self {
+        PoolManager {
+            provider,
+            pools: HashMap::new(),
             address_to_paths: HashMap::new(),
         }
     }
 
     pub fn add_path(&mut self, path: PoolPath) {
-        let arc_path: Arc<PoolPath> = Arc::new(path);
+        let arc_path = Arc::new(path);
 
         for path_item in arc_path.path().iter() {
             self.address_to_paths

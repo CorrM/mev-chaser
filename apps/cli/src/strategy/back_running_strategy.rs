@@ -1,8 +1,8 @@
+use std::sync::Arc;
+
 use anyhow::Result;
 use async_trait::async_trait;
-use ethers::middleware::Middleware;
 use ethers::signers::LocalWallet;
-use std::sync::Arc;
 
 use crate::vidger_types::{Actions, Events};
 
@@ -42,9 +42,7 @@ impl<M: Middleware + 'static> Strategy<Events, Actions> for BackRunningStrategy<
     /// Setup by getting all pools to monitor for swaps
     async fn sync_state(&mut self) -> Result<()> {
         self.pool_manager.setup().await?;
-        self.sando_state_manager
-            .setup(self.provider.clone())
-            .await?;
+        self.sando_state_manager.setup(self.provider.clone()).await?;
         self.block_manager.setup(self.provider.clone()).await?;
         Ok(())
     }

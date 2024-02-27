@@ -1,6 +1,10 @@
+use std::sync::Arc;
+use std::sync::RwLock;
+use std::time::Instant;
+
 use amm::{
-    AmmPool, AmmProtocol, AmmProtocolKind, uniswap_v2_utils::batch_update_uniswap_v2_pools,
-    UniswapV2Protocol, update_touched_pool_reserves,
+    uniswap_v2_utils::batch_update_uniswap_v2_pools, update_touched_pool_reserves, AmmPool, AmmProtocol,
+    AmmProtocolKind, UniswapV2Protocol,
 };
 use anyhow::Result;
 use contracts::balancer_flash_loan_recipient::OneSwapInfo;
@@ -15,13 +19,10 @@ use shared::{
     network_streams::{NetworkEvent, NetworkStreamManagerBuilder, NetworkStreamsManager, NewBlock},
     token::{CryptoToken, TokenManager},
 };
-use std::{collections::HashMap, sync::Arc};
-use std::sync::RwLock;
-use std::time::Instant;
 use tokio::sync::broadcast::Receiver;
 
-use crate::{PriceManager, ProviderHelper, SolidityBridge};
 use crate::pool::{generate_pool_paths, PoolPath, PoolPathsContainer};
+use crate::{PriceManager, ProviderHelper, SolidityBridge};
 
 //fn submit_slippage(amount: U256) -> U256 {
 //    // 0.5% slippage (995/1000)

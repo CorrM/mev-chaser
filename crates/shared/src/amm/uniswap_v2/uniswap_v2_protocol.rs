@@ -1,42 +1,23 @@
+use std::{collections::HashMap, str::FromStr};
+
 use anyhow::Result;
-use contracts::uniswap_v2_pair::UNISWAPV2PAIRABI_ABI;
 use ethers::{
     abi::{Log, RawLog},
     types::{Address, CallLogFrame},
 };
-use std::{
-    collections::HashMap,
-    str::FromStr,
-    sync::{Arc, RwLock},
-};
 
-use crate::amm::{AmmPool, AmmProtocol, UniswapV2Pool};
+use contracts::uniswap_v2_pair::UNISWAPV2PAIRABI_ABI;
+
+use crate::amm::AmmProtocol;
 
 #[derive(Clone)]
 pub struct UniswapV2Protocol {
     name: String,
-    fees: u32,
-    pools: Vec<Arc<RwLock<UniswapV2Pool>>>,
     factory: Address,
     router: Address,
 }
 
 impl UniswapV2Protocol {
-    pub fn new(
-        name: impl Into<String>,
-        fees: u32,
-        factory: impl Into<String>,
-        router: impl Into<String>,
-    ) -> Result<Self> {
-        Ok(Self {
-            name: name.into(),
-            fees,
-            pools: Vec::new(),
-            factory: Address::from_str(&factory.into())?,
-            router: Address::from_str(&router.into())?,
-        })
-    }
-
     #[inline]
     pub fn decode_pair_trace_logs(trace_log: &CallLogFrame) -> Option<HashMap<String, (Address, Log)>> {
         let mut ret: HashMap<String, (Address, Log)> = HashMap::new();
@@ -97,6 +78,21 @@ impl UniswapV2Protocol {
 
         Some((trace_log.address.unwrap(), log))
     }
+}
+
+impl UniswapV2Protocol {
+    pub(crate) fn new(name: impl Into<String>, factory: impl Into<String>, router: impl Into<String>) -> Result<Self> {
+        Ok(Self {
+            name: name.into(),
+            factory: Address::from_str(&factory.into())?,
+            router: Address::from_str(&router.into())?,
+        })
+    }
+
+    #[inline]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
 
     #[inline]
     pub fn factory(&self) -> &Address {
@@ -107,22 +103,10 @@ impl UniswapV2Protocol {
     pub fn router(&self) -> &Address {
         &self.router
     }
-
-    #[inline]
-    pub fn add_pool(&mut self, pool: UniswapV2Pool) {
-        self.pools.push(Arc::new(RwLock::new(pool)));
-    }
 }
 
 impl AmmProtocol for UniswapV2Protocol {
     fn name(&self) -> &str {
         &self.name
-    }
-
-    fn pools(&self) -> Vec<Arc<RwLock<dyn AmmPool>>> {
-        self.pools
-            .iter()
-            .map(|p| Arc::clone(p) as Arc<RwLock<dyn AmmPool>>)
-            .collect()
     }
 }
