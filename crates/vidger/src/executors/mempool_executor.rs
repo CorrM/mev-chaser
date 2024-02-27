@@ -1,15 +1,16 @@
+use std::{
+    ops::{Div, Mul},
+    sync::Arc,
+};
+
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use ethers::{
     providers::Middleware,
     types::{transaction::eip2718::TypedTransaction, U256},
 };
-use std::{
-    ops::{Div, Mul},
-    sync::Arc,
-};
 
-use crate::types::Executor;
+use crate::core::Executor;
 
 /// An executor that sends transactions to the mempool.
 pub struct MempoolExecutor<M> {
@@ -48,7 +49,7 @@ where
     M::Error: 'static,
 {
     /// Send a transaction to the mempool.
-    async fn execute(&self, mut action: SubmitTxToMempool) -> Result<()> {
+    async fn execute(&self, action: &mut SubmitTxToMempool) -> Result<()> {
         let gas_usage: U256 = self
             .client
             .estimate_gas(&action.tx, None)
@@ -56,7 +57,7 @@ where
             .context("Error estimating gas usage: {}")?;
 
         let bid_gas_price: U256;
-        if let Some(gas_bid_info) = action.gas_bid_info {
+        if let Some(ref gas_bid_info) = action.gas_bid_info {
             // gas price at which we'd break even, meaning 100% of profit goes to validator
             let breakeven_gas_price: U256 = gas_bid_info.total_profit / gas_usage;
             // gas price corresponding to bid percentage
@@ -70,7 +71,7 @@ where
         }
 
         action.tx.set_gas_price(bid_gas_price);
-        self.client.send_transaction(action.tx, None).await?;
+        self.client.send_transaction(action.tx.clone(), None).await?;
         Ok(())
     }
 }

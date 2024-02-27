@@ -1,6 +1,7 @@
 use ethers::types::Transaction;
-use vidger::collectors::block_collector::NewBlock;
+
 use vidger::executors::mempool_executor::SubmitTxToMempool;
+use vidger::types::NewBlock;
 
 /// Convenience enum containing all the events that can be emitted by collectors.
 #[derive(Clone, Debug)]

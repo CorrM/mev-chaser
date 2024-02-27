@@ -1,18 +1,17 @@
 use std::{str::FromStr, sync::Arc};
 
 use anyhow::Result;
-
-use contracts::{uniswap_v2_factory::UniswapV2FactoryAbi, uniswap_v2_pair::UniswapV2PairAbi};
-use ethers_contract::Multicall;
-use ethers_core::{
+use ethers::{
     abi::Token,
+    contract::Multicall,
+    providers::Middleware,
     types::{Address, Bytes},
     utils::to_checksum,
 };
-use ethers_providers::{Http, Middleware, Provider};
-use shared::network::NetworkKind;
 
-use crate::database::{Database, DbDex, DbDexNetwork, DbDexProtocol, DbToken};
+use contracts::{uniswap_v2_factory::UniswapV2FactoryAbi, uniswap_v2_pair::UniswapV2PairAbi};
+use shared::database::{Database, DbDex, DbDexNetwork, DbDexProtocol, DbToken};
+use vidger::types::NetworkKind;
 
 fn generate_pairs<T>(list: &[T]) -> Vec<(&T, &T)> {
     let mut pairs: Vec<(&T, &T)> = Vec::new();

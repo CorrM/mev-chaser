@@ -1,12 +1,14 @@
-use amm::{AmmPool, UniswapV2Simulator};
-use anyhow::{anyhow, Result};
-use dashmap::DashMap;
-use ethers::types::Address;
 use std::{
     collections::HashMap,
     sync::{Arc, RwLock},
     time::Duration,
 };
+
+use anyhow::{anyhow, Result};
+use dashmap::DashMap;
+use ethers::types::Address;
+
+use crate::amm::{AmmPool, UniswapV2Simulator};
 
 pub struct PriceManager {
     network_native_token: Address,
@@ -74,6 +76,7 @@ impl PriceManager {
     }
 
     fn get_native_token_price_impl(&self, in_term_of_token: &Address) -> Result<f64> {
+        panic!("Use simulator to get price");
         let price_pool: Option<&Arc<RwLock<dyn AmmPool>>> = self.price_calc_pools.get(in_term_of_token);
         if price_pool.is_none() {
             return Err(anyhow!("Could not find pool for token({})", in_term_of_token));

@@ -1,13 +1,15 @@
-use amm::AmmPool;
-use ethers_core::utils::to_checksum;
-use shared::token::CryptoToken;
+use std::fmt::Debug;
 use std::{
     collections::HashSet,
     sync::{Arc, RwLock},
 };
-use std::fmt::Debug;
 
-use super::{pool_path_item::PoolPathItem, PoolPath};
+use ethers::utils::to_checksum;
+
+use vidger::types::CryptoToken;
+
+use crate::amm::AmmPool;
+use crate::types::PoolPath;
 
 #[derive(Clone)]
 pub struct PoolPathItem {
@@ -48,7 +50,7 @@ fn dfs(
         if visited_pools.contains(&idx) {
             continue;
         }
-        
+
         let next_pool_read_lock = next_pool.read().unwrap();
         let token0: &Arc<CryptoToken> = next_pool_read_lock.token0();
         let token1: &Arc<CryptoToken> = next_pool_read_lock.token1();

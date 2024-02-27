@@ -1,12 +1,11 @@
-use amm::{AmmProtocol, AmmProtocolKind};
-use ethers::{
-    types::Address,
-    utils::to_checksum,
-};
-use rusqlite::{Connection, OptionalExtension, params, Result, Statement};
-use shared::network::NetworkKind;
-use shared::token::CryptoToken;
 use std::path::Path;
+
+use ethers::{types::Address, utils::to_checksum};
+use rusqlite::{params, Connection, OptionalExtension, Result, Statement};
+
+use vidger::types::{CryptoToken, NetworkKind};
+
+use crate::amm::{AmmProtocol, AmmProtocolKind};
 
 #[derive(Debug)]
 pub struct DbNetwork {
@@ -581,13 +580,7 @@ impl Database {
         )?;
 
         stmt.query_row(
-            params![
-                db_dex.id,
-                db_network.unwrap().id,
-                pool_address,
-                token0_id,
-                token1_id
-            ],
+            params![db_dex.id, db_network.unwrap().id, pool_address, token0_id, token1_id],
             DbDexPool::from_row,
         )
     }
@@ -609,14 +602,12 @@ impl Database {
             return Err(rusqlite::Error::QueryReturnedNoRows);
         }
 
-        let db_token0: Option<(DbToken, DbTokenNetwork)> =
-            self.get_token_and_network(token_a, network)?;
+        let db_token0: Option<(DbToken, DbTokenNetwork)> = self.get_token_and_network(token_a, network)?;
         if db_token0.is_none() {
             return Err(rusqlite::Error::QueryReturnedNoRows);
         }
 
-        let db_token1: Option<(DbToken, DbTokenNetwork)> =
-            self.get_token_and_network(token_b, network)?;
+        let db_token1: Option<(DbToken, DbTokenNetwork)> = self.get_token_and_network(token_b, network)?;
         if db_token1.is_none() {
             return Err(rusqlite::Error::QueryReturnedNoRows);
         }

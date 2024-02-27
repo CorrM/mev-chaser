@@ -1,7 +1,8 @@
-use ethers::types::Address;
 use std::{collections::HashMap, sync::Arc};
 
-use super::PoolPath;
+use ethers::types::Address;
+
+use crate::types::PoolPath;
 
 pub struct PoolPathsManager {
     address_to_paths: HashMap<Address, Vec<Arc<PoolPath>>>,

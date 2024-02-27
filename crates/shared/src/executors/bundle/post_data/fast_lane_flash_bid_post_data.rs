@@ -2,7 +2,8 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct FastLaneFlashBidPostData {
-    jsonrpc: String,
+    #[serde(rename = "jsonrpc")]
+    json_rpc: String,
     id: u32,
     method: String,
     params: Vec<Vec<String>>,
@@ -11,7 +12,7 @@ pub struct FastLaneFlashBidPostData {
 impl FastLaneFlashBidPostData {
     pub(super) fn new(bundle: Vec<String>, id: u32) -> Self {
         Self {
-            jsonrpc: "2.0".to_string(),
+            json_rpc: "2.0".to_string(),
             id,
             method: "pfl_addSearcherBundle".to_string(),
             params: vec![bundle],

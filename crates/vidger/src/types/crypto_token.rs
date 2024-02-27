@@ -1,10 +1,11 @@
+use std::str::FromStr;
+
 use anyhow::Result;
 use ethers::types::{Address, U256};
-use std::str::FromStr;
 
 use crate::types::NetworkKind;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct CryptoToken {
     network: NetworkKind,
     address: Address,

@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 shared = { path = "../../crates/shared" }
+vidger = { path = "../../crates/vidger" }
 contracts = { path = "../../crates/contracts" }
 
 anyhow = { workspace = true }

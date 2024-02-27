@@ -1,8 +1,8 @@
-use ethers::{types::Address, utils::to_checksum};
 use std::sync::Arc;
-use vidger::types::CryptoToken;
 
-use crate::types::NetworkKind;
+use ethers::{types::Address, utils::to_checksum};
+
+use vidger::types::{CryptoToken, NetworkKind};
 
 pub struct TokenManager {
     tokens: Vec<Arc<CryptoToken>>,

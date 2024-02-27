@@ -1,15 +1,17 @@
-use amm::{AmmProtocol, UniswapV2Protocol, UniswapV2Simulator};
+use std::sync::Arc;
+
 use anyhow::{anyhow, Result};
-use contracts::balancer_flash_loan_recipient::OneSwapInfo;
-use ethers_core::{
+use ethers::{
     abi::Token,
     types::{Address, Bytes, U256},
     utils::to_checksum,
 };
-use std::sync::Arc;
+
+use contracts::balancer_flash_loan_recipient::OneSwapInfo;
 use vidger::types::CryptoToken;
 
-use super::PoolPathItem;
+use crate::amm::{AmmProtocol, UniswapV2Protocol, UniswapV2Simulator};
+use crate::utilities::PoolPathItem;
 
 pub fn make_uniswap_v2_protocol_swap_info(
     router: Address,

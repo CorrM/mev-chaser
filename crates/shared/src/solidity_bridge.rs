@@ -1,23 +1,24 @@
+use std::{str::FromStr, sync::Arc};
+
 use anyhow::Result;
+use ethers::{
+    contract::{ContractError, FunctionCall},
+    core::{
+        k256::ecdsa::SigningKey,
+        types::{Address, TxHash, U256},
+    },
+    middleware::{Middleware, SignerMiddleware},
+    signers::{LocalWallet, Signer, Wallet},
+    types::{transaction::eip2718::TypedTransaction, Bytes, Signature, Transaction, I256},
+    utils,
+};
+
 use contracts::{
     balancer_flash_loan_recipient::{BalancerFlashLoanRecipientAbi, OneSwapInfo},
     fastlane_auction_handler::FastLaneAuctionHandlerAbi,
 };
-use ethers::{
-    middleware::SignerMiddleware,
-    signers::{LocalWallet, Signer, Wallet},
-    types::{Bytes, I256, Signature, Transaction, transaction::eip2718::TypedTransaction},
-    utils,
-};
-use ethers_contract::{ContractError, FunctionCall};
-use ethers_core::{
-    k256::ecdsa::SigningKey,
-    types::{Address, TxHash, U256},
-};
-use ethers_providers::Middleware;
-use std::{str::FromStr, sync::Arc};
 
-use crate::{BundleProvider, fast_bundle_provider};
+use crate::executors::bundle::{fast_bundle_provider, BundleProvider};
 
 type GetLoanThenSwapChainCall<M> =
     FunctionCall<Arc<SignerMiddleware<Arc<M>, Wallet<SigningKey>>>, SignerMiddleware<Arc<M>, Wallet<SigningKey>>, I256>;
@@ -168,7 +169,8 @@ where
         );
         let function_call_data: Bytes = my_contract_call.calldata().unwrap();
 
-        let nonce: U256 = self.signer
+        let nonce: U256 = self
+            .signer
             .get_transaction_count(self.signer.address(), None)
             .await
             .unwrap_or_default();

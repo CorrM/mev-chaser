@@ -1,37 +1,51 @@
-use anyhow::{anyhow, Result};
-use contracts::balancer_flash_loan_recipient::OneSwapInfo;
-use contracts::erc20_token::{BalanceOfCall, BalanceOfReturn};
-use contracts::simulator::{
-    SimulateMultiSwapCall, SimulateMultiSwapReturn, SIMULATORABI_DEPLOYED_BYTECODE, SimulatorAbiErrors,
-};
-use ethers::{
-    abi::{self, AbiEncode},
-    abi::AbiDecode,
-    middleware::Middleware,
-    providers::{ProviderError, RawCall, RpcError},
-    types::{
-        AccountState, BigEndianHash, BlockId, Bytes, Eip1559TransactionRequest, GethDebugBuiltInTracerType, GethDebugTracerType,
-        GethDebugTracingCallOptions, GethDebugTracingOptions, GethTrace, GethTraceFrame, NameOrAddress,
-        PreStateFrame, PreStateMode, spoof, TransactionRequest, TxHash, U64,
-    },
-    types::{Address, Block, BlockNumber, H256, U256},
-    types::spoof::State,
-    types::transaction::eip2718::TypedTransaction,
-    types::transaction::eip2930::AccessList,
-    utils::__serde_json::Value,
-    utils::keccak256,
-};
-use ethers::prelude::{
-    CallConfig, CallFrame, CallLogFrame, GethDebugBuiltInTracerConfig, GethDebugTracerConfig, Transaction,
-};
 use std::collections::btree_map::Keys;
 use std::collections::BTreeMap;
 use std::str::FromStr;
 use std::sync::Arc;
 
+use anyhow::{anyhow, Result};
+use ethers::types::{
+    CallConfig, CallFrame, CallLogFrame, GethDebugBuiltInTracerConfig, GethDebugTracerConfig, Transaction,
+};
+use ethers::{
+    abi,
+    abi::{AbiDecode, AbiEncode},
+    middleware::Middleware,
+    providers::{ProviderError, RawCall, RpcError},
+    types::spoof::State,
+    types::transaction::eip2718::TypedTransaction,
+    types::transaction::eip2930::AccessList,
+    types::{
+        spoof, AccountState, BigEndianHash, BlockId, Bytes, Eip1559TransactionRequest, GethDebugBuiltInTracerType,
+        GethDebugTracerType, GethDebugTracingCallOptions, GethDebugTracingOptions, GethTrace, GethTraceFrame,
+        NameOrAddress, PreStateFrame, PreStateMode, TransactionRequest, TxHash, U64,
+    },
+    types::{Address, Block, BlockNumber, H256, U256},
+    utils::__serde_json::Value,
+    utils::keccak256,
+};
+
+use contracts::balancer_flash_loan_recipient::OneSwapInfo;
+use contracts::erc20_token::{BalanceOfCall, BalanceOfReturn};
+use contracts::simulator::{
+    SimulateMultiSwapCall, SimulateMultiSwapReturn, SimulatorAbiErrors, SIMULATORABI_DEPLOYED_BYTECODE,
+};
+
 struct Constants {
     pub ten_eth: u64,
     pub gas_price: U256,
+}
+
+fn extract_trace_logs(call_frame: &CallFrame, logs: &mut Vec<CallLogFrame>) {
+    if let Some(ref logs_vec) = call_frame.logs {
+        logs.extend(logs_vec.iter().cloned());
+    }
+
+    if let Some(ref calls_vec) = call_frame.calls {
+        for call in calls_vec {
+            extract_trace_logs(call, logs);
+        }
+    }
 }
 
 pub struct EvmSimulator<M>
@@ -106,25 +120,9 @@ where
         Ok(trace)
     }
 
-    pub fn extract_trace_logs(call_frame: &CallFrame, logs: &mut Vec<CallLogFrame>) {
-        if let Some(ref logs_vec) = call_frame.logs {
-            logs.extend(logs_vec.iter().cloned());
-        }
-
-        if let Some(ref calls_vec) = call_frame.calls {
-            for call in calls_vec {
-                EvmSimulator::extract_trace_logs(call, logs);
-            }
-        }
-    }
-
-    pub async fn debug_trace_call<M>(
-        &self,
-        tx: &Transaction,
-        block_number: Option<U64>,
-    ) -> Result<Option<CallFrame>>
-        where
-            M: Middleware + 'static,
+    pub async fn debug_trace_call(&self, tx: &Transaction, block_number: Option<U64>) -> Result<Option<CallFrame>>
+    where
+        M: Middleware + 'static,
     {
         /*
         let tracer = Some(GethDebugTracerType::BuiltInTracer(
@@ -228,7 +226,7 @@ where
     }
 
     pub async fn get_token_balance_slot(&self, token: Address, account: Address) -> Result<i32> {
-        let calldata: Bytes = BalanceOfCall { who: account }.encode().into();
+        let calldata: Bytes = AbiEncode::encode(BalanceOfCall { who: account }).into();
 
         let block_task = self.provider.get_block(BlockNumber::Latest);
         let nonce_task = self

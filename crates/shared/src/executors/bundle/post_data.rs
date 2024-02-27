@@ -1,14 +1,15 @@
 use ethers::types::U64;
-pub use fast_lane_fast_bid_post_data::*;
-pub use fast_lane_flash_bid_post_data::*;
-pub use marlin_post_data::*;
 use serde::{Deserialize, Serialize};
 
-use crate::relay_type::RelayType;
+use crate::executors::bundle::post_data::{
+    fast_lane_fast_bid_post_data::FastLaneFastBidPostData, fast_lane_flash_bid_post_data::FastLaneFlashBidPostData,
+    marlin_post_data::MarlinPostData,
+};
+use crate::executors::bundle::RelayType;
 
-pub mod fast_lane_fast_bid_post_data;
-pub mod fast_lane_flash_bid_post_data;
-pub mod marlin_post_data;
+mod fast_lane_fast_bid_post_data;
+mod fast_lane_flash_bid_post_data;
+mod marlin_post_data;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum PostData {

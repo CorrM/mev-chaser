@@ -1,15 +1,15 @@
-use ethers::types::U64;
-use reqwest::Client;
-use reqwest::header::{CONNECTION, HeaderValue};
-use reqwest::header::CONTENT_TYPE;
 use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
+
+use ethers::types::U64;
+use reqwest::header::CONTENT_TYPE;
+use reqwest::header::{HeaderValue, CONNECTION};
+use reqwest::Client;
 use tokio::sync::Mutex;
 
-use crate::post_data::PostData;
-use crate::relay_type::RelayType;
+use crate::executors::bundle::{PostData, RelayType};
 
 const FLASH_RELAY: &str = "https://beta-rpc.fastlane-labs.xyz";
 const MARLIN_RELAY: &str = "https://bor.txrelay.marlin.org";
@@ -32,7 +32,7 @@ impl BundleProvider {
             .pool_idle_timeout(None)
             .build()
             .unwrap();
-        
+
         Self {
             client: Arc::new(client),
             id: Mutex::new(1),
@@ -75,12 +75,7 @@ impl BundleProvider {
     }
 
     pub async fn send_flashbid_bundle(&self, bundle: Vec<String>) -> reqwest::Result<String> {
-        let post_data_fast_lane = PostData::new(
-            bundle,
-            self.get_id().await,
-            RelayType::FastLaneFlashBid,
-            U64::zero(),
-        );
+        let post_data_fast_lane = PostData::new(bundle, self.get_id().await, RelayType::FastLaneFlashBid, U64::zero());
 
         self.send_bundle(post_data_fast_lane).await
     }
@@ -97,6 +92,8 @@ impl BundleProvider {
         // let json_post = post_data_fast_lane.to_json();
         // write_to_json("test.json", &json_post);
 
-        self.send_bundle(post_data_fast_lane).await.unwrap_or_else(|e| e.to_string())
+        self.send_bundle(post_data_fast_lane)
+            .await
+            .unwrap_or_else(|e| e.to_string())
     }
 }

@@ -1,6 +1,8 @@
+use std::pin::Pin;
+
 use async_trait::async_trait;
 use futures::Stream;
-use std::pin::Pin;
+use tokio_stream::StreamExt;
 
 /// A stream of events emitted by a [Collector](Collector).
 pub type CollectorStream<'a, E> = Pin<Box<dyn Stream<Item = E> + Send + 'a>>;
