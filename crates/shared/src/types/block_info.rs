@@ -51,8 +51,8 @@ impl BlockInfo {
     pub fn get_next_block(&self) -> BlockInfo {
         BlockInfo {
             number: self.number + 1,
-            base_fee_per_gas: calculate_next_block_base_fee(&self),
-            timestamp: self.timestamp + 12,
+            base_fee_per_gas: calculate_next_block_base_fee(self),
+            timestamp: self.timestamp + 2, // TODO: Polygon block is 2 seconds, Ethereum block is 10-15 seconds
             gas_used: None,
             gas_limit: None,
         }
@@ -62,7 +62,7 @@ impl BlockInfo {
 impl TryFrom<Block<H256>> for BlockInfo {
     type Error = anyhow::Error;
 
-    fn try_from(value: Block<H256>) -> std::result::Result<Self, Self::Error> {
+    fn try_from(value: Block<H256>) -> Result<Self, Self::Error> {
         Ok(BlockInfo {
             number: value
                 .number

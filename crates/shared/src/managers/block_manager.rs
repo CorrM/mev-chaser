@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 use colored::Colorize;
+use ethers::prelude::{Block, H256};
 use ethers::{providers::Middleware, types::BlockNumber};
 
 use crate::{log_new_block_info, startup_info_log, types::BlockInfo};
@@ -20,7 +21,7 @@ impl BlockManager {
     }
 
     pub async fn setup<M: Middleware + 'static>(&mut self, provider: Arc<M>) -> Result<()> {
-        let latest_block = provider
+        let latest_block: Block<H256> = provider
             .get_block(BlockNumber::Latest)
             .await
             .map_err(|_| anyhow!("Failed to get current block"))?
@@ -50,5 +51,11 @@ impl BlockManager {
         log_new_block_info!(latest_block);
         self.latest_block = latest_block;
         self.next_block = latest_block.get_next_block();
+    }
+}
+
+impl Default for BlockManager {
+    fn default() -> Self {
+        Self::new()
     }
 }

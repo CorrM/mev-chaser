@@ -5,12 +5,12 @@ use std::{
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use ethers::{
-    providers::Middleware,
-    types::{transaction::eip2718::TypedTransaction, U256},
-};
+use ethers::abi::AbiEncode;
+use ethers::prelude::PendingTransaction;
+use ethers::{providers::Middleware, types::U256};
 
 use crate::core::Executor;
+use crate::types::{Notification, SubmitTxInfo};
 
 /// Information about the gas bid for a transaction.
 #[derive(Debug, Clone)]
@@ -20,12 +20,6 @@ pub struct GasBidInfo {
 
     /// Percentage of bid profit to use for gas
     pub bid_percentage: u64,
-}
-
-#[derive(Debug, Clone)]
-pub struct SubmitTxToMempool {
-    pub tx: TypedTransaction,
-    pub gas_bid_info: Option<GasBidInfo>,
 }
 
 /// An executor that sends transactions to the mempool.
@@ -40,13 +34,13 @@ impl<M> MempoolExecutor<M> {
 }
 
 #[async_trait]
-impl<M> Executor<SubmitTxToMempool> for MempoolExecutor<M>
+impl<M> Executor<SubmitTxInfo> for MempoolExecutor<M>
 where
     M: Middleware,
     M::Error: 'static,
 {
     /// Send a transaction to the mempool.
-    async fn execute(&self, action: &mut SubmitTxToMempool) -> Result<()> {
+    async fn execute(&self, mut action: SubmitTxInfo) -> Result<Option<Notification>> {
         let gas_usage: U256 = self
             .client
             .estimate_gas(&action.tx, None)
@@ -54,7 +48,7 @@ where
             .context("Error estimating gas usage: {}")?;
 
         let bid_gas_price: U256;
-        if let Some(ref gas_bid_info) = action.gas_bid_info {
+        if let Some(gas_bid_info) = action.gas_bid_info {
             // gas price at which we'd break even, meaning 100% of profit goes to validator
             let breakeven_gas_price: U256 = gas_bid_info.total_profit / gas_usage;
             // gas price corresponding to bid percentage
@@ -68,7 +62,11 @@ where
         }
 
         action.tx.set_gas_price(bid_gas_price);
-        self.client.send_transaction(action.tx.clone(), None).await?;
-        Ok(())
+        let p_tx: PendingTransaction<<M as Middleware>::Provider> =
+            self.client.send_transaction(action.tx.clone(), None).await?;
+
+        Ok(Some(Notification {
+            message: format!("Sent transaction: {}", p_tx.tx_hash().encode_hex()),
+        }))
     }
 }

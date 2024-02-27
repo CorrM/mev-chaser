@@ -1,9 +1,10 @@
+pub use block_manager::*;
 pub use node_provider_manager::*;
 pub use pool_manager::*;
 pub use price_manager::*;
 pub use token_manager::*;
 
-mod block_manager;
+pub mod block_manager;
 pub mod node_provider_manager;
 pub mod pool_manager;
 pub mod price_manager;

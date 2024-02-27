@@ -1,17 +1,16 @@
 use std::{str::FromStr, sync::Arc};
 
 use anyhow::Result;
-
-use contracts::erc20_token::ERC20TokenAbi;
-use ethers_contract::Multicall;
-use ethers_core::{
+use ethers::{
     abi::Token,
+    contract::Multicall,
+    providers::Middleware,
     types::{Address, Bytes},
 };
-use ethers_providers::Middleware;
-use shared::{network::NetworkKind, token::CryptoToken};
 
-use crate::database::Database;
+use contracts::erc20_token::ERC20TokenAbi;
+use shared::database::Database;
+use vidger::types::{CryptoToken, NetworkKind};
 
 pub struct AddTokenCommand;
 

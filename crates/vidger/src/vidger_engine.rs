@@ -5,6 +5,7 @@ use tokio::task::JoinSet;
 use tokio_stream::StreamExt;
 
 use crate::core::{Collector, Executor, Notifier, Strategy};
+use crate::types::Notification;
 
 /// The main engine of Vidger. This struct is responsible for orchestrating the
 /// data flow between collectors, strategies, and executors.
@@ -19,7 +20,7 @@ pub struct VidgerEngine<E, A> {
     executors: Vec<Box<dyn Executor<A>>>,
 
     /// The set of executors that the engine will for alerting after the executors process actions.
-    notifier: Vec<Box<dyn Notifier<A>>>,
+    notifier: Vec<Box<dyn Notifier>>,
 
     /// The pre strategy will use to react to events before the strategies process them.
     /// Good to handle events that are not related to the strategies like update last block state.
@@ -57,12 +58,6 @@ impl<E, A> VidgerEngine<E, A> {
     }
 }
 
-impl<E, A> Default for VidgerEngine<E, A> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl<E, A> VidgerEngine<E, A>
 where
     E: Send + Clone + std::fmt::Debug + 'static,
@@ -84,7 +79,7 @@ where
     }
 
     /// Adds a notifier to be used by the engine.
-    pub fn add_notifier(&mut self, notifier: Box<dyn Notifier<A>>) {
+    pub fn add_notifier(&mut self, notifier: Box<dyn Notifier>) {
         self.notifier.push(notifier);
     }
 
@@ -100,7 +95,7 @@ where
         let (pre_event_sender, _): (Sender<E>, _) = broadcast::channel(self.event_channel_capacity);
         let (post_event_sender, _): (Sender<E>, _) = broadcast::channel(self.event_channel_capacity);
         let (action_sender, _): (Sender<A>, _) = broadcast::channel(self.action_channel_capacity);
-        let (notify_sender, _): (Sender<A>, _) = broadcast::channel(self.action_channel_capacity);
+        let (notify_sender, _): (Sender<Notification>, _) = broadcast::channel(self.action_channel_capacity);
 
         let mut set = JoinSet::new();
 
@@ -110,7 +105,7 @@ where
             set.spawn(async move {
                 loop {
                     match receiver.recv().await {
-                        Ok(action) => match notifier.notify(action).await {
+                        Ok(notification) => match notifier.notify(notification).await {
                             Ok(_) => {}
                             Err(e) => error!("error notifying: {}", e),
                         },
@@ -127,11 +122,12 @@ where
             set.spawn(async move {
                 loop {
                     match receiver.recv().await {
-                        Ok(mut action) => match executor.execute(&mut action).await {
-                            Ok(_) => match notify.send(action) {
+                        Ok(action) => match executor.execute(action.clone()).await {
+                            Ok(Some(notification)) => match notify.send(notification) {
                                 Ok(_) => {}
                                 Err(e) => error!("error sending notification: {:?}", e),
                             },
+                            Ok(None) => {}
                             Err(e) => error!("error executing action: {:?}", e),
                         },
                         Err(e) => error!("error receiving action: {}", e),
@@ -207,5 +203,11 @@ where
         }
 
         Ok(set)
+    }
+}
+
+impl<E, A> Default for VidgerEngine<E, A> {
+    fn default() -> Self {
+        Self::new()
     }
 }

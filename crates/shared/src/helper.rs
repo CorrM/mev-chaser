@@ -28,7 +28,7 @@ macro_rules! log_new_block_info {
         log::info!(
             "{}",
             format!(
-                "\nFound New Block\nLatest Block: (number:{:?}, timestamp:{:?}, basefee:{:?})",
+                "Found New Block: (number: {:?}, timestamp: {:?}, basefee: {:?})",
                 $new_block.number, $new_block.timestamp, $new_block.base_fee_per_gas,
             )
             .bright_purple()

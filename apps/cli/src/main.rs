@@ -1,30 +1,20 @@
 use std::env;
-use std::str::FromStr;
 use std::sync::Arc;
 use std::{env::VarError, path::Path};
 
 use anyhow::{anyhow, Result};
-use ethers::prelude::H256;
-use ethers::types::U256;
 
-use amm::{AmmProtocol, UniswapV2Pool, UniswapV2Protocol};
 use commands::{AddTokenCommand, GenPoolCommand};
-use contracts::balancer_flash_loan_recipient::OneSwapInfo;
-use database::{Database, DbDex, DbDexPool, DbToken, DbTokenNetwork};
-use ethers_core::types::{spoof, Address, Block, BlockNumber, TransactionRequest};
-use ethers_core::utils::Geth;
-use ethers_providers::{Http, Middleware, Provider, RawCall, Ws};
-use evm_simulator::EvmSimulator;
-use mev::{make_uniswap_v2_protocol_swap_info, BackRunnerStrategy, SolidityBridge};
-use shared::logger::{error, info, Logger};
-use shared::{
-    network::NetworkKind,
-    provider::{NodeProvider, NodeProviderManager, NodeProviderNetworkInfo},
-    token::{CryptoToken, TokenManager},
-};
+use shared::database::Database;
+use shared::types::{NodeProvider, NodeProviderNetworkInfo};
 use utilities::env::Env;
+use vidger::logger::Logger;
+use vidger::types::NetworkKind;
+
+use crate::commands::RunCommand;
 
 mod commands;
+mod strategy;
 mod utilities;
 
 fn read_env_file() -> Result<Env> {
@@ -70,35 +60,6 @@ async fn get_node_providers(env: &Env, target_network: &NetworkKind) -> Result<V
 async fn create_node_provider_manager(env: &Env, target_network: &NetworkKind) -> Result<NodeProviderManager> {
     let providers: Vec<NodeProvider> = get_node_providers(env, target_network).await?;
     NodeProviderManager::new(providers, get_debug_node_providers(env, target_network).await?)
-}
-*/
-
-async fn get_debug_node_providers(env: &Env, target_network: &NetworkKind) -> Result<Vec<NodeProvider>> {
-    let blockpi_network_subdomain: String = match target_network {
-        NetworkKind::Ethereum => "ethereum".to_string(),
-        NetworkKind::Polygon => "polygon".to_string(),
-    };
-
-    let blockpi_net_info: NodeProviderNetworkInfo = NodeProviderNetworkInfo {
-        network: *target_network,
-        http_url: Some(
-            format!(
-                "https://{}.blockpi.network/v1/rpc/{}",
-                blockpi_network_subdomain, env.blockpi_api_key
-            )
-            .to_string(),
-        ),
-        ws_url: Some(
-            format!(
-                "wss://{}.blockpi.network/v1/ws/{}",
-                blockpi_network_subdomain, env.blockpi_api_key
-            )
-            .to_string(),
-        ),
-        ipc_path: None,
-    };
-
-    Ok(vec![NodeProvider::new("blockpi", blockpi_net_info).await?])
 }
 
 fn get_tokens(db: &Database, network: &NetworkKind) -> Result<Vec<CryptoToken>> {
@@ -183,46 +144,9 @@ fn get_dexes(db: &Database, network: &NetworkKind, token_manager: &TokenManager)
 
     Ok(dexes)
 }
+*/
 
-fn vidger() {
-    let provider = Arc::new(Provider::<Ws>::connect("https://eth.llamarpc.com").await?);
-    let mut engine: VidgerEngine<Events, Actions> = VidgerEngine::default();
-
-    // Set up block collector.
-    let block_collector = Box::new(BlockCollector::new(Arc::clone(&provider)));
-    let block_collector = CollectorMapper::new(block_collector, Events::NewBlock);
-    engine.add_collector(Box::new(block_collector));
-
-    // Set up opensea sudo arb strategy.
-    let configs = StratConfig {
-        sando_address: config.sando_address,
-        sando_inception_block: config.sando_inception_block,
-        searcher_signer,
-    };
-    let strategy = SandoBot::new(provider.clone(), configs);
-    engine.add_strategy(Box::new(strategy));
-
-    let executor = Box::new(MempoolExecutor::new(Arc::clone(&provider)));
-    let executor = ExecutorMapper::new(executor, |action| match action {
-        Actions::SubmitTxToMempool(tx) => Some(tx),
-    });
-    engine.add_executor(Box::new(executor));
-
-    // Start engine.
-    if let Ok(mut set) = engine.run().await {
-        while let Some(res) = set.join_next().await {
-            println!("res: {:?}", res);
-        }
-    }
-}
-
-#[tokio::main]
-async fn main() -> Result<()> {
-    let env: Env = read_env_file()?;
-    let db = Database::new(Path::new("./Main.db"))?;
-    let target_network = NetworkKind::from(env.chain_id);
-    //let provider_manager: NodeProviderManager = create_node_provider_manager(&env, &target_network).await?;
-
+async fn get_node_provider(env: &Env, target_network: NetworkKind) -> Result<NodeProvider> {
     #[cfg(debug_assertions)]
     let provider: NodeProvider = NodeProvider::new(
         "Alchemy",
@@ -247,141 +171,114 @@ async fn main() -> Result<()> {
     )
     .await?;
 
-    let provider_manager = NodeProviderManager::new(vec![provider.clone()], vec![provider])?;
+    Ok(provider)
+}
 
-    #[cfg(debug_assertions)]
-    let raw_provider = Arc::clone(provider_manager.get_next().raw_ws_provider());
+async fn get_debug_node_provider(env: &Env, target_network: NetworkKind) -> Result<NodeProvider> {
+    let blockpi_network_subdomain: String = match target_network {
+        NetworkKind::Ethereum => "ethereum".to_string(),
+        NetworkKind::Polygon => "polygon".to_string(),
+    };
 
-    #[cfg(not(debug_assertions))]
-    let raw_provider = Arc::clone(provider_manager.get_next().raw_ipc_provider());
+    let blockpi_net_info: NodeProviderNetworkInfo = NodeProviderNetworkInfo {
+        network: target_network,
+        http_url: Some(
+            format!(
+                "https://{}.blockpi.network/v1/rpc/{}",
+                blockpi_network_subdomain, env.blockpi_api_key
+            )
+            .to_string(),
+        ),
+        ws_url: Some(
+            format!(
+                "wss://{}.blockpi.network/v1/ws/{}",
+                blockpi_network_subdomain, env.blockpi_api_key
+            )
+            .to_string(),
+        ),
+        ipc_path: None,
+    };
 
+    Ok(NodeProvider::new("blockpi", blockpi_net_info).await?)
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
     let Ok(_) = Logger::setup_logger() else {
         return Err(anyhow!("Failed to setup logger"));
     };
 
-    let debug_provider: Arc<Provider<Ws>> =
-        Arc::clone(get_debug_node_providers(&env, &target_network).await?[0].raw_ws_provider());
-    let simulator = EvmSimulator::new(debug_provider).await;
+    let env: Env = read_env_file()?;
+    let db = Database::new(Path::new("./Main.db"))?;
+    let target_network = NetworkKind::from(env.chain_id);
 
-    let user = Address::from_str("0x9cf277A22EB4c551c6E18F7a6C0ee1893bcB034f").unwrap();
-    let weth = Address::from_str("0x7ceb23fd6bc0add59e62ac25578270cff1b9f619").unwrap();
-    let usdc = Address::from_str("0x3c499c542cef5e3811e1192ce70d8cc03d5c3359").unwrap();
-    let usdt = Address::from_str("0xc2132D05D31c914a87C6611C10748AEb04B58e8F").unwrap();
+    let provider: NodeProvider = get_node_provider(&env, target_network.clone()).await?;
 
-    let block: Block<H256> = raw_provider
-        .get_block(BlockNumber::Latest)
-        .await?
-        .ok_or(anyhow!("failed to retrieve block"))?;
+    #[cfg(debug_assertions)]
+    let raw_provider = Arc::clone(provider.raw_ws_provider());
 
-    //let weth_balance: Result<U256> = simulator.get_token_balance(weth, user);
-    //info!("WETH balance: {:?}", weth_balance);
+    #[cfg(not(debug_assertions))]
+    let raw_provider = Arc::clone(provider.raw_ipc_provider());
 
-    //let slot_idx: i32 = match simulator.get_token_balance_slot(weth, user).await {
-    //    Ok(idx) => idx,
-    //    Err(e) => panic!("Tracing error: {e:?}"),
-    //};
+    let debug_provider: NodeProvider = get_debug_node_provider(&env, target_network.clone()).await?;
 
-    let slot_idx: i32 = 0;
-    info!("Balance storage slot: {:?}", slot_idx);
+    #[cfg(debug_assertions)]
+    let debug_raw_provider = Arc::clone(provider.raw_ws_provider());
 
-    /*
-    let swaps: Vec<OneSwapInfo> = vec![
-        make_uniswap_v2_protocol_swap_info(
-            Address::from_str("0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff").unwrap(),
-            vec![
-                Address::from_str("0xc2132D05D31c914a87C6611C10748AEb04B58e8F").unwrap(),
-                Address::from_str("0x346404079b3792a6c548B072B9C4DDdFb92948d5").unwrap(),
-            ],
-            10_000_000,
-            0,
-        )
-        .unwrap(),
-        make_uniswap_v2_protocol_swap_info(
-            Address::from_str("0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff").unwrap(),
-            vec![
-                Address::from_str("0x346404079b3792a6c548B072B9C4DDdFb92948d5").unwrap(),
-                Address::from_str("0xc2132D05D31c914a87C6611C10748AEb04B58e8F").unwrap(),
-            ],
-            0,
-            1_000_000,
-        )
-        .unwrap(),
-    ];
-
-    for _i in 0..20 {
-        let result: Result<U256> = simulator
-            .eth_call_simulate_multi_swap(block.number.unwrap(), swaps.clone(), true, slot_idx)
-            .await;
-        info!("Result: {:?}", result);
-    }
-    */
-
-    match simulator.get_proxy_implementation(usdc, block.number.unwrap()).await {
-        Ok(implementation) => info!("Proxy implementation: {:?}", implementation),
-        Err(e) => error!("Proxy implementation error: {e:?}"),
-    }
-
-    match simulator.get_proxy_implementation(usdt, block.number.unwrap()).await {
-        Ok(implementation) => info!("Proxy implementation: {:?}", implementation),
-        Err(e) => error!("Proxy implementation error: {e:?}"),
-    }
-
-    return Ok(());
+    #[cfg(not(debug_assertions))]
+    let debug_raw_provider = Arc::clone(provider.raw_ipc_provider());
 
     // CLI commands
     let args: Vec<String> = env::args().collect();
     if args.len() > 1 {
-        if args[1] == "gen_pools" {
-            GenPoolCommand::process(&db, &target_network, raw_provider).await?;
+        match args[1].as_str() {
+            "gen_pools" => {
+                GenPoolCommand::process(&db, &target_network, raw_provider).await?;
+            }
+            "add_token" => {
+                let file_name: &String = &args[2];
+                let tokens: String = std::fs::read_to_string(file_name).expect("Something went wrong reading the file");
+                let tokens: Vec<&str> = tokens.lines().filter(|s| !s.is_empty()).collect();
 
-            return Ok(());
+                AddTokenCommand::process(tokens, &db, &target_network, raw_provider).await?;
+            }
+            _ => panic!("Invalid command"),
         }
-
-        if args[1] == "add_token" {
-            let file_name: &String = &args[2];
-            let tokens: String = std::fs::read_to_string(file_name).expect("Something went wrong reading the file");
-            let tokens: Vec<&str> = tokens.lines().filter(|s| !s.is_empty()).collect();
-
-            AddTokenCommand::process(tokens, &db, &target_network, raw_provider).await?;
-
-            return Ok(());
-        }
+    } else {
+        RunCommand::process(&env, raw_provider).await?;
     }
-
-    let token_manager = TokenManager::new(get_tokens(&db, &target_network)?, &target_network);
-    let solidity_bridge = SolidityBridge::new(
-        Address::from_str(&env.bot_address).unwrap(),
-        Arc::clone(&raw_provider),
-        env.private_key,
-    )
-    .await?;
-
-    println!("[-] Getting amms");
-    let amms: Vec<Arc<dyn AmmProtocol>> = get_dexes(&db, &target_network, &token_manager)?;
-
-    let start_tokens: Vec<Arc<CryptoToken>> = vec![
-        //token_manager.get_by_symbol("WMATIC").unwrap(), // TODO: Test => IDK but mostly it needs swapTokenForEth v2 function
-        token_manager.get_by_symbol("USDT").unwrap(),
-        token_manager.get_by_symbol("USDC").unwrap(),
-        token_manager.get_by_symbol("DAI").unwrap(),
-    ];
-
-    // 2 are triangle arbitrage
-    println!("[-] Prepare strategy");
-    let mut strategy =
-        BackRunnerStrategy::new(solidity_bridge, &raw_provider, token_manager, amms, 3, start_tokens).await;
-
-    println!("[+] Start strategy");
-
-    #[cfg(debug_assertions)]
-    let debug_raw_provider = provider_manager.get_next_debug_trace_call().raw_ws_provider();
-
-    #[cfg(not(debug_assertions))]
-    let debug_raw_provider = provider_manager.get_next_debug_trace_call().raw_ipc_provider();
-
-    strategy.run(raw_provider, Arc::clone(debug_raw_provider)).await?;
-
-    println!("[+] Done");
 
     Ok(())
 }
+
+/*
+let swaps: Vec<OneSwapInfo> = vec![
+    make_uniswap_v2_protocol_swap_info(
+        Address::from_str("0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff").unwrap(),
+        vec![
+            Address::from_str("0xc2132D05D31c914a87C6611C10748AEb04B58e8F").unwrap(),
+            Address::from_str("0x346404079b3792a6c548B072B9C4DDdFb92948d5").unwrap(),
+        ],
+        10_000_000,
+        0,
+    )
+    .unwrap(),
+    make_uniswap_v2_protocol_swap_info(
+        Address::from_str("0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff").unwrap(),
+        vec![
+            Address::from_str("0x346404079b3792a6c548B072B9C4DDdFb92948d5").unwrap(),
+            Address::from_str("0xc2132D05D31c914a87C6611C10748AEb04B58e8F").unwrap(),
+        ],
+        0,
+        1_000_000,
+    )
+    .unwrap(),
+];
+
+for _i in 0..20 {
+    let result: Result<U256> = simulator
+        .eth_call_simulate_multi_swap(block.number.unwrap(), swaps.clone(), true, slot_idx)
+        .await;
+    info!("Result: {:?}", result);
+}
+*/

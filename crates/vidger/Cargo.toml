@@ -13,6 +13,7 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 futures = { workspace = true }
 async-trait = { workspace = true }
+teloxide = { workspace = true }
 
 # Logging
 colored = { workspace = true }

@@ -3,16 +3,11 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use ethers::providers::Middleware;
-use ethers::signers::LocalWallet;
 
 use shared::types::{MevActions, MevEvents};
 use vidger::core::Strategy;
 
-pub struct BackRunningStrategyConfig {
-    pub searcher_signer: LocalWallet,
-}
-
-pub struct BackRunningStrategy<M> {
+pub struct PreStrategy<M> {
     /// Ethers client
     provider: Arc<M>,
     /// Keeps track of onchain pools
@@ -23,7 +18,7 @@ pub struct BackRunningStrategy<M> {
     sando_state_manager: SandoStateManager,
 }
 
-impl<M: Middleware + 'static> BackRunningStrategy<M> {
+impl<M: Middleware + 'static> PreStrategy<M> {
     /// Create a new instance
     pub fn new(client: Arc<M>, config: BackRunningStrategyConfig) -> Self {
         Self {
@@ -40,7 +35,7 @@ impl<M: Middleware + 'static> BackRunningStrategy<M> {
 }
 
 #[async_trait]
-impl<M: Middleware + 'static> Strategy<MevEvents, MevActions> for BackRunningStrategy<M> {
+impl<M: Middleware + 'static> Strategy<MevEvents, MevActions> for PreStrategy<M> {
     /// Setup by getting all pools to monitor for swaps
     async fn sync_state(&mut self) -> Result<()> {
         self.pool_manager.setup().await?;
@@ -50,7 +45,7 @@ impl<M: Middleware + 'static> Strategy<MevEvents, MevActions> for BackRunningStr
     }
 
     /// Process incoming events
-    async fn process_event(&mut self, event: &mut MevEvents) -> Option<MevActions> {
+    async fn process_event(&mut self, event: MevEvents) -> Option<MevActions> {
         match event {
             MevEvents::NewBlock(block) => match self.process_new_block(block).await {
                 Ok(_) => None,

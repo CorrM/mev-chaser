@@ -13,6 +13,8 @@ pub struct Env {
     pub private_key: String,
     pub signing_key: String,
     pub bot_address: String,
+    pub telegram_token_id: String,
+    pub telegram_channel_id: String,
 }
 
 impl Env {
@@ -24,6 +26,8 @@ impl Env {
         let private_key: String = get_env("PRIVATE_KEY")?;
         let signing_key: String = get_env("SIGNING_KEY")?;
         let bot_address: String = get_env("BOT_ADDRESS")?;
+        let telegram_token_id: String = get_env("TELEGRAM_TOKEN_ID")?;
+        let telegram_channel_id: String = get_env("TELEGRAM_CHANNEL_ID")?;
 
         Ok(Env {
             https_url,
@@ -33,6 +37,8 @@ impl Env {
             private_key,
             signing_key,
             bot_address,
+            telegram_token_id,
+            telegram_channel_id,
         })
     }
 }

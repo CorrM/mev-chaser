@@ -1,7 +1,6 @@
 use ethers::types::Transaction;
 
-use vidger::executors::mempool_executor::SubmitTxToMempool;
-use vidger::types::NewBlock;
+use vidger::{types::NewBlock, types::SubmitTxInfo};
 
 /// Convenience enum containing all the events that can be emitted by collectors.
 #[derive(Clone, Debug)]
@@ -13,5 +12,6 @@ pub enum MevEvents {
 /// Convenience enum containing all the actions that can be executed by executors.
 #[derive(Clone, Debug)]
 pub enum MevActions {
-    SubmitTxToMempool(SubmitTxToMempool),
+    SubmitTxToMempool(SubmitTxInfo),
+    SubmitTxToFastLine(SubmitTxInfo),
 }

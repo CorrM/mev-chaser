@@ -9,6 +9,7 @@ vidger = { path = "../../crates/vidger" }
 contracts = { path = "../../crates/contracts" }
 
 anyhow = { workspace = true }
+async-trait = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 ethers = { workspace = true }
