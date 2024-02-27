@@ -1,32 +1,30 @@
-use std::env;
-use std::str::FromStr;
-use std::sync::Arc;
-use std::{env::VarError, path::Path};
-
+use amm::{AmmProtocol, UniswapV2Pool, UniswapV2Protocol};
 use anyhow::{anyhow, Result};
+use commands::{AddTokenCommand, GenPoolCommand};
+use contracts::balancer_flash_loan_recipient::OneSwapInfo;
+use database::{Database, DbDex, DbDexPool, DbToken, DbTokenNetwork};
 use ethers::prelude::H256;
 use ethers::types::U256;
 use ethers_core::types::{Address, Block, BlockNumber, spoof, TransactionRequest};
 use ethers_core::utils::Geth;
 use ethers_providers::{Http, Middleware, Provider, RawCall, Ws};
-
-use amm::{AmmProtocol, UniswapV2Pool, UniswapV2Protocol};
-use commands::{AddTokenCommand, GenPoolCommand};
-use contracts::balancer_flash_loan_recipient::OneSwapInfo;
-use database::{Database, DbDex, DbDexPool, DbToken, DbTokenNetwork};
 use evm_simulator::EvmSimulator;
-use mev::{make_uniswap_v2_protocol_swap_info, BackRunnerStrategy, SolidityBridge};
-use shared::logger::{error, info, Logger};
+use mev::{BackRunnerStrategy, make_uniswap_v2_protocol_swap_info, SolidityBridge};
 use shared::{
     network::NetworkKind,
     provider::{NodeProvider, NodeProviderManager, NodeProviderNetworkInfo},
     token::{CryptoToken, TokenManager},
 };
-use utils::env::Env;
+use shared::logger::{error, info, Logger};
+use std::{env::VarError, path::Path};
+use std::env;
+use std::str::FromStr;
+use std::sync::Arc;
+use utilities::env::Env;
 
 mod commands;
 mod database;
-mod utils;
+mod utilities;
 
 fn read_env_file() -> Result<Env> {
     // Env
@@ -185,6 +183,38 @@ fn get_dexes(db: &Database, network: &NetworkKind, token_manager: &TokenManager)
     Ok(dexes)
 }
 
+fn vidger() {
+    let provider = Arc::new(Provider::<Ws>::connect("https://eth.llamarpc.com").await?);
+    let mut engine: VidgerEngine<Events, Actions> = VidgerEngine::default();
+
+    // Set up block collector.
+    let block_collector = Box::new(BlockCollector::new(Arc::clone(&provider)));
+    let block_collector = CollectorMapper::new(block_collector, Events::NewBlock);
+    engine.add_collector(Box::new(block_collector));
+
+    // Set up opensea sudo arb strategy.
+    let configs = StratConfig {
+        sando_address: config.sando_address,
+        sando_inception_block: config.sando_inception_block,
+        searcher_signer,
+    };
+    let strategy = SandoBot::new(provider.clone(), configs);
+    engine.add_strategy(Box::new(strategy));
+
+    let executor = Box::new(MempoolExecutor::new(Arc::clone(&provider)));
+    let executor = ExecutorMapper::new(executor, |action| match action {
+        Actions::SubmitTxToMempool(tx) => Some(tx),
+    });
+    engine.add_executor(Box::new(executor));
+
+    // Start engine.
+    if let Ok(mut set) = engine.run().await {
+        while let Some(res) = set.join_next().await {
+            println!("res: {:?}", res);
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let env: Env = read_env_file()?;
@@ -253,6 +283,7 @@ async fn main() -> Result<()> {
     let slot_idx: i32 = 0;
     info!("Balance storage slot: {:?}", slot_idx);
 
+    /*
     let swaps: Vec<OneSwapInfo> = vec![
         make_uniswap_v2_protocol_swap_info(
             Address::from_str("0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff").unwrap(),
@@ -282,6 +313,7 @@ async fn main() -> Result<()> {
             .await;
         info!("Result: {:?}", result);
     }
+    */
 
     match simulator.get_proxy_implementation(usdc, block.number.unwrap()).await {
         Ok(implementation) => info!("Proxy implementation: {:?}", implementation),

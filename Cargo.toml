@@ -1,11 +1,9 @@
 [workspace]
 resolver = "2"
-members = [ # Dont use * for paths in the workspace
-    "packages/shared",
-    "packages/contracts",
-    "packages/amm",
-    "packages/mev",
-    "packages/evm_simulator",
+members = [
+    "crates/vidger",
+    "crates/contracts",
+    "crates/shared",
     "apps/cli",
 ]
 
@@ -13,26 +11,27 @@ members = [ # Dont use * for paths in the workspace
 anyhow = "1.0"
 rayon = "1.5"
 reqwest = "0.11"
+rusqlite = { version = "0.31.0", features = ["bundled"] }
 dashmap = { version = "5.5", features = ["rayon"] }
 serde = "1.0"
 serde_json = "1.0"
 tokio = { version = "1.36", features = ["full"] }
 tokio-stream = { version = "0.1", features = ['sync'] }
 async-scoped = { version = "0.9.0", features = ["use-tokio"] }
-rand = "0.8"
+thiserror = "1.0.56"
+futures = "0.3.30"
+async-trait = "0.1.77"
 
 # Logging
 colored = "2.1"
 log = "0.4"
-fern = {version = "0.6", features = ["colored"]}
+fern = { version = "0.6", features = ["colored"] }
 chrono = "0.4"
 
 # EVM
 ethers = { version = "2.0", features = [
     "abigen",
     "ws",
+    "ipc",
     "rustls",
 ] }
-ethers-core = "2.0"
-ethers-providers = { version = "2.0", features = ["ws", "ipc"] }
-ethers-contract = { version = "2.0", default-features = false }

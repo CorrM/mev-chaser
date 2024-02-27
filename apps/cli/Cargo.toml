@@ -4,19 +4,12 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-shared = { path = "../../packages/shared" }
-amm = { path = "../../packages/amm" }
-mev = { path = "../../packages/mev" }
-contracts = { path = "../../packages/contracts" }
-evm_simulator = { path = "../../packages/evm_simulator" }
+shared = { path = "../../crates/shared" }
+contracts = { path = "../../crates/contracts" }
 
 anyhow = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
-ethers-providers = { workspace = true }
-ethers-core = { workspace = true }
-ethers-contract = { workspace = true }
 ethers = { workspace = true }
 
 dotenv = "0.15.0"
-rusqlite = { version = "0.31.0", features = ["bundled"] }
