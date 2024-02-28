@@ -219,7 +219,8 @@ async fn main() -> Result<()> {
 
     #[cfg(not(debug_assertions))]
     let raw_provider = Arc::clone(provider.raw_ipc_provider());
-
+    
+    /*
     let debug_provider: NodeProvider = get_debug_node_provider(&env, target_network.clone()).await?;
 
     #[cfg(debug_assertions)]
@@ -227,7 +228,8 @@ async fn main() -> Result<()> {
 
     #[cfg(not(debug_assertions))]
     let debug_raw_provider = Arc::clone(provider.raw_ipc_provider());
-
+    */
+    
     // CLI commands
     let args: Vec<String> = env::args().collect();
     if args.len() > 1 {

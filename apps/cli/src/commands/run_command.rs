@@ -1,16 +1,20 @@
+use std::str::FromStr;
 use std::sync::Arc;
 
 use anyhow::Result;
 use ethers::prelude::PubsubClient;
 use ethers::providers::Middleware;
+use ethers::types::Address;
+use tokio::time::Instant;
 
+use contracts::balancer_flash_loan_recipient::OneSwapInfo;
 use shared::executors::FastLineExecutor;
+use shared::simulator::EthersSimulator;
 use shared::types::{MevActions, MevEvents};
 use vidger::collectors::BlockCollector;
-use vidger::core::{CollectorMapper, ExecutorMapper, Notifier};
+use vidger::core::{CollectorMapper, ExecutorMapper};
 use vidger::executors::MempoolExecutor;
 use vidger::notifiers::TelegramNotifier;
-use vidger::types::Notification;
 use vidger::VidgerEngine;
 
 use crate::utilities::env::Env;
@@ -18,11 +22,49 @@ use crate::utilities::env::Env;
 pub struct RunCommand;
 
 impl RunCommand {
+    async fn test<M>(provider: Arc<M>)
+    where
+        M: Middleware + 'static,
+        M::Provider: PubsubClient,
+    {
+        let swaps: Vec<OneSwapInfo> = vec![
+            shared::types::pool_path::make_uniswap_v2_protocol_swap_info(
+                Address::from_str("0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff").unwrap(),
+                vec![
+                    Address::from_str("0xc2132D05D31c914a87C6611C10748AEb04B58e8F").unwrap(),
+                    Address::from_str("0x346404079b3792a6c548B072B9C4DDdFb92948d5").unwrap(),
+                ],
+                10000000,
+                0,
+            )
+            .unwrap(),
+            shared::types::pool_path::make_uniswap_v2_protocol_swap_info(
+                Address::from_str("0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff").unwrap(),
+                vec![
+                    Address::from_str("0x346404079b3792a6c548B072B9C4DDdFb92948d5").unwrap(),
+                    Address::from_str("0xc2132D05D31c914a87C6611C10748AEb04B58e8F").unwrap(),
+                ],
+                0,
+                1000,
+            )
+            .unwrap(),
+        ];
+
+        let simulator = EthersSimulator::new(provider, &[]).await;
+
+        let start = Instant::now();
+        simulator.multicall_multi_swap(54045295.into(), swaps, true).await.unwrap();
+        println!("duration: {}ms", start.elapsed().as_millis());
+    }
+
     pub async fn process<M>(env: &Env, provider: Arc<M>) -> Result<()>
     where
         M: Middleware + 'static,
         M::Provider: PubsubClient,
     {
+        Self::test(Arc::clone(&provider)).await;
+        return Ok(()); 
+        
         let mut engine: VidgerEngine<MevEvents, MevActions> = VidgerEngine::new();
 
         // Set up block collector.

@@ -1,5 +1,4 @@
 pub use uniswap_v2_pair_abi::*;
-
 /// This module was auto-generated with ethers-rs Abigen.
 /// More information at: <https://github.com/gakonst/ethers-rs>
 #[allow(

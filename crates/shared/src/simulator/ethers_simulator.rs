@@ -4,6 +4,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
+use ethers::contract::{ContractRevert, Multicall};
 use ethers::types::{
     CallConfig, CallFrame, CallLogFrame, GethDebugBuiltInTracerConfig, GethDebugTracerConfig, Transaction,
 };
@@ -13,27 +14,23 @@ use ethers::{
     providers::{Middleware, ProviderError, RawCall, RpcError},
     types::spoof::State,
     types::transaction::eip2718::TypedTransaction,
-    types::transaction::eip2930::AccessList,
     types::{
-        spoof, AccountState, BigEndianHash, BlockId, Bytes, Eip1559TransactionRequest, GethDebugBuiltInTracerType,
-        GethDebugTracerType, GethDebugTracingCallOptions, GethDebugTracingOptions, GethTrace, GethTraceFrame,
-        NameOrAddress, PreStateFrame, PreStateMode, TransactionRequest, TxHash, U64,
+        spoof, AccountState, BigEndianHash, BlockId, Bytes, GethDebugBuiltInTracerType, GethDebugTracerType,
+        GethDebugTracingCallOptions, GethDebugTracingOptions, GethTrace, GethTraceFrame, PreStateFrame, PreStateMode,
+        TransactionRequest, TxHash, U64,
     },
     types::{Address, Block, BlockNumber, H256, U256},
     utils::__serde_json::Value,
     utils::keccak256,
 };
+use tokio::time::Instant;
 
 use contracts::balancer_flash_loan_recipient::OneSwapInfo;
 use contracts::erc20_token::{BalanceOfCall, BalanceOfReturn};
 use contracts::simulator::{
-    SimulateMultiSwapCall, SimulateMultiSwapReturn, SimulatorAbiErrors, SIMULATORABI_DEPLOYED_BYTECODE,
+    SimulateMultiSwapCall, SimulateMultiSwapReturn, SimulatorAbi, SimulatorAbiErrors, SIMULATORABI_DEPLOYED_BYTECODE,
 };
-
-struct Constants {
-    pub ten_eth: u64,
-    pub gas_price: U256,
-}
+use vidger::types::CryptoToken;
 
 fn extract_trace_logs(call_frame: &CallFrame, logs: &mut Vec<CallLogFrame>) {
     if let Some(ref logs_vec) = call_frame.logs {
@@ -47,27 +44,23 @@ fn extract_trace_logs(call_frame: &CallFrame, logs: &mut Vec<CallLogFrame>) {
     }
 }
 
-pub struct EvmSimulator<M>
-where
-    M: Middleware + 'static,
-{
-    constants: Constants,
-    chain: U64,
-    account: Address,
+pub struct EthersSimulator<M> {
     state_override_set: State,
     simulator_address: Address,
+    simulator_abi: SimulatorAbi<M>,
+    /// Don't use this field, use [make_simulator_tx](EthersSimulator::make_simulator_tx) instead
+    simulator_tx: TypedTransaction,
+    multicall: Multicall<M>,
     provider: Arc<M>,
 }
 
-impl<M> EvmSimulator<M>
+impl<M> EthersSimulator<M>
 where
     M: Middleware + 'static,
 {
-    pub async fn new(provider: Arc<M>) -> Self {
+    pub async fn new(provider: Arc<M>, tokens_to_override_balance: &[CryptoToken]) -> Self {
         let ten_eth: U256 = U256::from(10).checked_mul(U256::from(10).pow(U256::from(18))).unwrap();
         let gas_price: U256 = U256::from(100).checked_mul(U256::from(10).pow(U256::from(9))).unwrap();
-
-        let chain: U64 = provider.get_chainid().await.unwrap().as_u64().into();
 
         let mut state_override_set: State = spoof::state();
         let account = Address::from_str("0x9cf277A22EB4c551c6E18F7a6C0ee1893bcB034f").unwrap();
@@ -81,20 +74,62 @@ where
             .account(simulator_address)
             .code(SIMULATORABI_DEPLOYED_BYTECODE.clone());
 
+        // Spoof tokens balance for the user
+        for crypto_token in tokens_to_override_balance {
+            let input_balance_slot: [u8; 32] = keccak256(abi::encode(&[
+                abi::Token::Address(simulator_address),
+                abi::Token::Uint(U256::from(crypto_token.balance_contract_slot())),
+            ]));
+
+            state_override_set
+                .account(*crypto_token.address())
+                .store(input_balance_slot.into(), H256::from_low_u64_be(ten_eth.as_u64()));
+        }
+
+        // Create ABI
+        let simulator_abi = SimulatorAbi::new(simulator_address, Arc::clone(&provider));
+        
+        // Create transaction
+        let chain: U64 = provider.get_chainid().await.unwrap().as_u64().into();
+        let simulator_tx: TypedTransaction = TransactionRequest::default()
+            .from(account)
+            .to(simulator_address)
+            .value(U256::zero())
+            .nonce(U256::zero())
+            .gas(5_000_000)
+            .gas_price(gas_price)
+            .chain_id(chain)
+            .into();
+        
+        // Create Multicall
+        let multicall: Multicall<M> = Multicall::new(Arc::clone(&provider), None)
+            .await
+            .unwrap()
+            .state(state_override_set.clone());
+
         Self {
-            constants: Constants {
-                ten_eth: ten_eth.as_u64(),
-                gas_price,
-            },
-            chain,
-            account,
             state_override_set,
             simulator_address,
+            simulator_abi,
+            simulator_tx,
+            multicall,
             provider,
         }
     }
 
-    async fn get_state_diff(&self, tx: Eip1559TransactionRequest, block_number: U64) -> Result<GethTrace> {
+    #[inline]
+    fn make_simulator_tx(&self, data: impl Into<Bytes>, nonce: Option<U256>) -> TypedTransaction {
+        let mut transaction: TypedTransaction = self.simulator_tx.clone();
+        transaction.set_data(data.into());
+
+        if let Some(nonce) = nonce {
+            transaction.set_nonce(nonce);
+        }
+
+        transaction
+    }
+
+    async fn get_state_diff(&self, tx: TypedTransaction, block_number: U64) -> Result<GethTrace> {
         static OPTIONS: GethDebugTracingCallOptions = GethDebugTracingCallOptions {
             tracing_options: GethDebugTracingOptions {
                 disable_storage: None,
@@ -119,61 +154,36 @@ where
         Ok(trace)
     }
 
-    pub async fn debug_trace_call(&self, tx: &Transaction, block_number: Option<U64>) -> Result<Option<CallFrame>>
-    where
-        M: Middleware + 'static,
-    {
-        /*
-        let tracer = Some(GethDebugTracerType::BuiltInTracer(
-            GethDebugBuiltInTracerType::CallTracer,
-        ));
-
-        let tracer_config = Some(GethDebugTracerConfig::BuiltInTracer(
-            GethDebugBuiltInTracerConfig::CallTracer(CallConfig {
-                only_top_call: Some(false),
-                with_log: Some(true),
-            }),
-        ));
-
-        let debug_trace_options: GethDebugTracingCallOptions = GethDebugTracingCallOptions {
+    pub async fn debug_trace_call(&self, tx: &Transaction, block_number: Option<U64>) -> Result<Option<CallFrame>> {
+        static TRACE_OPTIONS: GethDebugTracingCallOptions = GethDebugTracingCallOptions {
             tracing_options: GethDebugTracingOptions {
+                tracer: Some(GethDebugTracerType::BuiltInTracer(
+                    GethDebugBuiltInTracerType::CallTracer,
+                )),
+                tracer_config: Some(GethDebugTracerConfig::BuiltInTracer(
+                    GethDebugBuiltInTracerConfig::CallTracer(CallConfig {
+                        with_log: Some(true), // 👈 make sure we are getting logs
+                        only_top_call: Some(false),
+                    }),
+                )),
                 disable_storage: None,
                 disable_stack: None,
                 enable_memory: None,
                 enable_return_data: None,
-                tracer,
-                tracer_config,
                 timeout: None,
             },
             state_overrides: None,
             block_overrides: None,
         };
-        */
-        let call_config = CallConfig {
-            with_log: Some(true), // 👈 make sure we are getting logs
-            ..Default::default()
-        };
 
-        let mut trace_options = GethDebugTracingCallOptions::default();
-        trace_options.tracing_options.tracer = Some(GethDebugTracerType::BuiltInTracer(
-            GethDebugBuiltInTracerType::CallTracer,
-        ));
-        trace_options.tracing_options.tracer_config = Some(GethDebugTracerConfig::BuiltInTracer(
-            GethDebugBuiltInTracerConfig::CallTracer(call_config),
-        ));
-
-        /*
-        // Nonce needed when spacfing the block
-        let mut tx: Transaction = tx.clone();
-        let nonce: U256 = self
-            .raw_ws_provider()
-            .get_transaction_count(tx.from, Some(block_number.into()))
-            .await
-            .unwrap_or_default();
-        tx.nonce = nonce;
-        */
-
-        let trace: GethTrace = self.provider.debug_trace_call(tx, None, trace_options).await?;
+        let trace: GethTrace = self
+            .provider
+            .debug_trace_call(
+                tx,
+                block_number.map(|block_id| BlockId::Number(BlockNumber::Number(block_id))),
+                TRACE_OPTIONS.clone(),
+            )
+            .await?;
         let GethTrace::Known(call_tracer) = trace else {
             return Ok(None);
         };
@@ -241,18 +251,7 @@ where
         let block: Block<H256> = block?.ok_or(anyhow!("failed to retrieve block"))?;
         let nonce: U256 = nonce?;
 
-        let tx = Eip1559TransactionRequest {
-            chain_id: Some(self.chain),
-            nonce: Some(nonce),
-            from: Some(account),
-            to: Some(NameOrAddress::Address(token)),
-            gas: None,
-            value: None,
-            data: Some(calldata),
-            max_priority_fee_per_gas: None,
-            max_fee_per_gas: None,
-            access_list: AccessList::default(),
-        };
+        let tx: TypedTransaction = self.make_simulator_tx(calldata, Some(nonce));
         let geth_trace: GethTrace = self.get_state_diff(tx, block.number.unwrap()).await?;
         let prestate: PreStateMode = match geth_trace {
             GethTrace::Known(GethTraceFrame::PreStateTracer(PreStateFrame::Default(prestate_mode))) => {
@@ -290,23 +289,7 @@ where
         Ok(0)
     }
 
-    pub async fn eth_call_simulate_multi_swap(
-        &self,
-        block_number: U64,
-        swaps: Vec<OneSwapInfo>,
-        chain_swaps: bool,
-        input_token_balance_slot: i32,
-    ) -> Result<U256> {
-        // Spoof simulator input token balance
-        let input_balance_slot: [u8; 32] = keccak256(abi::encode(&[
-            abi::Token::Address(self.simulator_address),
-            abi::Token::Uint(U256::from(input_token_balance_slot)),
-        ]));
-        let mut state_override_set: State = self.state_override_set.clone();
-        state_override_set
-            .account(swaps[0].token_in)
-            .store(input_balance_slot.into(), H256::from_low_u64_be(self.constants.ten_eth));
-
+    pub async fn multi_swap(&self, block_number: U64, swaps: Vec<OneSwapInfo>, chain_swaps: bool) -> Result<U256> {
         let calldata: Vec<u8>;
         unsafe {
             let swaps: Vec<contracts::simulator::OneSwapInfo> =
@@ -319,16 +302,7 @@ where
         // so we need to forget it
         std::mem::forget(swaps);
 
-        let tx: TypedTransaction = TransactionRequest::default()
-            .from(self.account)
-            .to(self.simulator_address)
-            .value(U256::zero())
-            .data(calldata)
-            .nonce(U256::zero())
-            .gas(5000000)
-            .gas_price(self.constants.gas_price)
-            .chain_id(self.chain)
-            .into();
+        let tx: TypedTransaction = self.make_simulator_tx(calldata, None);
 
         let mut result: Option<Bytes> = None;
         for _i in 0..4 {
@@ -336,7 +310,7 @@ where
                 .provider
                 .provider()
                 .call_raw(&tx)
-                .state(&state_override_set)
+                .state(&self.state_override_set)
                 .block(block_number.into())
                 .await;
 
@@ -364,5 +338,40 @@ where
         let out: U256 = SimulateMultiSwapReturn::decode(result)?.0;
 
         Ok(out)
+    }
+
+    pub async fn multicall_multi_swap(
+        &self,
+        block_number: U64,
+        swaps: Vec<OneSwapInfo>,
+        chain_swaps: bool,
+    ) -> Result<U256> {
+        let mut multicall: Multicall<M> = self.multicall.clone().block(BlockNumber::Number(block_number));
+
+        let _swaps: Vec<contracts::simulator::OneSwapInfo>;
+        unsafe {
+            _swaps = (&swaps as *const _ as *const Vec<contracts::simulator::simulator_abi::OneSwapInfo>).read();
+        }
+
+        // swaps already consumed, but rust will drop it when it goes out of scope, so we need to forget it
+        std::mem::forget(swaps);
+
+        for _i in 0..250 {
+            multicall.add_call(self.simulator_abi.simulate_multi_swap(_swaps.clone(), chain_swaps), true);
+        }
+
+        let start = Instant::now();
+        let vec = multicall.call_raw().await.expect("failed to multicall");
+        for x in vec {
+            if x.is_err() {
+                let error = x.unwrap_err();
+                let option = SimulatorAbiErrors::decode_with_selector(&error);
+                
+                println!("multicall error: {:?}", option);
+            }
+        }
+        println!("duration x: {}ms", start.elapsed().as_millis());
+        
+        Ok(50.into())
     }
 }
