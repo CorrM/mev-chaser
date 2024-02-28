@@ -1,6 +1,6 @@
+use std::{env::VarError, path::Path};
 use std::env;
 use std::sync::Arc;
-use std::{env::VarError, path::Path};
 
 use anyhow::{anyhow, Result};
 

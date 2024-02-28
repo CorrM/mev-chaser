@@ -35,6 +35,7 @@ where
     M::Provider: PubsubClient,
     M::Error: 'static,
 {
+    #[inline]
     async fn get_event_stream(&self) -> Result<CollectorStream<'_, Transaction>> {
         if self.use_full_pending_txs {
             let stream = self.provider.subscribe_full_pending_txs().await?;

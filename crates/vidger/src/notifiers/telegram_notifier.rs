@@ -25,6 +25,7 @@ impl TelegramNotifier {
 
 #[async_trait]
 impl Notifier for TelegramNotifier {
+    #[inline]
     async fn notify(&self, notification: Notification) -> Result<()> {
         self.bot
             .send_message(self.chat_id.clone(), notification.message)

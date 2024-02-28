@@ -40,6 +40,7 @@ where
     M::Error: 'static,
 {
     /// Send a transaction to the mempool.
+    #[inline]
     async fn execute(&self, mut action: SubmitTxInfo) -> Result<Option<Notification>> {
         let gas_usage: U256 = self
             .client

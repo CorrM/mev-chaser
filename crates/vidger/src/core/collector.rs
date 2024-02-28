@@ -34,6 +34,7 @@ where
     E2: Send + Sync + 'static,
     F: Fn(E1) -> E2 + Send + Sync + Clone + 'static,
 {
+    #[inline]
     async fn get_event_stream(&self) -> anyhow::Result<CollectorStream<'_, E2>> {
         let stream = self.collector.get_event_stream().await?;
         let f = self.f.clone();

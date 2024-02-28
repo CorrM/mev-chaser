@@ -30,6 +30,7 @@ where
     A2: Send + Sync + 'static,
     F: Fn(A1) -> Option<A2> + Send + Sync + Clone + 'static,
 {
+    #[inline]
     async fn execute(&self, action: A1) -> Result<Option<Notification>> {
         let action: Option<A2> = (self.f)(action);
         match action {

@@ -61,11 +61,6 @@ impl RunCommand {
 
         // Set up notifier.
         let notifier = TelegramNotifier::new(env.telegram_token_id.clone(), env.telegram_channel_id.clone());
-        notifier
-            .notify(Notification {
-                message: "Hello, World!".to_owned(),
-            })
-            .await?;
         engine.add_notifier(Box::new(notifier));
 
         // Start engine.
