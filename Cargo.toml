@@ -9,21 +9,8 @@ members = [
 
 [workspace.dependencies]
 anyhow = "1.0"
-rayon = "1.5"
-reqwest = "0.11"
-rusqlite = { version = "0.31.0", features = ["bundled"] }
-dashmap = { version = "5.5", features = ["rayon"] }
-hashbrown = { version = "0.14", features = ["rayon", "inline-more"] }
-serde = "1.0"
-serde_json = "1.0"
-tokio = { version = "1.36", features = ["full"] }
-tokio-stream = { version = "0.1", features = ['sync'] }
-async-scoped = { version = "0.9.0", features = ["use-tokio"] }
 thiserror = "1.0.56"
-futures = "0.3.30"
-async-trait = "0.1.77"
-
-teloxide = { version = "0.12", features = ["macros"] }
+bytes = "1.5"
 
 # Logging
 colored = "2.1"
@@ -31,10 +18,42 @@ log = "0.4"
 fern = { version = "0.6", features = ["colored"] }
 chrono = "0.4"
 
+# Async and Threads
+tokio = { version = "1.36", features = ["full"] }
+tokio-stream = { version = "0.1", features = ['sync'] }
+async-scoped = { version = "0.9.0", features = ["use-tokio"] }
+async-trait = "0.1.77"
+futures = "0.3.30"
+rayon = "1.5"
+
+# Data structures
+dashmap = { version = "5.5", features = ["rayon"] }
+hashbrown = { version = "0.14", features = ["serde", "rayon", "inline-more"] }
+
+# Serialization
+serde = "1.0"
+serde_json = "1.0"
+
+# External world
+reqwest = "0.11"
+teloxide = { version = "0.12", features = ["macros"] }
+
+# Database
+rusqlite = { version = "0.31.0", features = ["bundled"] }
+
 # EVM
 ethers = { version = "2.0", features = [
     "abigen",
     "ws",
     "ipc",
     "rustls",
+] }
+revm = { version = "6.1", default-features = false, features = [
+    "std",
+    "serde",
+    "memory_limit",
+    "optional_eip3607",
+    "optional_block_gas_limit",
+    "optional_no_base_fee",
+    "ethersdb",
 ] }

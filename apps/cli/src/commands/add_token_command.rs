@@ -82,7 +82,7 @@ impl AddTokenCommand {
         target_network: &NetworkKind,
         provider: Arc<M>,
     ) -> Result<()> {
-        let tokens_cnt = tokens.len() as f32;
+        let tokens_cnt: f32 = tokens.len() as f32;
         let batch: f32 = (tokens_cnt / 80_f32).ceil();
         let tokens_per_batch: usize = (tokens_cnt / batch).ceil() as usize;
         let tokens_cnt: usize = tokens_cnt as usize;

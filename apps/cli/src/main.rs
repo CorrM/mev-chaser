@@ -1,6 +1,6 @@
-use std::{env::VarError, path::Path};
 use std::env;
 use std::sync::Arc;
+use std::{env::VarError, path::Path};
 
 use anyhow::{anyhow, Result};
 
@@ -147,17 +147,20 @@ fn get_dexes(db: &Database, network: &NetworkKind, token_manager: &TokenManager)
 */
 
 async fn get_node_provider(env: &Env, target_network: NetworkKind) -> Result<NodeProvider> {
+    //#[cfg(debug_assertions)]
+    //let provider: NodeProvider = NodeProvider::new(
+    //    "Alchemy",
+    //    NodeProviderNetworkInfo {
+    //        network: target_network,
+    //        http_url: Some(env.https_url.clone()),
+    //        ws_url: Some(env.wss_url.clone()),
+    //        ipc_path: None,
+    //    },
+    //)
+    //.await?;
+
     #[cfg(debug_assertions)]
-    let provider: NodeProvider = NodeProvider::new(
-        "Alchemy",
-        NodeProviderNetworkInfo {
-            network: target_network,
-            http_url: Some(env.https_url.clone()),
-            ws_url: Some(env.wss_url.clone()),
-            ipc_path: None,
-        },
-    )
-    .await?;
+    let provider: NodeProvider = get_debug_node_provider(env, target_network).await?;
 
     #[cfg(not(debug_assertions))]
     let provider: NodeProvider = NodeProvider::new(
@@ -199,7 +202,7 @@ async fn get_debug_node_provider(env: &Env, target_network: NetworkKind) -> Resu
         ipc_path: None,
     };
 
-    Ok(NodeProvider::new("blockpi", blockpi_net_info).await?)
+    NodeProvider::new("blockpi", blockpi_net_info).await
 }
 
 #[tokio::main]
@@ -219,7 +222,7 @@ async fn main() -> Result<()> {
 
     #[cfg(not(debug_assertions))]
     let raw_provider = Arc::clone(provider.raw_ipc_provider());
-    
+
     /*
     let debug_provider: NodeProvider = get_debug_node_provider(&env, target_network.clone()).await?;
 
@@ -229,7 +232,7 @@ async fn main() -> Result<()> {
     #[cfg(not(debug_assertions))]
     let debug_raw_provider = Arc::clone(provider.raw_ipc_provider());
     */
-    
+
     // CLI commands
     let args: Vec<String> = env::args().collect();
     if args.len() > 1 {

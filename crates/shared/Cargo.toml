@@ -9,7 +9,10 @@ vidger = { path = "../vidger" }
 
 tokio = { workspace = true }
 tokio-stream = { workspace = true }
+async-trait = { workspace = true }
 async-scoped = { workspace = true }
+rayon = { workspace = true }
+futures = { workspace = true }
 
 # Logging
 colored = { workspace = true }
@@ -18,12 +21,12 @@ fern = { workspace = true }
 chrono = { workspace = true }
 
 anyhow = { workspace = true }
-async-trait = { workspace = true }
 dashmap = { workspace = true }
 hashbrown = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 rusqlite = { workspace = true }
 reqwest = { workspace = true }
+
 ethers = { workspace = true }
-rayon = { workspace = true }
+revm = { workspace = true }

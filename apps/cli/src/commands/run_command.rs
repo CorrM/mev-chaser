@@ -2,20 +2,26 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use anyhow::Result;
-use ethers::prelude::PubsubClient;
+use ethers::prelude::{PubsubClient, U64};
 use ethers::providers::Middleware;
-use ethers::types::Address;
+use ethers::types::{Address, BlockNumber};
+use hashbrown::HashMap;
 use tokio::time::Instant;
 
 use contracts::balancer_flash_loan_recipient::OneSwapInfo;
-use shared::executors::FastLineExecutor;
-use shared::simulator::EthersSimulator;
-use shared::types::{MevActions, MevEvents};
-use vidger::collectors::BlockCollector;
-use vidger::core::{CollectorMapper, ExecutorMapper};
-use vidger::executors::MempoolExecutor;
-use vidger::notifiers::TelegramNotifier;
-use vidger::VidgerEngine;
+use shared::{
+    executors::FastLineExecutor,
+    simulator::EvmSimulator,
+    types::{MevActions, MevEvents},
+};
+use vidger::logger::info;
+use vidger::{
+    collectors::BlockCollector,
+    core::{CollectorMapper, ExecutorMapper},
+    executors::MempoolExecutor,
+    notifiers::TelegramNotifier,
+    VidgerEngine,
+};
 
 use crate::utilities::env::Env;
 
@@ -50,11 +56,24 @@ impl RunCommand {
             .unwrap(),
         ];
 
-        let simulator = EthersSimulator::new(provider, &[]).await;
+        let block_number: U64 = provider
+            .get_block(BlockNumber::Latest)
+            .await
+            .unwrap()
+            .unwrap()
+            .number
+            .unwrap();
+
+        let simulator = EvmSimulator::new_ethers(provider, &[]).await;
 
         let start = Instant::now();
-        simulator.multicall_multi_swap(54045295.into(), swaps, true).await.unwrap();
+        //simulator.multicall_multi_swap(block_number, swaps, true).await.unwrap();
+        let result: Result<HashMap<Address, Result<Option<i32>>>> = simulator.get_tokens_balance_slot(
+            &[Address::from_str("0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619").unwrap()],
+            block_number,
+        );
         println!("duration: {}ms", start.elapsed().as_millis());
+        info!("result: {:?}", result);
     }
 
     pub async fn process<M>(env: &Env, provider: Arc<M>) -> Result<()>
@@ -63,8 +82,8 @@ impl RunCommand {
         M::Provider: PubsubClient,
     {
         Self::test(Arc::clone(&provider)).await;
-        return Ok(()); 
-        
+        return Ok(());
+
         let mut engine: VidgerEngine<MevEvents, MevActions> = VidgerEngine::new();
 
         // Set up block collector.
