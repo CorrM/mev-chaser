@@ -4,6 +4,7 @@ use tokio::sync::broadcast::{self, Receiver, Sender};
 use tokio::task::JoinSet;
 use tokio_stream::StreamExt;
 
+use crate::core::pre_strategy::PreStrategy;
 use crate::core::{Collector, Executor, Notifier, Strategy};
 use crate::types::Notification;
 
@@ -25,7 +26,7 @@ pub struct VidgerEngine<E, A> {
     /// The pre strategy will use to react to events before the strategies process them.
     /// Good to handle events that are not related to the strategies like update last block state.
     /// result(Actions) of the pre strategy is ignored.
-    pre_strategy: Option<Box<dyn Strategy<E, A>>>,
+    pre_strategy: Option<Box<dyn PreStrategy<E>>>,
 
     /// The capacity of the event channel.
     event_channel_capacity: usize,
@@ -84,7 +85,7 @@ where
     }
 
     /// Adds a strategy to be used by the engine.
-    pub fn set_pre_strategy(&mut self, strategy: Box<dyn Strategy<E, A>>) {
+    pub fn set_pre_strategy(&mut self, strategy: Box<dyn PreStrategy<E>>) {
         self.pre_strategy = Some(strategy);
     }
 
@@ -119,6 +120,7 @@ where
         for executor in self.executors {
             let mut receiver = action_sender.subscribe();
             let notify = notify_sender.clone();
+
             set.spawn(async move {
                 loop {
                     match receiver.recv().await {
@@ -130,7 +132,7 @@ where
                             Ok(None) => {}
                             Err(e) => error!("error executing action: {:?}", e),
                         },
-                        Err(e) => error!("error receiving action: {}", e),
+                        Err(e) => { /*error!("error receiving action: {}", e)*/ }
                     }
                 }
             });
@@ -173,9 +175,7 @@ where
                 loop {
                     match event_receiver.recv().await {
                         Ok(mut event) => {
-                            // result are ignored
-                            pre_strategy.process_event(&mut event).await;
-
+                            pre_strategy.on_event(&mut event).await;
                             match post_event_sender.send(event) {
                                 Ok(_) => {}
                                 Err(e) => error!("error post_event_sender event: {}", e),

@@ -331,7 +331,13 @@ where
         swaps: Vec<OneSwapInfo>,
         chain_swaps: bool,
     ) -> Result<U256> {
-        let multicall: Multicall<M> = self.multicall.clone().block(BlockNumber::Number(block_number));
+        // https://geth.ethereum.org/docs/developers/evm-tracing/built-in-tracers
+        //panic!("TODO: Not implemented");
+        let multicall: Multicall<M> = self
+            .multicall
+            .clone()
+            .block(BlockNumber::Number(block_number))
+            .state(self.state_override_set.clone());
 
         let _swaps: Vec<contracts::simulator::OneSwapInfo>;
         unsafe {
@@ -341,7 +347,7 @@ where
         // swaps already consumed, but rust will drop it when it goes out of scope, so we need to forget it
         std::mem::forget(swaps);
 
-        let tokens_cnt: f32 = 50_000_f32;
+        let tokens_cnt: f32 = 1_f32;
         let batch: f32 = (tokens_cnt / 250_f32).ceil();
         let tokens_per_batch: usize = (tokens_cnt / batch).ceil() as usize;
         let tokens_cnt: usize = tokens_cnt as usize;

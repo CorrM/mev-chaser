@@ -5,7 +5,6 @@ use anyhow::Result;
 use ethers::prelude::{PubsubClient, U64};
 use ethers::providers::Middleware;
 use ethers::types::{Address, BlockNumber};
-use hashbrown::HashMap;
 use tokio::time::Instant;
 
 use contracts::balancer_flash_loan_recipient::OneSwapInfo;
@@ -14,7 +13,6 @@ use shared::{
     simulator::EvmSimulator,
     types::{MevActions, MevEvents},
 };
-use vidger::logger::info;
 use vidger::{
     collectors::BlockCollector,
     core::{CollectorMapper, ExecutorMapper},
@@ -23,6 +21,7 @@ use vidger::{
     VidgerEngine,
 };
 
+use crate::strategy::main_pre_strategy::MainPreStrategy;
 use crate::utilities::env::Env;
 
 pub struct RunCommand;
@@ -67,13 +66,18 @@ impl RunCommand {
         let simulator = EvmSimulator::new_ethers(provider, &[]).await;
 
         let start = Instant::now();
-        //simulator.multicall_multi_swap(block_number, swaps, true).await.unwrap();
-        let result: Result<HashMap<Address, Result<Option<i32>>>> = simulator.get_tokens_balance_slot(
-            &[Address::from_str("0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619").unwrap()],
-            block_number,
-        );
+        simulator
+            .as_ethers()
+            .unwrap()
+            .multicall_multi_swap(block_number, swaps, true)
+            .await
+            .unwrap();
+        //let result: Result<HashMap<Address, Result<Option<i32>>>> = simulator.get_tokens_balance_slot(
+        //    &[Address::from_str("0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619").unwrap()],
+        //    block_number,
+        //);
         println!("duration: {}ms", start.elapsed().as_millis());
-        info!("result: {:?}", result);
+        //info!("result: {:?}", result);
     }
 
     pub async fn process<M>(env: &Env, provider: Arc<M>) -> Result<()>
@@ -81,8 +85,8 @@ impl RunCommand {
         M: Middleware + 'static,
         M::Provider: PubsubClient,
     {
-        Self::test(Arc::clone(&provider)).await;
-        return Ok(());
+        //Self::test(Arc::clone(&provider)).await;
+        //return Ok(());
 
         let mut engine: VidgerEngine<MevEvents, MevActions> = VidgerEngine::new();
 
@@ -105,6 +109,9 @@ impl RunCommand {
         let strategy = BackRunningStrategy::new(provider.clone(), configs);
         engine.add_strategy(Box::new(strategy));
         */
+
+        let pre_strategy = MainPreStrategy::new(Arc::clone(&provider));
+        engine.set_pre_strategy(Box::new(pre_strategy));
 
         let executor = Box::new(MempoolExecutor::new(Arc::clone(&provider)));
         let executor = ExecutorMapper::new(executor, |action| match action {

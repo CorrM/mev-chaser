@@ -19,6 +19,7 @@ use revm::{
     ContextWithHandlerCfg, DatabaseRef, Evm,
 };
 
+use contracts::balancer_flash_loan_recipient::OneSwapInfo;
 use contracts::erc20_token::{BalanceOfCall, BalanceOfReturn};
 use contracts::simulator::SIMULATORABI_DEPLOYED_BYTECODE;
 use vidger::types::CryptoToken;
@@ -98,7 +99,7 @@ where
 {
     #[inline]
     fn get_evm(&self) -> Evm<(), InMemoryDB> {
-        let cfg = ContextWithHandlerCfg::new(self.ctx_with_handler.context.clone(), self.ctx_with_handler.cfg.clone());
+        let cfg = ContextWithHandlerCfg::new(self.ctx_with_handler.context.clone(), self.ctx_with_handler.cfg);
         Evm::builder().with_context_with_handler_cfg(cfg).build()
     }
 
@@ -114,9 +115,9 @@ where
     }
 
     pub fn get_token_balance(&self, token: Address) -> Result<U256> {
-        let mut evm: Evm<(), InMemoryDB> = self.get_evm();
-
         let calldata: Vec<u8> = AbiEncode::encode(BalanceOfCall { who: self.account });
+
+        let mut evm: Evm<(), InMemoryDB> = self.get_evm();
         let tx: &mut TxEnv = evm.tx_mut();
         tx.caller = self.account.0.into();
         tx.transact_to = TransactTo::Call(token.0.into());
@@ -236,5 +237,9 @@ where
             .collect();
 
         Ok(ret)
+    }
+
+    pub fn simulate_multi_swaps(&self, block_number: U64, swaps: Vec<OneSwapInfo>, chain_swaps: bool) -> Result<U256> {
+        Ok(0.into())
     }
 }
