@@ -153,11 +153,13 @@ where
                 loop {
                     match event_receiver.recv().await {
                         Ok(mut event) => {
-                            for action in strategy.process_event(&mut event).await {
-                                match action_sender.send(action) {
-                                    Ok(_) => {}
-                                    Err(e) => error!("error sending action: {}", e),
-                                }
+                            let Some(action) = strategy.process_event(&mut event).await else {
+                                continue;
+                            };
+
+                            match action_sender.send(action) {
+                                Ok(_) => {}
+                                Err(e) => error!("error sending action: {}", e),
                             }
                         }
                         Err(e) => error!("error receiving event: {}", e),

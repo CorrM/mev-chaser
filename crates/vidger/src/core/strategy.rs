@@ -9,5 +9,5 @@ pub trait Strategy<E, A>: Send + Sync {
     async fn sync_state(&mut self) -> Result<()>;
 
     /// Process an event, and return an action if needed.
-    async fn process_event(&mut self, event: &mut E) -> Vec<A>;
+    async fn process_event(&mut self, event: &mut E) -> Option<A>;
 }
