@@ -1,6 +1,6 @@
 use std::env;
+use std::path::Path;
 use std::sync::Arc;
-use std::{env::VarError, path::Path};
 
 use anyhow::{anyhow, Result};
 
@@ -23,7 +23,7 @@ fn read_env_file() -> Result<Env> {
         return Err(anyhow!("No .env file found"));
     }
 
-    let var_parse: Result<Env, VarError> = Env::new();
+    let var_parse: Result<Env> = Env::new();
     if var_parse.is_err() {
         return Err(anyhow!("Error while parsing .env file: {:?}", var_parse.unwrap_err()));
     }
@@ -60,89 +60,6 @@ async fn get_node_providers(env: &Env, target_network: &NetworkKind) -> Result<V
 async fn create_node_provider_manager(env: &Env, target_network: &NetworkKind) -> Result<NodeProviderManager> {
     let providers: Vec<NodeProvider> = get_node_providers(env, target_network).await?;
     NodeProviderManager::new(providers, get_debug_node_providers(env, target_network).await?)
-}
-
-fn get_tokens(db: &Database, network: &NetworkKind) -> Result<Vec<CryptoToken>> {
-    let db_tokens: Vec<(DbToken, DbTokenNetwork)> = db.get_tokens(network)?;
-    let mut tokens: Vec<CryptoToken> = Vec::new();
-
-    for (db_token, db_token_network) in db_tokens {
-        tokens.push(CryptoToken::new(
-            network,
-            db_token_network.address,
-            db_token.name,
-            db_token.symbol,
-            db_token.decimals as u8,
-        )?);
-    }
-
-    Ok(tokens)
-}
-
-fn get_dexes(db: &Database, network: &NetworkKind, token_manager: &TokenManager) -> Result<Vec<Arc<dyn AmmProtocol>>> {
-    let mut dexes: Vec<Arc<dyn AmmProtocol>> = Vec::new();
-
-    let db_dexes: Vec<DbDex> = db.get_dexes_by_network(network)?;
-    for db_dex in db_dexes {
-        let Some(db_dex_protocol) = db.get_dex_protocol_by_id(db_dex.dex_protocol_id)? else {
-            continue;
-        };
-
-        let Some(db_dex_network) = db.get_dex_network(db_dex.id, network)? else {
-            continue;
-        };
-
-        let db_dex_pools: Vec<DbDexPool> = db.get_dex_pools_by_dex_id(db_dex.id, network, true)?;
-        match db_dex_protocol.name.as_str() {
-            "UniswapV2" => {
-                let network_options: serde_json::Value = serde_json::from_str(&db_dex_network.options)?;
-                let dex_options: serde_json::Value = serde_json::from_str(&db_dex.options)?;
-
-                let mut uniswap_v2 = UniswapV2Protocol::new(
-                    db_dex.name.clone(),
-                    dex_options["fees"].as_u64().unwrap() as u32,
-                    network_options["factory"].as_str().unwrap(),
-                    network_options["router"].as_str().unwrap(),
-                )?;
-
-                for db_dex_pool in db_dex_pools {
-                    let pool_address: Address = db_dex_pool.address.parse::<Address>()?;
-                    if pool_address.is_zero() {
-                        continue;
-                    }
-
-                    let token0: Option<DbToken> = db.get_token_by_id(db_dex_pool.token0_id)?;
-                    let token1: Option<DbToken> = db.get_token_by_id(db_dex_pool.token1_id)?;
-                    if token0.is_none() || token1.is_none() {
-                        return Err(anyhow!("Token not found"));
-                    }
-
-                    let db_token0_network: DbTokenNetwork =
-                        db.get_token_network_by_token(token0.unwrap().id, network)?.unwrap();
-                    let db_token1_network: DbTokenNetwork =
-                        db.get_token_network_by_token(token1.unwrap().id, network)?.unwrap();
-
-                    let token0: Arc<CryptoToken> =
-                        token_manager.get_by_address_str(&db_token0_network.address).unwrap();
-                    let token1: Arc<CryptoToken> =
-                        token_manager.get_by_address_str(&db_token1_network.address).unwrap();
-
-                    uniswap_v2.add_pool(UniswapV2Pool::new(
-                        pool_address,
-                        Arc::new(uniswap_v2.clone()),
-                        *network,
-                        token0,
-                        token1,
-                    )?);
-                }
-
-                dexes.push(Arc::new(uniswap_v2));
-            }
-            _ => panic!("Unsupported dex protocol"),
-        }
-    }
-
-    Ok(dexes)
 }
 */
 
@@ -250,7 +167,7 @@ async fn main() -> Result<()> {
             _ => panic!("Invalid command"),
         }
     } else {
-        RunCommand::process(&env, raw_provider).await?;
+        RunCommand::process(&env, db, target_network, raw_provider).await?;
     }
 
     Ok(())

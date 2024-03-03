@@ -20,14 +20,22 @@ impl<M> EvmSimulator<M>
 where
     M: Middleware + 'static,
 {
+    #[inline]
     pub async fn new_revm(provider: Arc<M>, tokens_to_override_balance: &[CryptoToken]) -> Self {
         Self::Revm(RevmSimulator::new(provider, tokens_to_override_balance).await)
     }
 
+    #[inline]
+    pub async fn new_ethers(provider: Arc<M>, tokens_to_override_balance: &[CryptoToken]) -> Self {
+        Self::Ethers(EthersSimulator::new(provider, tokens_to_override_balance).await)
+    }
+
+    #[inline]
     pub fn is_revm(&self) -> bool {
         matches!(self, Self::Revm(_))
     }
 
+    #[inline]
     pub fn as_revm(&self) -> Option<&RevmSimulator<M>> {
         match self {
             Self::Revm(revm) => Some(revm),
@@ -35,14 +43,12 @@ where
         }
     }
 
-    pub async fn new_ethers(provider: Arc<M>, tokens_to_override_balance: &[CryptoToken]) -> Self {
-        Self::Ethers(EthersSimulator::new(provider, tokens_to_override_balance).await)
-    }
-
+    #[inline]
     pub fn is_ethers(&self) -> bool {
         matches!(self, Self::Ethers(_))
     }
 
+    #[inline]
     pub fn as_ethers(&self) -> Option<&EthersSimulator<M>> {
         match self {
             Self::Ethers(ethers) => Some(ethers),

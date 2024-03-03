@@ -28,9 +28,9 @@ impl BlockManager {
             .ok_or(anyhow!("Failed to get current block"))?;
 
         let latest_block: BlockInfo = latest_block.try_into()?;
-        self.update_block_info(latest_block);
-
         startup_info_log!("latest block synced: {}", latest_block.number);
+
+        self.update_block_info(latest_block);
         Ok(())
     }
 
@@ -48,9 +48,10 @@ impl BlockManager {
     pub fn update_block_info<T: Into<BlockInfo>>(&mut self, latest_block: T) {
         let latest_block: BlockInfo = latest_block.into();
 
-        log_new_block_info!(latest_block);
         self.latest_block = latest_block;
         self.next_block = latest_block.get_next_block();
+
+        log_new_block_info!(latest_block);
     }
 }
 

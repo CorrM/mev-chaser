@@ -1,5 +1,5 @@
 use anyhow::Result;
-use log::error;
+use log::{error, warn};
 use tokio::sync::broadcast::{self, Receiver, Sender};
 use tokio::task::JoinSet;
 use tokio_stream::StreamExt;
@@ -171,11 +171,11 @@ where
         // Spawn pre_strategy in separate thread.
         if let Some(mut pre_strategy) = self.pre_strategy {
             pre_strategy.sync_state().await?;
-            let mut event_receiver: Receiver<E> = pre_event_sender.subscribe();
+            let mut pre_event_sender: Receiver<E> = pre_event_sender.subscribe();
 
             set.spawn(async move {
                 loop {
-                    match event_receiver.recv().await {
+                    match pre_event_sender.recv().await {
                         Ok(mut event) => {
                             pre_strategy.on_event(&mut event).await;
                             match post_event_sender.send(event) {
@@ -191,16 +191,18 @@ where
 
         // Spawn collectors in separate threads.
         for collector in self.collectors {
-            let event_sender: Sender<E> = pre_event_sender.clone();
+            let pre_event_sender: Sender<E> = pre_event_sender.clone();
 
             set.spawn(async move {
                 let mut event_stream = collector.get_event_stream().await.unwrap();
                 while let Some(event) = event_stream.next().await {
-                    match event_sender.send(event) {
+                    match pre_event_sender.send(event) {
                         Ok(_) => {}
                         Err(e) => error!("error sending event: {}", e),
                     }
                 }
+
+                warn!("collector exited");
             });
         }
 

@@ -1,12 +1,11 @@
 use std::sync::{Arc, RwLock, RwLockReadGuard};
 
 use anyhow::Result;
-use dashmap::mapref::one::RefMut;
 use dashmap::DashMap;
 use ethers::providers::Middleware;
 use ethers::types::{Address, Filter, Log, U256, U64};
 use ethers::utils::to_checksum;
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
 
 use vidger::logger::{error, info};
 
@@ -47,14 +46,19 @@ impl<M> PoolManager<M>
 where
     M: Middleware + 'static,
 {
-    pub fn new(provider: Arc<M>) -> Self {
+    pub fn new(provider: Arc<M>, pools: Vec<AmmPoolKind>) -> Self {
         const UNI_V2_V3_SYNC_EVENT: &str = "Sync(uint112,uint112)";
-        let event_filter: Filter = Filter::new().events(vec![UNI_V2_V3_SYNC_EVENT]);
+        let pools_sync_filter: Filter = Filter::new().events(vec![UNI_V2_V3_SYNC_EVENT]);
+
+        let pools: DashMap<Address, Arc<RwLock<PoolContainer>>> = pools
+            .into_par_iter()
+            .map(|pool| (*pool.address(), Arc::new(RwLock::new(PoolContainer::new(pool)))))
+            .collect();
 
         PoolManager {
             provider,
-            pools: DashMap::new(),
-            pools_sync_filter: event_filter,
+            pools,
+            pools_sync_filter,
         }
     }
 
@@ -67,7 +71,9 @@ impl<M> PoolManager<M>
 where
     M: Middleware + 'static,
 {
+    #[inline]
     pub fn get_optimal_input_to_output(&self, pool: &AmmPoolKind) -> (U256, U256) {
+        // TODO: Simulation needed here
         (0.into(), 0.into())
     }
 
@@ -101,11 +107,13 @@ where
 
     pub async fn on_new_block(&mut self, block_number: U64) {
         /*
-        - Get touched pools updates its tuple (optimal input, output)
+        - Get touched pools then updates its tuple (optimal input, output)
         - Update most 50 profitable paths for touched pools
           - Profitable paths are path that have most output of every pool in the path
             (Most profitable output are the max input-to-output ratio)
         */
+
+        // Get touched pools
         let event_filter: Filter = self
             .pools_sync_filter
             .clone()
@@ -118,39 +126,57 @@ where
             return;
         };
 
-        // Get touched pools
-        let touched_pool_addresses = logs
+        if logs.is_empty() {
+            return;
+        }
+
+        // Get touched pools, Update optimal input to output, Must do it before update most profitable paths.
+        // because `for_each` will call the callback on sequence, that's why use .collect() to execute the callback on
+        // all touched pools, then we can get most profitable paths after
+        let touched_pools: Vec<_> = logs
             .par_iter()
-            .filter_map(|log| self.pools.get(&log.address).map(|_| log.address));
+            .filter_map(|log| {
+                let pool_address = self.pools.get(&log.address).map(|_| log.address);
+                let Some(pool_address) = pool_address else {
+                    return None;
+                };
 
-        // Update optimal input to output, Must do it before update most profitable paths
-        let pools_refs = touched_pool_addresses.filter_map(|pool_address| {
-            let pool_container = self.pools.get_mut(&pool_address);
-            let Some(pool_container_rwlock) = pool_container else {
-                return None;
-            };
+                let pool_container = self.pools.get_mut(&pool_address);
+                let Some(pool_container_rwlock) = pool_container else {
+                    return None;
+                };
 
-            let pool_container: &PoolContainer = &pool_container_rwlock.read().unwrap();
-            pool_container_rwlock.write().unwrap().input_to_output =
-                self.get_optimal_input_to_output(&pool_container.pool);
+                // Take care there a possibility of race condition between read and write, keep use try_write
+                let input_output: (U256, U256) =
+                    self.get_optimal_input_to_output(&pool_container_rwlock.read().unwrap().pool);
+                pool_container_rwlock
+                    .try_write()
+                    .expect("Failed to get write lock")
+                    .input_to_output = input_output;
 
-            Some(pool_container_rwlock)
-        });
+                Some(Arc::clone(&*pool_container_rwlock))
+            })
+            .collect();
+
+        if touched_pools.is_empty() {
+            return;
+        }
 
         // Generate most profitable paths for touched pools
-        pools_refs.for_each(|pool_item| {
-            let pool_container: &PoolContainer = &pool_item.read().unwrap();
+        touched_pools.into_par_iter().for_each(|pool_container| {
+            // Keep in mind that's block the lock, so you can't get write lock here only read lock or change your mind
+            let pool_container: &PoolContainer = &pool_container.read().unwrap();
 
-            let top_profitable_paths: Vec<Arc<RwLock<PoolPath>>> = pool_container
-                .paths
-                .read()
-                .unwrap()
-                .par_iter()
-                .map(|path| path)
-                .collect();
-            *pool_container.top_profitable_paths.write().unwrap() = top_profitable_paths;
+            //let top_profitable_paths: Vec<Arc<RwLock<PoolPath>>> = pool_container
+            //    .paths
+            //    .read()
+            //    .unwrap()
+            //    .par_iter()
+            //    .map(|path| path)
+            //    .collect();
+            //*pool_container.top_profitable_paths.write().unwrap() = top_profitable_paths;
 
-            info!("syncing pool {}", to_checksum(&pool_item.key(), None));
+            info!("syncing pool {}", to_checksum(pool_container.pool.address(), None));
         });
     }
 }

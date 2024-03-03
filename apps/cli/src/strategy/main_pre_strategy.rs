@@ -3,6 +3,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use async_trait::async_trait;
 use ethers::providers::Middleware;
+use tokio::sync::RwLock;
 
 use shared::managers::{BlockManager, PoolManager};
 use shared::types::MevEvents;
@@ -12,18 +13,22 @@ pub struct MainPreStrategy<M> {
     /// Ethers client
     provider: Arc<M>,
     /// Keeps track of onchain pools
-    pool_manager: PoolManager<M>,
+    pool_manager: Arc<RwLock<PoolManager<M>>>,
     /// Block manager
-    block_manager: BlockManager,
+    block_manager: Arc<RwLock<BlockManager>>,
 }
 
 impl<M: Middleware + 'static> MainPreStrategy<M> {
     /// Create a new instance
-    pub fn new(client: Arc<M>) -> Self {
+    pub fn new(
+        provider: Arc<M>,
+        pool_manager: Arc<RwLock<PoolManager<M>>>,
+        block_manager: Arc<RwLock<BlockManager>>,
+    ) -> Self {
         Self {
-            provider: Arc::clone(&client),
-            pool_manager: PoolManager::new(client),
-            block_manager: BlockManager::new(),
+            provider,
+            pool_manager,
+            block_manager,
         }
     }
 }
@@ -32,8 +37,12 @@ impl<M: Middleware + 'static> MainPreStrategy<M> {
 impl<M: Middleware + 'static> PreStrategy<MevEvents> for MainPreStrategy<M> {
     /// Setup by getting all pools to monitor for swaps
     async fn sync_state(&mut self) -> Result<()> {
-        self.block_manager.setup(self.provider.clone()).await?;
-        self.pool_manager.setup().await?;
+        self.block_manager
+            .write()
+            .await
+            .setup(Arc::clone(&self.provider))
+            .await?;
+        self.pool_manager.write().await.setup().await?;
 
         Ok(())
     }
@@ -44,7 +53,7 @@ impl<M: Middleware + 'static> PreStrategy<MevEvents> for MainPreStrategy<M> {
             return;
         };
 
-        self.block_manager.update_block_info(block.clone());
-        self.pool_manager.on_new_block(block.number).await;
+        self.block_manager.write().await.update_block_info(block.clone());
+        self.pool_manager.write().await.on_new_block(block.number).await;
     }
 }

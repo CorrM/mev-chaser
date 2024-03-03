@@ -60,13 +60,11 @@ impl AddTokenCommand {
             let token_decimals = token_decimals.as_u32() as u8;
 
             println!("Adding token {} '{}'", token_symbol, token_address);
-            let token_add = db.add_token(&CryptoToken::new(
+            panic!("TODO"); // TODO
+            let token_add = db.add_token(
                 target_network,
-                token_address,
-                token_name,
-                token_symbol,
-                token_decimals,
-            )?);
+                &CryptoToken::new(token_address, None, token_name, token_symbol, token_decimals, 0)?,
+            );
             if token_add.is_err() {
                 println!("Failed to add token {}", token_address);
                 continue;

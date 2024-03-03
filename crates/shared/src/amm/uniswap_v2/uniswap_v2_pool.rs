@@ -16,7 +16,7 @@ pub struct UniswapV2Pool {
 }
 
 impl UniswapV2Pool {
-    pub(crate) fn new(
+    pub fn new(
         address: Address,
         dex: Arc<AmmProtocolKind>,
         token0: Arc<CryptoToken>,

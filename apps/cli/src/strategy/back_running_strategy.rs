@@ -1,10 +1,13 @@
-/*use std::sync::Arc;
+use std::sync::Arc;
 
 use anyhow::Result;
 use async_trait::async_trait;
 use ethers::providers::Middleware;
 use ethers::signers::LocalWallet;
+use ethers::types::Transaction;
+use tokio::sync::RwLock;
 
+use shared::managers::{BlockManager, PoolManager};
 use shared::types::{MevActions, MevEvents};
 use vidger::core::Strategy;
 
@@ -13,53 +16,46 @@ pub struct BackRunningStrategyConfig {
 }
 
 pub struct BackRunningStrategy<M> {
-    /// Ethers client
+    config: BackRunningStrategyConfig,
     provider: Arc<M>,
-    /// Keeps track of onchain pools
-    pool_manager: PoolManager<M>,
-    /// Block manager
-    block_manager: BlockManager,
-    /// Keeps track of weth inventory & token dust
-    sando_state_manager: SandoStateManager,
+    pool_manager: Arc<RwLock<PoolManager<M>>>,
+    block_manager: Arc<RwLock<BlockManager>>,
 }
 
 impl<M: Middleware + 'static> BackRunningStrategy<M> {
     /// Create a new instance
-    pub fn new(client: Arc<M>, config: BackRunningStrategyConfig) -> Self {
+    pub fn new(
+        provider: Arc<M>,
+        config: BackRunningStrategyConfig,
+        pool_manager: Arc<RwLock<PoolManager<M>>>,
+        block_manager: Arc<RwLock<BlockManager>>,
+    ) -> Self {
         Self {
-            pool_manager: PoolManager::new(client.clone()),
-            provider: client,
-            block_manager: BlockManager::new(),
-            sando_state_manager: SandoStateManager::new(
-                config.sando_address,
-                config.searcher_signer,
-                config.sando_inception_block,
-            ),
+            config,
+            pool_manager,
+            provider,
+            block_manager,
         }
+    }
+}
+
+impl<M: Middleware + 'static> BackRunningStrategy<M> {
+    async fn process_new_tx(&mut self, tx: &mut Transaction) -> Option<MevActions> {
+        None
     }
 }
 
 #[async_trait]
 impl<M: Middleware + 'static> Strategy<MevEvents, MevActions> for BackRunningStrategy<M> {
-    /// Setup by getting all pools to monitor for swaps
     async fn sync_state(&mut self) -> Result<()> {
-        self.pool_manager.setup().await?;
-        self.sando_state_manager.setup(self.provider.clone()).await?;
-        self.block_manager.setup(self.provider.clone()).await?;
         Ok(())
     }
 
     /// Process incoming events
     async fn process_event(&mut self, event: &mut MevEvents) -> Option<MevActions> {
         match event {
-            MevEvents::NewBlock(block) => match self.process_new_block(block).await {
-                Ok(_) => None,
-                Err(e) => {
-                    panic!("strategy is out of sync {}", e);
-                }
-            },
             MevEvents::NewTransaction(tx) => self.process_new_tx(tx).await,
+            _ => None,
         }
     }
 }
-*/

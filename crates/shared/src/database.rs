@@ -327,15 +327,15 @@ impl Database {
         Ok(ret)
     }
 
-    pub fn add_token(&self, token: &CryptoToken) -> Result<(DbToken, DbTokenNetwork)> {
-        let db_network: Option<DbNetwork> = self.get_network(token.network())?;
+    pub fn add_token(&self, network: &NetworkKind, token: &CryptoToken) -> Result<(DbToken, DbTokenNetwork)> {
+        let db_network: Option<DbNetwork> = self.get_network(network)?;
         if db_network.is_none() {
             return Err(rusqlite::Error::QueryReturnedNoRows);
         }
 
         // check if token already exists
         if self
-            .get_token_network(to_checksum(token.address(), None), token.network())?
+            .get_token_network(to_checksum(token.address(), None), network)?
             .is_some()
         {
             return Err(rusqlite::Error::ExecuteReturnedResults);
@@ -365,7 +365,7 @@ impl Database {
         };
 
         let token_address: String = to_checksum(token.address(), None);
-        let db_token_network: DbTokenNetwork = self.add_token_network(db_token.id, token.network(), &token_address)?;
+        let db_token_network: DbTokenNetwork = self.add_token_network(db_token.id, network, &token_address)?;
 
         let mut stmt: Statement = self.db.prepare("UPDATE Tokens SET tokenNetworksIds = ? WHERE id = ?")?;
         stmt.execute(params![
@@ -377,7 +377,7 @@ impl Database {
             db_token.id
         ])?;
 
-        Ok(self.get_token_and_network(&token_address, token.network())?.unwrap())
+        Ok(self.get_token_and_network(&token_address, network)?.unwrap())
     }
 
     pub fn get_dex_protocol(&self, protocol: &AmmProtocolKind) -> Result<Option<DbDexProtocol>> {

@@ -1,14 +1,13 @@
+use std::hash::Hash;
 use std::str::FromStr;
 
 use anyhow::Result;
 use ethers::types::{Address, U256};
 
-use crate::types::NetworkKind;
-
 #[derive(Debug, Clone)]
 pub struct CryptoToken {
-    network: NetworkKind,
     address: Address,
+    proxy_address: Option<Address>,
     name: String,
     symbol: String,
     decimals: u8,
@@ -20,30 +19,26 @@ pub struct CryptoToken {
 
 impl CryptoToken {
     pub fn new(
-        network: &NetworkKind,
         address: impl Into<String>,
+        proxy_address: Option<String>,
         name: impl Into<String>,
         symbol: impl Into<String>,
         decimals: u8,
+        balance_contract_slot: i32,
     ) -> Result<Self> {
         let decimals_pow: f64 = 10_f64.powi(decimals as i32);
 
         Ok(Self {
-            network: network.clone(),
             address: Address::from_str(&address.into())?,
+            proxy_address: proxy_address.map(|a| Address::from_str(&a).unwrap()),
             name: name.into(),
             symbol: symbol.into(),
             decimals,
             decimals_pow,
             one_token_amount: U256::from((1_f64 * decimals_pow) as i128),
             input_token_unit: U256::from(10).pow(U256::from(decimals)),
-            balance_contract_slot: panic!("input_balance_contract_slot not implemented"),
+            balance_contract_slot,
         })
-    }
-
-    #[inline]
-    pub fn network(&self) -> &NetworkKind {
-        &self.network
     }
 
     #[inline]
@@ -75,7 +70,7 @@ impl CryptoToken {
     pub fn input_token_unit(&self) -> U256 {
         self.input_token_unit
     }
-    
+
     #[inline]
     pub fn balance_contract_slot(&self) -> i32 {
         self.balance_contract_slot

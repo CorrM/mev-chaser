@@ -14,5 +14,6 @@ async-trait = { workspace = true }
 serde_json = { workspace = true }
 hashbrown = { workspace = true }
 ethers = { workspace = true }
+rayon = { workspace = true }
 
 dotenv = "0.15.0"

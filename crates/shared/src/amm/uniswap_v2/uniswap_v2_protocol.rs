@@ -81,7 +81,7 @@ impl UniswapV2Protocol {
 }
 
 impl UniswapV2Protocol {
-    pub(crate) fn new(name: impl Into<String>, factory: impl Into<String>, router: impl Into<String>) -> Result<Self> {
+    pub fn new(name: impl Into<String>, factory: impl Into<String>, router: impl Into<String>) -> Result<Self> {
         Ok(Self {
             name: name.into(),
             factory: Address::from_str(&factory.into())?,

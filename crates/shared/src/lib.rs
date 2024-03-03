@@ -1,4 +1,4 @@
-mod amm;
+pub mod amm;
 pub mod database;
 pub mod executors;
 mod helper;
