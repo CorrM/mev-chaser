@@ -9,14 +9,16 @@ use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterato
 
 use vidger::logger::{error, info};
 
-use crate::amm::AmmPoolKind;
+use crate::amm::{AmmPoolKind, AmmProtocolKind};
+use crate::managers::AmmManager;
+use crate::simulator::EvmSimulator;
 use crate::types::PoolPath;
 
 pub type SafePoolPathVec = RwLock<Vec<Arc<RwLock<PoolPath>>>>;
 
 struct PoolContainer {
     /// Pool
-    pub pool: AmmPoolKind,
+    pub pool: Arc<AmmPoolKind>,
     /// Pool paths
     pub paths: Arc<SafePoolPathVec>, // TODO: Delete this as top_profitable_paths will be generated and updated
     /// Optimal input to output
@@ -26,7 +28,7 @@ struct PoolContainer {
 }
 
 impl PoolContainer {
-    fn new(pool: AmmPoolKind) -> Self {
+    fn new(pool: Arc<AmmPoolKind>) -> Self {
         Self {
             pool,
             paths: Arc::new(RwLock::new(Vec::new())),
@@ -38,6 +40,7 @@ impl PoolContainer {
 
 pub struct PoolManager<M> {
     provider: Arc<M>,
+    simulator: Arc<EvmSimulator<M>>,
     pools: DashMap<Address, Arc<RwLock<PoolContainer>>>,
     pools_sync_filter: Filter,
 }
@@ -46,17 +49,25 @@ impl<M> PoolManager<M>
 where
     M: Middleware + 'static,
 {
-    pub fn new(provider: Arc<M>, pools: Vec<AmmPoolKind>) -> Self {
+    pub fn new(provider: Arc<M>, simulator: Arc<EvmSimulator<M>>, amm_manager: &AmmManager) -> Self {
         const UNI_V2_V3_SYNC_EVENT: &str = "Sync(uint112,uint112)";
         let pools_sync_filter: Filter = Filter::new().events(vec![UNI_V2_V3_SYNC_EVENT]);
 
-        let pools: DashMap<Address, Arc<RwLock<PoolContainer>>> = pools
-            .into_par_iter()
-            .map(|pool| (*pool.address(), Arc::new(RwLock::new(PoolContainer::new(pool)))))
+        let pools: DashMap<Address, Arc<RwLock<PoolContainer>>> = amm_manager
+            .amms()
+            .par_iter()
+            .flat_map(|dex: &Arc<AmmProtocolKind>| dex.pools())
+            .map(|pool: &Arc<AmmPoolKind>| {
+                (
+                    *pool.address(),
+                    Arc::new(RwLock::new(PoolContainer::new(Arc::clone(pool)))),
+                )
+            })
             .collect();
 
         PoolManager {
             provider,
+            simulator,
             pools,
             pools_sync_filter,
         }
@@ -72,17 +83,16 @@ where
     M: Middleware + 'static,
 {
     #[inline]
-    pub fn get_optimal_input_to_output(&self, pool: &AmmPoolKind) -> (U256, U256) {
+    pub fn get_optimal_input_and_output(&self, pool: &AmmPoolKind) -> (U256, U256) {
         // TODO: Simulation needed here
         (0.into(), 0.into())
     }
 
     pub fn add_path(&mut self, path: PoolPath) {
         for path_item in path.path() {
-            let pool_lock: RwLockReadGuard<AmmPoolKind> = path_item.pool.read().unwrap();
             self.pools
-                .entry(*pool_lock.address())
-                .or_insert_with(|| Arc::new(RwLock::new(PoolContainer::new((*pool_lock).clone()))))
+                .entry(*path_item.pool.address())
+                .or_insert_with(|| Arc::new(RwLock::new(PoolContainer::new(Arc::clone(&path_item.pool)))))
                 .write()
                 .unwrap()
                 .paths
@@ -133,7 +143,7 @@ where
         // Get touched pools, Update optimal input to output, Must do it before update most profitable paths.
         // because `for_each` will call the callback on sequence, that's why use .collect() to execute the callback on
         // all touched pools, then we can get most profitable paths after
-        let touched_pools: Vec<_> = logs
+        let touched_pools: Vec<Arc<RwLock<PoolContainer>>> = logs
             .par_iter()
             .filter_map(|log| {
                 let pool_address = self.pools.get(&log.address).map(|_| log.address);
@@ -148,7 +158,7 @@ where
 
                 // Take care there a possibility of race condition between read and write, keep use try_write
                 let input_output: (U256, U256) =
-                    self.get_optimal_input_to_output(&pool_container_rwlock.read().unwrap().pool);
+                    self.get_optimal_input_and_output(&pool_container_rwlock.read().unwrap().pool);
                 pool_container_rwlock
                     .try_write()
                     .expect("Failed to get write lock")

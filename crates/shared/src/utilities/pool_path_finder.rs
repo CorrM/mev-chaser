@@ -1,10 +1,5 @@
 use std::fmt::Debug;
-use std::{
-    collections::HashSet,
-    sync::{Arc, RwLock},
-};
-
-use ethers::utils::to_checksum;
+use std::{collections::HashSet, sync::Arc};
 
 use vidger::types::CryptoToken;
 
@@ -13,12 +8,12 @@ use crate::types::PoolPath;
 
 #[derive(Clone)]
 pub struct PoolPathItem {
-    pub pool: Arc<RwLock<AmmPoolKind>>,
+    pub pool: Arc<AmmPoolKind>,
     pub zero_are_input: bool,
 }
 
 impl PoolPathItem {
-    pub(crate) fn new(pool: Arc<RwLock<AmmPoolKind>>, zero_are_input: bool) -> Self {
+    pub(crate) fn new(pool: Arc<AmmPoolKind>, zero_are_input: bool) -> Self {
         Self { pool, zero_are_input }
     }
 }
@@ -26,14 +21,14 @@ impl PoolPathItem {
 impl Debug for PoolPathItem {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PoolPathItem")
-            .field("pool", self.pool.read().unwrap().address())
+            .field("pool", self.pool.address())
             .field("zero_are_input", &self.zero_are_input)
             .finish()
     }
 }
 
 fn dfs(
-    token_pools: &Vec<Arc<RwLock<AmmPoolKind>>>,
+    token_pools: &Vec<Arc<AmmPoolKind>>,
     current_token: &Arc<CryptoToken>,
     output_token: &Arc<CryptoToken>,
     visited_pools: &mut HashSet<usize>,
@@ -51,10 +46,8 @@ fn dfs(
             continue;
         }
 
-        let next_pool_read_lock = next_pool.read().unwrap();
-        let token0: &Arc<CryptoToken> = next_pool_read_lock.token0();
-        let token1: &Arc<CryptoToken> = next_pool_read_lock.token1();
-
+        let token0: &Arc<CryptoToken> = next_pool.token0();
+        let token1: &Arc<CryptoToken> = next_pool.token1();
         if !Arc::ptr_eq(current_token, token0) && !Arc::ptr_eq(current_token, token1) {
             continue;
         }
@@ -71,16 +64,11 @@ fn dfs(
         ));
         visited_pools.insert(idx);
 
-        let all_is_same_pool: bool = route.len() > 1
-            && route
-                .iter()
-                .all(|r| route[0].pool.read().unwrap().address() == r.pool.read().unwrap().address());
+        let all_is_same_pool: bool =
+            route.len() > 1 && route.iter().all(|r| route[0].pool.address() == r.pool.address());
 
         if all_is_same_pool {
-            println!("{:?}", to_checksum(token_pools[37].read().unwrap().address(), None));
-            println!("{:?}", to_checksum(token_pools[83].read().unwrap().address(), None));
-            println!("{:?}", route);
-            panic!("Found a path are all the same pool");
+            panic!("Found a path are all the same pool, Route: {:?}", route);
         }
 
         if !all_is_same_pool && Arc::ptr_eq(next_token, output_token) && route.len() > 1 {
@@ -104,7 +92,7 @@ fn dfs(
 }
 
 pub fn generate_pool_paths(
-    pools: &Vec<Arc<RwLock<AmmPoolKind>>>,
+    pools: &Vec<Arc<AmmPoolKind>>,
     input_token: &Arc<CryptoToken>,
     output_token: &Arc<CryptoToken>,
     max_multi_hop: i32,

@@ -1,8 +1,10 @@
 use std::fmt::{Display, Formatter, Result};
+use std::sync::Arc;
 
 use ethers::types::Address;
 
-use crate::amm::UniswapV2Protocol;
+use crate::amm::amm_protocol::AmmProtocol;
+use crate::amm::{AmmPoolKind, UniswapV2Protocol};
 
 pub enum AmmProtocolKind {
     UniswapV2(UniswapV2Protocol),
@@ -50,6 +52,19 @@ impl AmmProtocolKind {
     pub fn factory(&self) -> &Address {
         match self {
             AmmProtocolKind::UniswapV2(protocol) => protocol.factory(),
+        }
+    }
+
+    #[inline]
+    pub fn pools(&self) -> &Vec<Arc<AmmPoolKind>> {
+        match self {
+            AmmProtocolKind::UniswapV2(amm) => amm.pools(),
+        }
+    }
+
+    pub fn add_pool(&mut self, pool: AmmPoolKind) {
+        match self {
+            AmmProtocolKind::UniswapV2(amm) => amm.add_pool(pool),
         }
     }
 }

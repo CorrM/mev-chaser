@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use ethers::types::Address;
 
 use vidger::types::CryptoToken;
@@ -22,6 +22,10 @@ impl UniswapV2Pool {
         token0: Arc<CryptoToken>,
         token1: Arc<CryptoToken>,
     ) -> Result<Self> {
+        if !dex.is_uniswap_v2() {
+            return Err(anyhow!("UniswapV2Pool must be created with UniswapV2Protocol"));
+        }
+
         Ok(Self {
             address,
             dex,

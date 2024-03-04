@@ -3,7 +3,7 @@ pragma solidity ^0.8.23;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {IUniswapV2Router02, ISwapRouter} from "./Interfaces.sol";
+import {IUniswapV2Router02, ISwapRouter, IQuoterV2} from "./Interfaces.sol";
 import {Utils} from "./Utils.sol";
 
 /**
@@ -76,6 +76,17 @@ library Swapper {
         }
     }
 
+    function getAmountsOutUniswapV2(
+        address router,
+        address[] memory path,
+        uint256 amountIn
+    ) internal view returns (uint256) {
+        IUniswapV2Router02 routerV2 = IUniswapV2Router02(router);
+        uint256[] memory amounts = routerV2.getAmountsOut(amountIn, path);
+
+        return amounts[amounts.length - 1];
+    }
+
     /**
      * Don't call this function before make sure `router` approved to swap `amountIn`
      * and this contract has enough balance of `tokenIn`
@@ -105,6 +116,17 @@ library Swapper {
         } catch (bytes memory /*reason*/) {
             return (0, true, "Mostly pair not found");
         }
+    }
+
+    function getAmountsOutUniswapV3(
+        address quoter,
+        bytes memory path,
+        uint256 amountIn
+    ) internal returns (uint256) {
+        IQuoterV2 quoterToUse = IQuoterV2(quoter);
+        (uint256 amount,,,) = quoterToUse.quoteExactInput(path, amountIn);
+
+        return amount;
     }
 
     /*

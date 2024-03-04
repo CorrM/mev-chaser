@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::{collections::HashMap, str::FromStr};
 
 use anyhow::Result;
@@ -8,16 +9,26 @@ use ethers::{
 
 use contracts::uniswap_v2_pair::UNISWAPV2PAIRABI_ABI;
 
-use crate::amm::AmmProtocol;
+use crate::amm::{AmmPoolKind, AmmProtocol};
 
 #[derive(Clone)]
 pub struct UniswapV2Protocol {
     name: String,
     factory: Address,
     router: Address,
+    pools: Vec<Arc<AmmPoolKind>>,
 }
 
 impl UniswapV2Protocol {
+    pub fn new(name: impl Into<String>, factory: impl Into<String>, router: impl Into<String>) -> Result<Self> {
+        Ok(Self {
+            name: name.into(),
+            factory: Address::from_str(&factory.into())?,
+            router: Address::from_str(&router.into())?,
+            pools: Vec::new(),
+        })
+    }
+
     #[inline]
     pub fn decode_pair_trace_logs(trace_log: &CallLogFrame) -> Option<HashMap<String, (Address, Log)>> {
         let mut ret: HashMap<String, (Address, Log)> = HashMap::new();
@@ -81,14 +92,6 @@ impl UniswapV2Protocol {
 }
 
 impl UniswapV2Protocol {
-    pub fn new(name: impl Into<String>, factory: impl Into<String>, router: impl Into<String>) -> Result<Self> {
-        Ok(Self {
-            name: name.into(),
-            factory: Address::from_str(&factory.into())?,
-            router: Address::from_str(&router.into())?,
-        })
-    }
-
     #[inline]
     pub fn name(&self) -> &str {
         &self.name
@@ -108,5 +111,13 @@ impl UniswapV2Protocol {
 impl AmmProtocol for UniswapV2Protocol {
     fn name(&self) -> &str {
         &self.name
+    }
+
+    fn pools(&self) -> &Vec<Arc<AmmPoolKind>> {
+        &self.pools
+    }
+
+    fn add_pool(&mut self, pool: AmmPoolKind) {
+        self.pools.push(Arc::new(pool));
     }
 }

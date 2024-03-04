@@ -1,4 +1,4 @@
-use std::sync::{Arc, RwLockReadGuard};
+use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 use ethers::{
@@ -10,7 +10,7 @@ use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use contracts::balancer_flash_loan_recipient::OneSwapInfo;
 use vidger::types::CryptoToken;
 
-use crate::amm::{AmmPoolKind, AmmProtocolKind};
+use crate::amm::AmmProtocolKind;
 use crate::utilities::PoolPathItem;
 
 pub fn make_uniswap_v2_protocol_swap_info(
@@ -53,9 +53,9 @@ impl PoolPath {
         let first_path_item: &PoolPathItem = &path[0];
 
         let input_token: Arc<CryptoToken> = if first_path_item.zero_are_input {
-            Arc::clone(first_path_item.pool.read().unwrap().token0())
+            Arc::clone(first_path_item.pool.token0())
         } else {
-            Arc::clone(first_path_item.pool.read().unwrap().token1())
+            Arc::clone(first_path_item.pool.token1())
         };
 
         Self { path, input_token }
@@ -67,7 +67,7 @@ impl PoolPath {
 
     pub fn contains_pool(&self, pool_address: &Address) -> bool {
         for path_item in &self.path {
-            if *path_item.pool.read().unwrap().address() == *pool_address {
+            if *path_item.pool.address() == *pool_address {
                 return true;
             }
         }
@@ -91,8 +91,8 @@ impl PoolPath {
                 break;
             }
 
-            let reserve0: U256 = path_item.pool.read().unwrap().reserve0();
-            let reserve1: U256 = path_item.pool.read().unwrap().reserve1();
+            let reserve0: U256 = path_item.pool.reserve0();
+            let reserve1: U256 = path_item.pool.reserve1();
 
             let reserve_in: U256;
             let reserve_out: U256;
@@ -104,9 +104,9 @@ impl PoolPath {
                 reserve_out = reserve0;
             }
 
-            //let fee: U256 = U256::from(path_item.pool.read().unwrap().dex().fees);
+            //let fee: U256 = U256::from(path_item.pool.dex().fees);
             if reserve_in.is_zero() || reserve_out.is_zero() {
-                let address: String = to_checksum(path_item.pool.read().unwrap().address(), None);
+                let address: String = to_checksum(path_item.pool.address(), None);
                 panic!(
                     "get_amount_out_v2 => {}: amount_in: {}, reserve_in: {}, reserve_out: {}",
                     address, amount_in, reserve_in, reserve_out
@@ -155,11 +155,8 @@ impl PoolPath {
             return Err(anyhow!("Not enough paths"));
         }
 
-        let first_path_dex: Arc<AmmProtocolKind> = Arc::clone(self.path[0].pool.read().unwrap().dex());
-        let all_are_same_dex: bool = self.path.iter().all(|p| {
-            let pool_read_lock: RwLockReadGuard<AmmPoolKind> = p.pool.read().unwrap();
-            Arc::ptr_eq(pool_read_lock.dex(), &first_path_dex)
-        });
+        let first_path_dex: Arc<AmmProtocolKind> = Arc::clone(self.path[0].pool.dex());
+        let all_are_same_dex: bool = self.path.iter().all(|p| Arc::ptr_eq(p.pool.dex(), &first_path_dex));
 
         let mut swaps: Vec<OneSwapInfo> = Vec::new();
         let mut chain_swaps: bool = false;
@@ -171,9 +168,9 @@ impl PoolPath {
                 .par_iter()
                 .map(|path| {
                     if path.zero_are_input {
-                        *path.pool.read().unwrap().token0().address()
+                        *path.pool.token0().address()
                     } else {
-                        *path.pool.read().unwrap().token1().address()
+                        *path.pool.token1().address()
                     }
                 })
                 .collect();
@@ -181,9 +178,9 @@ impl PoolPath {
             // Add Output token
             let last_path_item = &self.path[self.path.len() - 1];
             if last_path_item.zero_are_input {
-                path.push(*last_path_item.pool.read().unwrap().token1().address());
+                path.push(*last_path_item.pool.token1().address());
             } else {
-                path.push(*last_path_item.pool.read().unwrap().token0().address());
+                path.push(*last_path_item.pool.token0().address());
             }
 
             let Ok(swap) = make_uniswap_v2_protocol_swap_info(router, path, input_amount, output_amount) else {
@@ -193,14 +190,12 @@ impl PoolPath {
             swaps.push(swap);
         } else {
             for (idx, path_item) in self.path.iter().enumerate() {
-                let router: Address = *path_item.pool.read().unwrap().dex().router();
+                let router: Address = *path_item.pool.dex().router();
 
                 let path: Vec<Address> = if path_item.zero_are_input {
-                    let pool_read_lock = path_item.pool.read().unwrap();
-                    vec![*pool_read_lock.token0().address(), *pool_read_lock.token1().address()]
+                    vec![*path_item.pool.token0().address(), *path_item.pool.token1().address()]
                 } else {
-                    let pool_read_lock = path_item.pool.read().unwrap();
-                    vec![*pool_read_lock.token1().address(), *pool_read_lock.token0().address()]
+                    vec![*path_item.pool.token1().address(), *path_item.pool.token0().address()]
                 };
 
                 // Its chain swap, so only first swap needs input amount

@@ -6,13 +6,12 @@ use ethers::prelude::{PubsubClient, U64};
 use ethers::providers::Middleware;
 use ethers::signers::LocalWallet;
 use ethers::types::{Address, BlockNumber};
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use tokio::time::Instant;
 
 use contracts::balancer_flash_loan_recipient::OneSwapInfo;
 use shared::amm::{AmmPoolKind, AmmProtocolKind, UniswapV2Pool, UniswapV2Protocol};
 use shared::database::{Database, DbDex, DbDexPool, DbToken, DbTokenNetwork};
-use shared::managers::{BlockManager, PoolManager, TokenManager};
+use shared::managers::{AmmManager, BlockManager, PoolManager, TokenManager};
 use shared::{
     executors::FastLineExecutor,
     simulator::EvmSimulator,
@@ -109,8 +108,8 @@ impl RunCommand {
         db: &Database,
         network: &NetworkKind,
         token_manager: &TokenManager,
-    ) -> Result<Vec<(Arc<AmmProtocolKind>, Vec<AmmPoolKind>)>> {
-        let mut ret: Vec<(Arc<AmmProtocolKind>, Vec<AmmPoolKind>)> = Vec::new();
+    ) -> Result<Vec<Arc<AmmProtocolKind>>> {
+        let mut ret: Vec<Arc<AmmProtocolKind>> = Vec::new();
 
         let db_dexes: Vec<DbDex> = db.get_dexes_by_network(network)?;
         for db_dex in db_dexes {
@@ -128,12 +127,11 @@ impl RunCommand {
                     //let dex_options: serde_json::Value = serde_json::from_str(&db_dex.options)?;
                     let network_options: serde_json::Value = serde_json::from_str(&db_dex_network.options)?;
 
-                    let uniswap_v2: Arc<AmmProtocolKind> =
-                        Arc::new(AmmProtocolKind::UniswapV2(UniswapV2Protocol::new(
-                            db_dex.name,
-                            network_options["factory"].as_str().unwrap(),
-                            network_options["router"].as_str().unwrap(),
-                        )?));
+                    let uniswap_v2 = Arc::new(AmmProtocolKind::UniswapV2(UniswapV2Protocol::new(
+                        db_dex.name,
+                        network_options["factory"].as_str().unwrap(),
+                        network_options["router"].as_str().unwrap(),
+                    )?));
 
                     let mut pools: Vec<AmmPoolKind> = Vec::with_capacity(db_dex_pools.len());
                     for db_dex_pool in db_dex_pools {
@@ -167,7 +165,15 @@ impl RunCommand {
                         pools.push(pool);
                     }
 
-                    ret.push((uniswap_v2, pools));
+                    unsafe {
+                        let uniswap_v2 = Arc::into_raw(uniswap_v2) as *mut AmmProtocolKind;
+
+                        for pool in pools {
+                            (*uniswap_v2).add_pool(pool);
+                        }
+
+                        ret.push(Arc::from_raw(uniswap_v2));
+                    }
                 }
                 _ => panic!("Unsupported dex protocol"),
             }
@@ -190,24 +196,27 @@ impl RunCommand {
             .map_err(|_| anyhow!("Failed to parse \"PRIVATE_KEY\""))?;
 
         let tokens: Vec<CryptoToken> = Self::get_tokens(&db, &network).expect("Failed to get tokens");
+        let simulator = Arc::new(EvmSimulator::new_ethers(Arc::clone(&provider), &tokens).await);
+
         let token_manager = TokenManager::new(tokens, &network);
-
-        let dexes: Vec<(Arc<AmmProtocolKind>, Vec<AmmPoolKind>)> =
-            Self::get_dexes(&db, &network, &token_manager).expect("Failed to get dexes");
-        let pools: Vec<AmmPoolKind> = dexes
-            .into_par_iter()
-            .flat_map(|dex: (Arc<AmmProtocolKind>, Vec<AmmPoolKind>)| dex.1)
-            .collect();
-
-        let pool_manager = Arc::new(tokio::sync::RwLock::new(PoolManager::new(Arc::clone(&provider), pools)));
-        let block_manager = Arc::new(tokio::sync::RwLock::new(BlockManager::new()));
+        let amm_manager = AmmManager::new(Self::get_dexes(&db, &network, &token_manager)?);
+        let pool_manager = PoolManager::new(Arc::clone(&provider), simulator, &amm_manager);
+        let block_manager = BlockManager::new();
 
         let mut engine: VidgerEngine<MevEvents, MevActions> = VidgerEngine::new();
+
+        // Set up managers.
+        let pool_manager = Arc::new(tokio::sync::RwLock::new(pool_manager));
+        let block_manager = Arc::new(tokio::sync::RwLock::new(block_manager));
 
         // Set up block collector.
         let block_collector = Box::new(BlockCollector::new(Arc::clone(&provider)));
         let block_collector = CollectorMapper::new(block_collector, MevEvents::NewBlock);
         engine.add_collector(Box::new(block_collector));
+
+        //let mempool_collector = Box::new(MempoolCollector::new(Arc::clone(&provider), true));
+        //let mempool_collector = CollectorMapper::new(mempool_collector, MevEvents::NewTransaction);
+        //engine.add_collector(Box::new(mempool_collector));
 
         // Set up pre-strategy
         let pre_strategy = MainPreStrategy::new(
