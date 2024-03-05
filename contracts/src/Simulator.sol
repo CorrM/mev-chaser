@@ -22,6 +22,7 @@ contract Simulator {
         bytes memory path,
         uint256 amountIn
     ) external returns (uint256) {
+        return 50;
         if (protocol == AmmProtocol.UniswapV2) {
             address[] memory pathDecoded = abi.decode(
                 path,

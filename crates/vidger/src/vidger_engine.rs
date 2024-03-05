@@ -162,7 +162,7 @@ where
                                 Err(e) => error!("error sending action: {}", e),
                             }
                         }
-                        Err(e) => error!("error receiving event: {}", e),
+                        Err(e) => {} /*error!("error receiving event: {}", e)*/,
                     }
                 }
             });
@@ -183,7 +183,7 @@ where
                                 Err(e) => error!("error post_event_sender event: {}", e),
                             }
                         }
-                        Err(e) => error!("error receiving event: {}", e),
+                        Err(e) => error!("error pre receiving event: {}", e),
                     }
                 }
             });

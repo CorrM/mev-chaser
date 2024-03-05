@@ -6,6 +6,7 @@ use ethers::providers::Middleware;
 use tokio::sync::RwLock;
 
 use shared::managers::{BlockManager, PoolManager};
+use shared::simulator::EvmSimulator;
 use shared::types::MevEvents;
 use vidger::core::PreStrategy;
 
@@ -16,6 +17,8 @@ pub struct MainPreStrategy<M> {
     pool_manager: Arc<RwLock<PoolManager<M>>>,
     /// Block manager
     block_manager: Arc<RwLock<BlockManager>>,
+    /// EVM simulator
+    simulator: Arc<RwLock<EvmSimulator<M>>>,
 }
 
 impl<M: Middleware + 'static> MainPreStrategy<M> {
@@ -24,11 +27,13 @@ impl<M: Middleware + 'static> MainPreStrategy<M> {
         provider: Arc<M>,
         pool_manager: Arc<RwLock<PoolManager<M>>>,
         block_manager: Arc<RwLock<BlockManager>>,
+        simulator: Arc<RwLock<EvmSimulator<M>>>,
     ) -> Self {
         Self {
             provider,
             pool_manager,
             block_manager,
+            simulator,
         }
     }
 }
@@ -55,5 +60,6 @@ impl<M: Middleware + 'static> PreStrategy<MevEvents> for MainPreStrategy<M> {
 
         self.block_manager.write().await.update_block_info(block.clone());
         self.pool_manager.write().await.on_new_block(block.number).await;
+        self.simulator.write().await.update_block().await;
     }
 }

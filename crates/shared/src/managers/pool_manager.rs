@@ -6,6 +6,7 @@ use ethers::providers::Middleware;
 use ethers::types::{Address, Filter, Log, U256, U64};
 use ethers::utils::to_checksum;
 use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
+use tokio::time::Instant;
 
 use vidger::logger::{error, info};
 
@@ -40,7 +41,7 @@ impl PoolContainer {
 
 pub struct PoolManager<M> {
     provider: Arc<M>,
-    simulator: Arc<EvmSimulator<M>>,
+    simulator: Arc<tokio::sync::RwLock<EvmSimulator<M>>>,
     pools: DashMap<Address, Arc<RwLock<PoolContainer>>>,
     pools_sync_filter: Filter,
 }
@@ -49,7 +50,11 @@ impl<M> PoolManager<M>
 where
     M: Middleware + 'static,
 {
-    pub fn new(provider: Arc<M>, simulator: Arc<EvmSimulator<M>>, amm_manager: &AmmManager) -> Self {
+    pub fn new(
+        provider: Arc<M>,
+        simulator: Arc<tokio::sync::RwLock<EvmSimulator<M>>>,
+        amm_manager: &AmmManager,
+    ) -> Self {
         const UNI_V2_V3_SYNC_EVENT: &str = "Sync(uint112,uint112)";
         let pools_sync_filter: Filter = Filter::new().events(vec![UNI_V2_V3_SYNC_EVENT]);
 
@@ -85,6 +90,10 @@ where
     #[inline]
     pub fn get_optimal_input_and_output(&self, pool: &AmmPoolKind) -> (U256, U256) {
         // TODO: Simulation needed here
+        self.simulator
+            .read()
+            .get_amounts_out(pool, pool.token0().convert_to_amount(1_f64))
+            .unwrap();
         (0.into(), 0.into())
     }
 
@@ -152,19 +161,20 @@ where
                 };
 
                 let pool_container = self.pools.get_mut(&pool_address);
-                let Some(pool_container_rwlock) = pool_container else {
+                let Some(pool_container_ref) = pool_container else {
                     return None;
                 };
 
                 // Take care there a possibility of race condition between read and write, keep use try_write
                 let input_output: (U256, U256) =
-                    self.get_optimal_input_and_output(&pool_container_rwlock.read().unwrap().pool);
-                pool_container_rwlock
+                    self.get_optimal_input_and_output(&pool_container_ref.try_read().unwrap().pool);
+
+                pool_container_ref
                     .try_write()
                     .expect("Failed to get write lock")
                     .input_to_output = input_output;
 
-                Some(Arc::clone(&*pool_container_rwlock))
+                Some(Arc::clone(&*pool_container_ref))
             })
             .collect();
 

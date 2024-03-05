@@ -9,6 +9,7 @@ use hashbrown::HashMap;
 
 use vidger::types::CryptoToken;
 
+use crate::amm::AmmPoolKind;
 use crate::simulator::{EthersSimulator, RevmSimulator};
 
 pub enum EvmSimulator<M> {
@@ -22,7 +23,7 @@ where
 {
     #[inline]
     pub async fn new_revm(provider: Arc<M>, tokens_to_override_balance: &[CryptoToken]) -> Self {
-        Self::Revm(RevmSimulator::new(provider, tokens_to_override_balance).await)
+        Self::Revm(RevmSimulator::new(provider, tokens_to_override_balance))
     }
 
     #[inline]
@@ -69,6 +70,14 @@ impl<M> EvmSimulator<M>
 where
     M: Middleware + 'static,
 {
+    pub async fn update_block(&mut self) {
+        match self {
+            Self::Revm(ref mut revm) => revm.update_block(),
+            _ => panic!("Only revm simulator can update block"),
+            //Self::Ethers(ref mut ethers) => ethers.update_block(),
+        }
+    }
+
     pub async fn get_proxy_implementation(&self, token: Address, block_number: U64) -> Result<Option<Address>> {
         // adapted from: https://github.com/gnosis/evm-proxy-detection/blob/main/src/index.ts
         let eip_1967_logic_slot: U256 =
@@ -117,6 +126,13 @@ where
         match self {
             Self::Revm(ref revm) => revm.get_tokens_balance_slot(tokens, block_number),
             Self::Ethers(ref ethers) => ethers.get_tokens_balance_slot(tokens, block_number),
+        }
+    }
+
+    pub fn get_amounts_out(&self, pool: &AmmPoolKind, amount_in: U256) -> Result<U256> {
+        match self {
+            Self::Revm(ref revm) => revm.get_amounts_out(pool, amount_in),
+            Self::Ethers(ref ethers) => ethers.get_amounts_out(pool, amount_in),
         }
     }
 }

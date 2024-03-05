@@ -196,18 +196,21 @@ impl RunCommand {
             .map_err(|_| anyhow!("Failed to parse \"PRIVATE_KEY\""))?;
 
         let tokens: Vec<CryptoToken> = Self::get_tokens(&db, &network).expect("Failed to get tokens");
-        let simulator = Arc::new(EvmSimulator::new_ethers(Arc::clone(&provider), &tokens).await);
-
-        let token_manager = TokenManager::new(tokens, &network);
-        let amm_manager = AmmManager::new(Self::get_dexes(&db, &network, &token_manager)?);
-        let pool_manager = PoolManager::new(Arc::clone(&provider), simulator, &amm_manager);
-        let block_manager = BlockManager::new();
-
-        let mut engine: VidgerEngine<MevEvents, MevActions> = VidgerEngine::new();
+        let simulator = Arc::new(tokio::sync::RwLock::new(
+            EvmSimulator::new_revm(Arc::clone(&provider), &tokens).await,
+        ));
 
         // Set up managers.
+        let token_manager = TokenManager::new(tokens, &network);
+        let amm_manager = AmmManager::new(Self::get_dexes(&db, &network, &token_manager)?);
+        let pool_manager = PoolManager::new(Arc::clone(&provider), Arc::clone(&simulator), &amm_manager);
+        let block_manager = BlockManager::new();
+
         let pool_manager = Arc::new(tokio::sync::RwLock::new(pool_manager));
         let block_manager = Arc::new(tokio::sync::RwLock::new(block_manager));
+
+        // Set up engine.
+        let mut engine: VidgerEngine<MevEvents, MevActions> = VidgerEngine::new();
 
         // Set up block collector.
         let block_collector = Box::new(BlockCollector::new(Arc::clone(&provider)));
@@ -223,6 +226,7 @@ impl RunCommand {
             Arc::clone(&provider),
             Arc::clone(&pool_manager),
             Arc::clone(&block_manager),
+            Arc::clone(&simulator),
         );
         engine.set_pre_strategy(Box::new(pre_strategy));
 

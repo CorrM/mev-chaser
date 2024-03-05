@@ -24,6 +24,8 @@ use contracts::erc20_token::{BalanceOfCall, BalanceOfReturn};
 use contracts::simulator::SIMULATORABI_DEPLOYED_BYTECODE;
 use vidger::types::CryptoToken;
 
+use crate::amm::AmmPoolKind;
+
 #[derive(Debug, Clone)]
 pub struct TxResult {
     pub output: revm::primitives::Bytes,
@@ -43,7 +45,7 @@ impl<M> RevmSimulator<M>
 where
     M: Middleware,
 {
-    pub(super) async fn new(provider: Arc<M>, tokens_to_override_balance: &[CryptoToken]) -> Self {
+    pub(super) fn new(provider: Arc<M>, tokens_to_override_balance: &[CryptoToken]) -> Self {
         let ten_eth: U256 = U256::from(10).checked_mul(U256::from(10).pow(U256::from(18))).unwrap();
 
         let mut state_override_set: State = spoof::state();
@@ -239,7 +241,11 @@ where
         Ok(ret)
     }
 
-    pub fn simulate_multi_swaps(&self, block_number: U64, swaps: Vec<OneSwapInfo>, chain_swaps: bool) -> Result<U256> {
+    pub fn get_amounts_out(&self, pool: &AmmPoolKind, amount_in: U256) -> Result<U256> {
+        todo!()
+    }
+
+    pub fn multi_swaps(&self, block_number: U64, swaps: Vec<OneSwapInfo>, chain_swaps: bool) -> Result<U256> {
         Ok(0.into())
     }
 }

@@ -3,6 +3,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
+use ethers::abi::Token;
 use ethers::{
     abi,
     abi::{AbiDecode, AbiEncode},
@@ -22,14 +23,17 @@ use ethers::{
 };
 use hashbrown::HashMap;
 use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
+use revm::primitives::bitvec::macros::internal::funty::Fundamental;
 
 use contracts::balancer_flash_loan_recipient::OneSwapInfo;
 use contracts::erc20_token::BalanceOfCall;
 use contracts::simulator::{
-    SimulateMultiSwapCall, SimulateMultiSwapReturn, SimulatorAbi, SimulatorAbiErrors, SIMULATORABI_DEPLOYED_BYTECODE,
+    SimulateGetAmountsOutCall, SimulateGetAmountsOutReturn, SimulateMultiSwapCall, SimulateMultiSwapReturn,
+    SimulatorAbi, SimulatorAbiErrors, SIMULATORABI_DEPLOYED_BYTECODE,
 };
 use vidger::types::CryptoToken;
 
+use crate::amm::{AmmPoolKind, AmmProtocolKind};
 use crate::utilities::block_on;
 
 fn extract_trace_logs(call_frame: &CallFrame, logs: &mut Vec<CallLogFrame>) {
@@ -78,8 +82,8 @@ where
         // Spoof tokens balance for the user
         for crypto_token in tokens_to_override_balance {
             let input_balance_slot: [u8; 32] = keccak256(abi::encode(&[
-                abi::Token::Address(simulator_address),
-                abi::Token::Uint(U256::from(crypto_token.balance_contract_slot())),
+                Token::Address(simulator_address),
+                Token::Uint(U256::from(crypto_token.balance_contract_slot())),
             ]));
 
             state_override_set
@@ -272,6 +276,33 @@ where
             .collect();
 
         Ok(ret)
+    }
+
+    pub fn get_amounts_out(&self, pool: &AmmPoolKind, amount_in: U256) -> Result<U256> {
+        let protocol: u8 = match &**pool.dex() {
+            AmmProtocolKind::UniswapV2(_) => 0,
+        };
+
+        let path: Bytes = abi::encode(&[Token::FixedArray(vec![
+            Token::Address(*pool.token0().address()),
+            Token::Address(*pool.token1().address()),
+        ])])
+        .into();
+        let calldata: Vec<u8> = AbiEncode::encode(SimulateGetAmountsOutCall {
+            protocol,
+            contract_address: *pool.dex().router(),
+            path,
+            amount_in,
+        });
+        let tx: TypedTransaction = self.make_simulator_tx(calldata, None);
+        let result = block_on(
+            None,
+            self.provider.provider().call_raw(&tx).state(&self.state_override_set),
+        );
+
+        let result: Bytes = result.unwrap();
+        let out: U256 = SimulateGetAmountsOutReturn::decode(result)?.0;
+        Ok(out)
     }
 
     pub async fn multi_swap(&self, block_number: U64, swaps: Vec<OneSwapInfo>, chain_swaps: bool) -> Result<U256> {
