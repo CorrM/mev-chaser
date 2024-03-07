@@ -106,7 +106,7 @@ where
             set.spawn(async move {
                 loop {
                     match receiver.recv().await {
-                        Ok(notification) => match notifier.notify(notification).await {
+                        Ok(notification) => match notifier.notify(notification) {
                             Ok(_) => {}
                             Err(e) => error!("error notifying: {}", e),
                         },
@@ -124,7 +124,7 @@ where
             set.spawn(async move {
                 loop {
                     match receiver.recv().await {
-                        Ok(action) => match executor.execute(action.clone()).await {
+                        Ok(action) => match executor.execute(action.clone()) {
                             Ok(Some(notification)) => match notify.send(notification) {
                                 Ok(_) => {}
                                 Err(e) => error!("error sending notification: {:?}", e),
@@ -147,13 +147,13 @@ where
             };
 
             let action_sender: Sender<A> = action_sender.clone();
-            strategy.sync_state().await?;
+            strategy.sync_state()?;
 
             set.spawn(async move {
                 loop {
                     match event_receiver.recv().await {
                         Ok(mut event) => {
-                            let Some(action) = strategy.process_event(&mut event).await else {
+                            let Some(action) = strategy.process_event(&mut event) else {
                                 continue;
                             };
 
@@ -170,14 +170,14 @@ where
 
         // Spawn pre_strategy in separate thread.
         if let Some(mut pre_strategy) = self.pre_strategy {
-            pre_strategy.sync_state().await?;
+            pre_strategy.sync_state()?;
             let mut pre_event_sender: Receiver<E> = pre_event_sender.subscribe();
 
             set.spawn(async move {
                 loop {
                     match pre_event_sender.recv().await {
                         Ok(mut event) => {
-                            pre_strategy.on_event(&mut event).await;
+                            pre_strategy.on_event(&mut event);
                             match post_event_sender.send(event) {
                                 Ok(_) => {}
                                 Err(e) => error!("error post_event_sender event: {}", e),
@@ -194,7 +194,7 @@ where
             let pre_event_sender: Sender<E> = pre_event_sender.clone();
 
             set.spawn(async move {
-                let mut event_stream = collector.get_event_stream().await.unwrap();
+                let mut event_stream = collector.get_event_stream().unwrap();
                 while let Some(event) = event_stream.next().await {
                     match pre_event_sender.send(event) {
                         Ok(_) => {}

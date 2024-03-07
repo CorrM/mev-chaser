@@ -40,25 +40,21 @@ impl<M: Middleware + 'static> MainPreStrategy<M> {
 #[async_trait]
 impl<M: Middleware + 'static> PreStrategy<MevEvents> for MainPreStrategy<M> {
     /// Setup by getting all pools to monitor for swaps
-    async fn sync_state(&mut self) -> Result<()> {
-        self.block_manager
-            .write()
-            .unwrap()
-            .setup(Arc::clone(&self.provider))
-            .await?;
-        self.pool_manager.write().unwrap().setup().await?;
+    fn sync_state(&mut self) -> Result<()> {
+        self.block_manager.write().unwrap().setup(Arc::clone(&self.provider))?;
+        self.pool_manager.write().unwrap().setup()?;
 
         Ok(())
     }
 
     /// Handle incoming events.
-    async fn on_event(&mut self, event: &mut MevEvents) {
+    fn on_event(&mut self, event: &mut MevEvents) {
         let MevEvents::NewBlock(block) = event else {
             return;
         };
 
         self.block_manager.write().unwrap().update_block_info(block.clone());
-        self.pool_manager.write().unwrap().on_new_block(block.number).await;
+        self.pool_manager.write().unwrap().on_new_block(block.number);
         self.simulator.write().unwrap().update_block();
     }
 }

@@ -1,6 +1,5 @@
 use std::pin::Pin;
 
-use async_trait::async_trait;
 use futures::Stream;
 use tokio_stream::StreamExt;
 
@@ -8,10 +7,9 @@ use tokio_stream::StreamExt;
 pub type CollectorStream<'a, E> = Pin<Box<dyn Stream<Item = E> + Send + 'a>>;
 
 /// Collector trait, which defines a source of events.
-#[async_trait]
 pub trait Collector<E>: Send + Sync {
     /// Returns the core event stream for the collector.
-    async fn get_event_stream(&self) -> anyhow::Result<CollectorStream<'_, E>>;
+    fn get_event_stream(&self) -> anyhow::Result<CollectorStream<'_, E>>;
 }
 
 /// CollectorMap is a wrapper around a [Collector](Collector) that maps outgoing
@@ -27,7 +25,6 @@ impl<E, F> CollectorMapper<E, F> {
     }
 }
 
-#[async_trait]
 impl<E1, E2, F> Collector<E2> for CollectorMapper<E1, F>
 where
     E1: Send + Sync + 'static,
@@ -35,8 +32,8 @@ where
     F: Fn(E1) -> E2 + Send + Sync + Clone + 'static,
 {
     #[inline]
-    async fn get_event_stream(&self) -> anyhow::Result<CollectorStream<'_, E2>> {
-        let stream = self.collector.get_event_stream().await?;
+    fn get_event_stream(&self) -> anyhow::Result<CollectorStream<'_, E2>> {
+        let stream: CollectorStream<E1> = self.collector.get_event_stream()?;
         let f = self.f.clone();
         let stream = stream.map(f);
         Ok(Box::pin(stream))

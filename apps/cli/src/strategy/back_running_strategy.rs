@@ -39,21 +39,21 @@ impl<M: Middleware + 'static> BackRunningStrategy<M> {
 }
 
 impl<M: Middleware + 'static> BackRunningStrategy<M> {
-    async fn process_new_tx(&mut self, tx: &mut Transaction) -> Option<MevActions> {
+    fn process_new_tx(&mut self, tx: &mut Transaction) -> Option<MevActions> {
         None
     }
 }
 
 #[async_trait]
 impl<M: Middleware + 'static> Strategy<MevEvents, MevActions> for BackRunningStrategy<M> {
-    async fn sync_state(&mut self) -> Result<()> {
+    fn sync_state(&mut self) -> Result<()> {
         Ok(())
     }
 
     /// Process incoming events
-    async fn process_event(&mut self, event: &mut MevEvents) -> Option<MevActions> {
+    fn process_event(&mut self, event: &mut MevEvents) -> Option<MevActions> {
         match event {
-            MevEvents::NewTransaction(tx) => self.process_new_tx(tx).await,
+            MevEvents::NewTransaction(tx) => self.process_new_tx(tx),
             _ => None,
         }
     }

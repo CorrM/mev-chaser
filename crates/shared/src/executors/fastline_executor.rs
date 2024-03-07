@@ -25,7 +25,7 @@ where
     M::Error: 'static,
 {
     /// Send a transaction to one of relays or mempool.
-    async fn execute(&self, action: SubmitTxInfo) -> Result<Option<Notification>> {
+    fn execute(&self, action: SubmitTxInfo) -> Result<Option<Notification>> {
         Ok(Some(Notification {
             message: "Test".to_owned(),
         }))

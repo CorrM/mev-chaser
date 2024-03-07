@@ -1,13 +1,11 @@
 use anyhow::Result;
-use async_trait::async_trait;
 
 use crate::types::Notification;
 
 /// Executor trait, responsible for executing actions returned by strategies.
-#[async_trait]
 pub trait Executor<A>: Send + Sync {
     /// Execute an action.
-    async fn execute(&self, action: A) -> Result<Option<Notification>>;
+    fn execute(&self, action: A) -> Result<Option<Notification>>;
 }
 
 /// ExecutorMap is a wrapper around an [Executor](Executor) that maps incoming
@@ -23,7 +21,6 @@ impl<A, F> ExecutorMapper<A, F> {
     }
 }
 
-#[async_trait]
 impl<A1, A2, F> Executor<A1> for ExecutorMapper<A2, F>
 where
     A1: Send + Sync + 'static,
@@ -31,10 +28,10 @@ where
     F: Fn(A1) -> Option<A2> + Send + Sync + Clone + 'static,
 {
     #[inline]
-    async fn execute(&self, action: A1) -> Result<Option<Notification>> {
+    fn execute(&self, action: A1) -> Result<Option<Notification>> {
         let action: Option<A2> = (self.f)(action);
         match action {
-            Some(action) => self.executor.execute(action).await,
+            Some(action) => self.executor.execute(action),
             None => Ok(None),
         }
     }

@@ -8,6 +8,7 @@ use ethers::utils::to_checksum;
 use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
 
 use vidger::logger::{error, info};
+use vidger::utilities::block_on;
 
 use crate::amm::{AmmPoolKind, AmmProtocolKind};
 use crate::managers::AmmManager;
@@ -73,7 +74,7 @@ where
         }
     }
 
-    pub async fn setup(&mut self) -> Result<()> {
+    pub fn setup(&mut self) -> Result<()> {
         Ok(())
     }
 }
@@ -120,7 +121,7 @@ where
             .map(|pool| Arc::clone(&pool.read().unwrap().paths))
     }
 
-    pub async fn on_new_block(&mut self, block_number: U64) {
+    pub fn on_new_block(&mut self, block_number: U64) {
         /*
         - Get touched pools then updates its tuple (optimal input, output)
         - Update most 50 profitable paths for touched pools
@@ -135,7 +136,7 @@ where
             .from_block(block_number)
             .to_block(block_number);
 
-        let logs: Result<Vec<Log>, <M as Middleware>::Error> = self.provider.get_logs(&event_filter).await;
+        let logs: Result<Vec<Log>, <M as Middleware>::Error> = block_on(self.provider.get_logs(&event_filter));
         let Ok(logs) = logs else {
             error!("failed to get logs for block {}", block_number);
             return;

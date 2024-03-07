@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use async_trait::async_trait;
 use ethers::providers::{Middleware, PubsubClient};
 use tokio_stream::StreamExt;
 
 use crate::core::{Collector, CollectorStream};
 use crate::types::NewBlock;
+use crate::utilities::block_on;
 
 /// A collector that listens for new blocks, and generates a stream of
 /// [events](NewBlock) which contain the block number and hash.
@@ -27,16 +27,14 @@ where
 
 /// Implementation of the [Collector](Collector) trait for the [BlockCollector](BlockCollector).
 /// This implementation uses the [PubsubClient](PubsubClient) to subscribe to new blocks.
-#[async_trait]
 impl<M> Collector<NewBlock> for BlockCollector<M>
 where
     M: Middleware,
     M::Provider: PubsubClient,
     M::Error: 'static,
 {
-    #[inline]
-    async fn get_event_stream(&self) -> Result<CollectorStream<'_, NewBlock>> {
-        let stream = self.provider.subscribe_blocks().await?;
+    fn get_event_stream(&self) -> Result<CollectorStream<'_, NewBlock>> {
+        let stream = block_on(self.provider.subscribe_blocks())?;
         let stream = stream.filter_map(|block| match block.number {
             Some(number) => Some(NewBlock {
                 number,

@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use async_trait::async_trait;
 use ethers::{
     providers::{Middleware, PubsubClient},
     types::Transaction,
@@ -9,6 +8,7 @@ use ethers::{
 use futures::StreamExt;
 
 use crate::core::{Collector, CollectorStream};
+use crate::utilities::block_on;
 
 /// A collector that listens for new transactions in the mempool, and generates a stream of
 /// [events](Transaction) which contain the transaction.
@@ -28,21 +28,19 @@ impl<M> MempoolCollector<M> {
 
 /// Implementation of the [Collector](Collector) trait for the [MempoolCollector](MempoolCollector).
 /// This implementation uses the [PubsubClient](PubsubClient) to subscribe to new transactions.
-#[async_trait]
 impl<M> Collector<Transaction> for MempoolCollector<M>
 where
     M: Middleware,
     M::Provider: PubsubClient,
     M::Error: 'static,
 {
-    #[inline]
-    async fn get_event_stream(&self) -> Result<CollectorStream<'_, Transaction>> {
+    fn get_event_stream(&self) -> Result<CollectorStream<'_, Transaction>> {
         if self.use_full_pending_txs {
-            let stream = self.provider.subscribe_full_pending_txs().await?;
+            let stream = block_on(self.provider.subscribe_full_pending_txs())?;
             return Ok(Box::pin(stream));
         }
 
-        let stream = self.provider.subscribe_pending_txs().await?;
+        let stream = block_on(self.provider.subscribe_pending_txs())?;
         let stream = stream.transactions_unordered(256);
         let stream = stream.filter_map(|res| async move { res.ok() });
         Ok(Box::pin(stream))

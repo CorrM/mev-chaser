@@ -5,6 +5,8 @@ use colored::Colorize;
 use ethers::prelude::{Block, H256};
 use ethers::{providers::Middleware, types::BlockNumber};
 
+use vidger::utilities::block_on;
+
 use crate::{log_new_block_info, startup_info_log, types::BlockInfo};
 
 pub struct BlockManager {
@@ -20,10 +22,8 @@ impl BlockManager {
         }
     }
 
-    pub async fn setup<M: Middleware + 'static>(&mut self, provider: Arc<M>) -> Result<()> {
-        let latest_block: Block<H256> = provider
-            .get_block(BlockNumber::Latest)
-            .await
+    pub fn setup<M: Middleware + 'static>(&mut self, provider: Arc<M>) -> Result<()> {
+        let latest_block: Block<H256> = block_on(provider.get_block(BlockNumber::Latest))
             .map_err(|_| anyhow!("Failed to get current block"))?
             .ok_or(anyhow!("Failed to get current block"))?;
 

@@ -11,6 +11,9 @@ pub fn block_on<F: core::future::Future>(f: F) -> F::Output {
 
     match runtime {
         Some(runtime) => tokio::task::block_in_place(|| runtime.block_on(f)),
-        None => futures::executor::block_on(f),
+        None => {
+            println!("No runtime found. Using current thread.");
+            futures::executor::block_on(f)
+        }
     }
 }

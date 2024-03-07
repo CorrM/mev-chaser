@@ -1,11 +1,13 @@
+use std::future::IntoFuture;
+
 use anyhow::Result;
-use async_trait::async_trait;
 use teloxide::prelude::ChatId;
 use teloxide::types::Recipient;
 use teloxide::{requests::Requester, Bot};
 
 use crate::core::Notifier;
 use crate::types::Notification;
+use crate::utilities::block_on;
 
 pub struct TelegramNotifier {
     bot: Bot,
@@ -23,13 +25,14 @@ impl TelegramNotifier {
     }
 }
 
-#[async_trait]
 impl Notifier for TelegramNotifier {
     #[inline]
-    async fn notify(&self, notification: Notification) -> Result<()> {
-        self.bot
-            .send_message(self.chat_id.clone(), notification.message)
-            .await?;
+    fn notify(&self, notification: Notification) -> Result<()> {
+        block_on(
+            self.bot
+                .send_message(self.chat_id.clone(), notification.message)
+                .into_future(),
+        )?;
 
         Ok(())
     }
