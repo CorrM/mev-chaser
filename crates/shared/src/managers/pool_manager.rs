@@ -1,4 +1,4 @@
-use std::sync::{Arc, RwLock, RwLockReadGuard};
+use std::sync::{Arc, RwLock};
 
 use anyhow::Result;
 use dashmap::DashMap;
@@ -6,7 +6,6 @@ use ethers::providers::Middleware;
 use ethers::types::{Address, Filter, Log, U256, U64};
 use ethers::utils::to_checksum;
 use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
-use tokio::time::Instant;
 
 use vidger::logger::{error, info};
 
@@ -41,7 +40,7 @@ impl PoolContainer {
 
 pub struct PoolManager<M> {
     provider: Arc<M>,
-    simulator: Arc<tokio::sync::RwLock<EvmSimulator<M>>>,
+    simulator: Arc<RwLock<EvmSimulator<M>>>,
     pools: DashMap<Address, Arc<RwLock<PoolContainer>>>,
     pools_sync_filter: Filter,
 }
@@ -50,11 +49,7 @@ impl<M> PoolManager<M>
 where
     M: Middleware + 'static,
 {
-    pub fn new(
-        provider: Arc<M>,
-        simulator: Arc<tokio::sync::RwLock<EvmSimulator<M>>>,
-        amm_manager: &AmmManager,
-    ) -> Self {
+    pub fn new(provider: Arc<M>, simulator: Arc<RwLock<EvmSimulator<M>>>, amm_manager: &AmmManager) -> Self {
         const UNI_V2_V3_SYNC_EVENT: &str = "Sync(uint112,uint112)";
         let pools_sync_filter: Filter = Filter::new().events(vec![UNI_V2_V3_SYNC_EVENT]);
 
@@ -70,7 +65,7 @@ where
             })
             .collect();
 
-        PoolManager {
+        Self {
             provider,
             simulator,
             pools,
@@ -92,6 +87,7 @@ where
         // TODO: Simulation needed here
         self.simulator
             .read()
+            .unwrap()
             .get_amounts_out(pool, pool.token0().convert_to_amount(1_f64))
             .unwrap();
         (0.into(), 0.into())

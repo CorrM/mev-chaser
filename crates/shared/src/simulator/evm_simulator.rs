@@ -10,11 +10,11 @@ use hashbrown::HashMap;
 use vidger::types::CryptoToken;
 
 use crate::amm::AmmPoolKind;
-use crate::simulator::{EthersSimulator, RevmSimulator};
+use crate::simulator::RevmSimulator;
 
 pub enum EvmSimulator<M> {
     Revm(RevmSimulator<M>),
-    Ethers(EthersSimulator<M>),
+    //Ethers(EthersSimulator<M>),
 }
 
 impl<M> EvmSimulator<M>
@@ -24,11 +24,6 @@ where
     #[inline]
     pub async fn new_revm(provider: Arc<M>, tokens_to_override_balance: &[CryptoToken]) -> Self {
         Self::Revm(RevmSimulator::new(provider, tokens_to_override_balance))
-    }
-
-    #[inline]
-    pub async fn new_ethers(provider: Arc<M>, tokens_to_override_balance: &[CryptoToken]) -> Self {
-        Self::Ethers(EthersSimulator::new(provider, tokens_to_override_balance).await)
     }
 
     #[inline]
@@ -45,23 +40,9 @@ where
     }
 
     #[inline]
-    pub fn is_ethers(&self) -> bool {
-        matches!(self, Self::Ethers(_))
-    }
-
-    #[inline]
-    pub fn as_ethers(&self) -> Option<&EthersSimulator<M>> {
-        match self {
-            Self::Ethers(ethers) => Some(ethers),
-            _ => None,
-        }
-    }
-
-    #[inline]
     pub fn provider(&self) -> &Arc<M> {
         match self {
             Self::Revm(ref revm) => revm.provider(),
-            Self::Ethers(ref ethers) => ethers.provider(),
         }
     }
 }
@@ -70,7 +51,7 @@ impl<M> EvmSimulator<M>
 where
     M: Middleware + 'static,
 {
-    pub async fn update_block(&mut self) {
+    pub fn update_block(&mut self) {
         match self {
             Self::Revm(ref mut revm) => revm.update_block(),
             _ => panic!("Only revm simulator can update block"),
@@ -78,7 +59,7 @@ where
         }
     }
 
-    pub async fn get_proxy_implementation(&self, token: Address, block_number: U64) -> Result<Option<Address>> {
+    pub fn get_proxy_implementation(&self, token: Address, block_number: U64) -> Result<Option<Address>> {
         // adapted from: https://github.com/gnosis/evm-proxy-detection/blob/main/src/index.ts
         let eip_1967_logic_slot: U256 =
             U256::from("0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc");
@@ -125,14 +106,12 @@ where
     ) -> Result<HashMap<Address, Result<Option<i32>>>> {
         match self {
             Self::Revm(ref revm) => revm.get_tokens_balance_slot(tokens, block_number),
-            Self::Ethers(ref ethers) => ethers.get_tokens_balance_slot(tokens, block_number),
         }
     }
 
     pub fn get_amounts_out(&self, pool: &AmmPoolKind, amount_in: U256) -> Result<U256> {
         match self {
             Self::Revm(ref revm) => revm.get_amounts_out(pool, amount_in),
-            Self::Ethers(ref ethers) => ethers.get_amounts_out(pool, amount_in),
         }
     }
 }

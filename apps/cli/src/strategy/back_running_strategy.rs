@@ -1,11 +1,10 @@
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use anyhow::Result;
 use async_trait::async_trait;
 use ethers::providers::Middleware;
 use ethers::signers::LocalWallet;
 use ethers::types::Transaction;
-use tokio::sync::RwLock;
 
 use shared::managers::{BlockManager, PoolManager};
 use shared::types::{MevActions, MevEvents};

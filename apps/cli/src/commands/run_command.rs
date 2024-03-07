@@ -1,14 +1,12 @@
 use std::str::FromStr;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use anyhow::{anyhow, Result};
-use ethers::prelude::{PubsubClient, U64};
+use ethers::prelude::PubsubClient;
 use ethers::providers::Middleware;
 use ethers::signers::LocalWallet;
-use ethers::types::{Address, BlockNumber};
-use tokio::time::Instant;
+use ethers::types::Address;
 
-use contracts::balancer_flash_loan_recipient::OneSwapInfo;
 use shared::amm::{AmmPoolKind, AmmProtocolKind, UniswapV2Pool, UniswapV2Protocol};
 use shared::database::{Database, DbDex, DbDexPool, DbToken, DbTokenNetwork};
 use shared::managers::{AmmManager, BlockManager, PoolManager, TokenManager};
@@ -33,7 +31,7 @@ use crate::utilities::env::Env;
 pub struct RunCommand;
 
 impl RunCommand {
-    async fn test<M>(provider: Arc<M>)
+    /*async fn test<M>(provider: Arc<M>)
     where
         M: Middleware + 'static,
         M::Provider: PubsubClient,
@@ -84,7 +82,7 @@ impl RunCommand {
         //);
         println!("duration: {}ms", start.elapsed().as_millis());
         //info!("result: {:?}", result);
-    }
+    }*/
 
     fn get_tokens(db: &Database, network: &NetworkKind) -> Result<Vec<CryptoToken>> {
         let db_tokens: Vec<(DbToken, DbTokenNetwork)> = db.get_tokens(network)?;
@@ -196,7 +194,7 @@ impl RunCommand {
             .map_err(|_| anyhow!("Failed to parse \"PRIVATE_KEY\""))?;
 
         let tokens: Vec<CryptoToken> = Self::get_tokens(&db, &network).expect("Failed to get tokens");
-        let simulator = Arc::new(tokio::sync::RwLock::new(
+        let simulator = Arc::new(RwLock::new(
             EvmSimulator::new_revm(Arc::clone(&provider), &tokens).await,
         ));
 
@@ -206,8 +204,8 @@ impl RunCommand {
         let pool_manager = PoolManager::new(Arc::clone(&provider), Arc::clone(&simulator), &amm_manager);
         let block_manager = BlockManager::new();
 
-        let pool_manager = Arc::new(tokio::sync::RwLock::new(pool_manager));
-        let block_manager = Arc::new(tokio::sync::RwLock::new(block_manager));
+        let pool_manager = Arc::new(RwLock::new(pool_manager));
+        let block_manager = Arc::new(RwLock::new(block_manager));
 
         // Set up engine.
         let mut engine: VidgerEngine<MevEvents, MevActions> = VidgerEngine::new();

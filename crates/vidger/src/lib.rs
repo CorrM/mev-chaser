@@ -6,4 +6,5 @@ pub mod executors;
 pub mod logger;
 pub mod notifiers;
 pub mod types;
+pub mod utilities;
 pub mod vidger_engine;

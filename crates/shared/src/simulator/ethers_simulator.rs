@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+/*use std::collections::BTreeMap;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -32,9 +32,9 @@ use contracts::simulator::{
     SimulatorAbi, SimulatorAbiErrors, SIMULATORABI_DEPLOYED_BYTECODE,
 };
 use vidger::types::CryptoToken;
+use vidger::utilities::block_on;
 
 use crate::amm::{AmmPoolKind, AmmProtocolKind};
-use crate::utilities::block_on;
 
 fn extract_trace_logs(call_frame: &CallFrame, logs: &mut Vec<CallLogFrame>) {
     if let Some(ref logs_vec) = call_frame.logs {
@@ -220,7 +220,7 @@ where
         let nonce_task = self
             .provider
             .get_transaction_count(self.account, Some(block_number.into()));
-        let nonce: U256 = block_on(None, nonce_task).expect("failed to get nonce");
+        let nonce: U256 = block_on(nonce_task).expect("failed to get nonce");
 
         let ret: HashMap<Address, Result<Option<i32>>> = tokens
             .par_iter()
@@ -228,8 +228,7 @@ where
                 let mut tx: TypedTransaction = self.make_simulator_tx(calldata.clone(), Some(nonce));
                 tx.set_to(*token);
 
-                let geth_trace: Result<GethTrace> =
-                    block_on(None, self.debug_trace_call_get_state_diff(tx, block_number));
+                let geth_trace: Result<GethTrace> = block_on(self.debug_trace_call_get_state_diff(tx, block_number));
 
                 let Ok(geth_trace) = geth_trace else {
                     return (*token, Err(geth_trace.unwrap_err()));
@@ -295,10 +294,7 @@ where
             amount_in,
         });
         let tx: TypedTransaction = self.make_simulator_tx(calldata, None);
-        let result = block_on(
-            None,
-            self.provider.provider().call_raw(&tx).state(&self.state_override_set),
-        );
+        let result = block_on(self.provider.provider().call_raw(&tx).state(&self.state_override_set));
 
         let result: Bytes = result.unwrap();
         let out: U256 = SimulateGetAmountsOutReturn::decode(result)?.0;
@@ -397,7 +393,7 @@ where
                 );
             }
 
-            let vec = block_on(None, multicall.call_raw()).expect("failed to multicall");
+            let vec = block_on(multicall.call_raw()).expect("failed to multicall");
             /*
             for x in vec {
                 if x.is_err() {
@@ -445,3 +441,4 @@ where
         Ok(50.into())
     }
 }
+*/

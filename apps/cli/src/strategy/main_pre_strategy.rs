@@ -1,9 +1,8 @@
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use anyhow::Result;
 use async_trait::async_trait;
 use ethers::providers::Middleware;
-use tokio::sync::RwLock;
 
 use shared::managers::{BlockManager, PoolManager};
 use shared::simulator::EvmSimulator;
@@ -44,10 +43,10 @@ impl<M: Middleware + 'static> PreStrategy<MevEvents> for MainPreStrategy<M> {
     async fn sync_state(&mut self) -> Result<()> {
         self.block_manager
             .write()
-            .await
+            .unwrap()
             .setup(Arc::clone(&self.provider))
             .await?;
-        self.pool_manager.write().await.setup().await?;
+        self.pool_manager.write().unwrap().setup().await?;
 
         Ok(())
     }
@@ -58,8 +57,8 @@ impl<M: Middleware + 'static> PreStrategy<MevEvents> for MainPreStrategy<M> {
             return;
         };
 
-        self.block_manager.write().await.update_block_info(block.clone());
-        self.pool_manager.write().await.on_new_block(block.number).await;
-        self.simulator.write().await.update_block().await;
+        self.block_manager.write().unwrap().update_block_info(block.clone());
+        self.pool_manager.write().unwrap().on_new_block(block.number).await;
+        self.simulator.write().unwrap().update_block();
     }
 }
