@@ -1,7 +1,6 @@
 use std::pin::Pin;
 
-use futures::Stream;
-use tokio_stream::StreamExt;
+use futures::{Stream, StreamExt};
 
 /// A stream of events emitted by a [Collector](Collector).
 pub type CollectorStream<'a, E> = Pin<Box<dyn Stream<Item = E> + Send + 'a>>;

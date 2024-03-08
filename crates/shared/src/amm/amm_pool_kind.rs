@@ -1,12 +1,11 @@
 use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 
-use ethers::types::Address;
-
-use vidger::types::CryptoToken;
+use alloy_primitives::Address;
 
 use crate::amm::amm_pool::AmmPool;
 use crate::amm::{AmmProtocolKind, UniswapV2Pool};
+use crate::types::CryptoToken;
 
 #[derive(Clone)]
 pub enum AmmPoolKind {

@@ -3,9 +3,10 @@ use std::path::Path;
 use ethers::{types::Address, utils::to_checksum};
 use rusqlite::{params, Connection, OptionalExtension, Result, Statement};
 
-use vidger::types::{CryptoToken, NetworkKind};
+use vidger::types::NetworkKind;
 
 use crate::amm::AmmProtocolKind;
+use crate::types::CryptoToken;
 
 #[derive(Debug)]
 pub struct DbNetwork {
@@ -335,7 +336,7 @@ impl Database {
 
         // check if token already exists
         if self
-            .get_token_network(to_checksum(token.address(), None), network)?
+            .get_token_network(token.address().to_checksum(None), network)?
             .is_some()
         {
             return Err(rusqlite::Error::ExecuteReturnedResults);
@@ -364,7 +365,7 @@ impl Database {
             )?
         };
 
-        let token_address: String = to_checksum(token.address(), None);
+        let token_address: String = token.address().to_checksum(None);
         let db_token_network: DbTokenNetwork = self.add_token_network(db_token.id, network, &token_address)?;
 
         let mut stmt: Statement = self.db.prepare("UPDATE Tokens SET tokenNetworksIds = ? WHERE id = ?")?;

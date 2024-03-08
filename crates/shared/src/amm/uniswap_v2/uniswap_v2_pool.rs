@@ -1,11 +1,10 @@
 use std::sync::Arc;
 
+use alloy_primitives::Address;
 use anyhow::{anyhow, Result};
-use ethers::types::Address;
-
-use vidger::types::CryptoToken;
 
 use crate::amm::{AmmPool, AmmProtocolKind};
+use crate::types::CryptoToken;
 
 #[derive(Clone)]
 pub struct UniswapV2Pool {

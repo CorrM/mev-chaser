@@ -1,26 +1,22 @@
+use std::str::FromStr;
 use std::sync::Arc;
 
+use alloy_primitives::{Address, U256, U64};
 use anyhow::Result;
-use ethers::addressbook::Address;
-use ethers::prelude::{TxHash, U256, U64};
 use ethers::providers::Middleware;
-use ethers::types::BigEndianHash;
+use ethers::types::{BigEndianHash, TxHash};
 use hashbrown::HashMap;
-
-use vidger::types::CryptoToken;
 
 use crate::amm::AmmPoolKind;
 use crate::simulator::RevmSimulator;
+use crate::types::CryptoToken;
 
 pub enum EvmSimulator<M> {
     Revm(RevmSimulator<M>),
     //Ethers(EthersSimulator<M>),
 }
 
-impl<M> EvmSimulator<M>
-where
-    M: Middleware + 'static,
-{
+impl<M: Middleware> EvmSimulator<M> {
     #[inline]
     pub async fn new_revm(provider: Arc<M>, tokens_to_override_balance: &[CryptoToken]) -> Self {
         Self::Revm(RevmSimulator::new(provider, tokens_to_override_balance))
@@ -38,37 +34,34 @@ where
             _ => None,
         }
     }
+}
 
+impl<M> EvmSimulator<M> {
     #[inline]
     pub fn provider(&self) -> &Arc<M> {
         match self {
-            Self::Revm(ref revm) => revm.provider(),
+            Self::Revm(revm) => revm.provider(),
         }
     }
 }
 
-impl<M> EvmSimulator<M>
-where
-    M: Middleware + 'static,
-{
+impl<M: Middleware> EvmSimulator<M> {
     pub fn update_block(&mut self) {
         match self {
-            Self::Revm(ref mut revm) => revm.update_block(),
-            _ => panic!("Only revm simulator can update block"),
-            //Self::Ethers(ref mut ethers) => ethers.update_block(),
+            Self::Revm(ref mut revm) => revm.on_new_block(),
         }
     }
 
     pub fn get_proxy_implementation(&self, token: Address, block_number: U64) -> Result<Option<Address>> {
         // adapted from: https://github.com/gnosis/evm-proxy-detection/blob/main/src/index.ts
         let eip_1967_logic_slot: U256 =
-            U256::from("0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc");
+            U256::from_str("0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc")?;
         let eip_1967_beacon_slot: U256 =
-            U256::from("0xa3f0ad74e5423aebfd80d3ef4346578335a9a72aeaee59ff6cb3582b35133d50");
+            U256::from_str("0xa3f0ad74e5423aebfd80d3ef4346578335a9a72aeaee59ff6cb3582b35133d50")?;
         let open_zeppelin_implementation_slot: U256 =
-            U256::from("0x7050c9e0f4ca769c69bd3a8ef740bc37934f8e2c036e5a723fd8ee048ed3f8c3");
+            U256::from_str("0x7050c9e0f4ca769c69bd3a8ef740bc37934f8e2c036e5a723fd8ee048ed3f8c3")?;
         let eip_1822_logic_slot: U256 =
-            U256::from("0xc5f16f0fcc639fa48a6947836d9850f504798523bf8c9a3a87d5876cf622bcf7");
+            U256::from_str("0xc5f16f0fcc639fa48a6947836d9850f504798523bf8c9a3a87d5876cf622bcf7")?;
 
         let implementation_slots: Vec<U256> = vec![
             eip_1967_logic_slot,
@@ -99,13 +92,9 @@ where
         Ok(None)
     }
 
-    pub fn get_tokens_balance_slot(
-        &self,
-        tokens: &[Address],
-        block_number: U64,
-    ) -> Result<HashMap<Address, Result<Option<i32>>>> {
+    pub fn get_tokens_balance_slot(&self, tokens: &[Address]) -> Result<HashMap<Address, Result<Option<i32>>>> {
         match self {
-            Self::Revm(ref revm) => revm.get_tokens_balance_slot(tokens, block_number),
+            Self::Revm(ref revm) => revm.get_tokens_balance_slot(&tokens),
         }
     }
 

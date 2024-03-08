@@ -8,11 +8,10 @@ contracts = { path = "../contracts" }
 vidger = { path = "../vidger" }
 
 tokio = { workspace = true }
-tokio-stream = { workspace = true }
 async-trait = { workspace = true }
 async-scoped = { workspace = true }
-rayon = { workspace = true }
 futures = { workspace = true }
+rayon = { workspace = true }
 
 # Logging
 colored = { workspace = true }
@@ -28,5 +27,6 @@ serde_json = { workspace = true }
 rusqlite = { workspace = true }
 reqwest = { workspace = true }
 
+alloy-primitives = { workspace = true }
 ethers = { workspace = true }
 revm = { workspace = true }

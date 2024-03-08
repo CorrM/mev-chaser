@@ -1,16 +1,14 @@
 use std::sync::Arc;
 
+use alloy_primitives::{Address, Bytes, U256};
 use anyhow::{anyhow, Result};
-use ethers::{
-    abi::Token,
-    types::{Address, Bytes, U256},
-};
+use ethers::abi::Token;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
 use contracts::balancer_flash_loan_recipient::OneSwapInfo;
-use vidger::types::CryptoToken;
 
 use crate::amm::AmmProtocolKind;
+use crate::types::CryptoToken;
 use crate::utilities::PoolPathItem;
 
 pub fn make_uniswap_v2_protocol_swap_info(
@@ -161,16 +159,16 @@ impl PoolPath {
         let mut swaps: Vec<OneSwapInfo> = Vec::new();
         let mut chain_swaps: bool = false;
         if all_are_same_dex {
-            let router: Address = *first_path_dex.router();
+            let router: Address = first_path_dex.router().clone();
 
             let mut path: Vec<Address> = self
                 .path
                 .par_iter()
                 .map(|path| {
                     if path.zero_are_input {
-                        *path.pool.token0().address()
+                        path.pool.token0().address().clone()
                     } else {
-                        *path.pool.token1().address()
+                        path.pool.token1().address().clone()
                     }
                 })
                 .collect();
@@ -199,13 +197,13 @@ impl PoolPath {
                 };
 
                 // Its chain swap, so only first swap needs input amount
-                let cur_input_amount: U256 = if idx == 0 { input_amount } else { U256::zero() };
+                let cur_input_amount: U256 = if idx == 0 { input_amount } else { U256::from(0) };
 
                 // Its chain swap, so only last swap needs output amount
                 let cur_output_amount: U256 = if idx == self.path.len() - 1 {
                     output_amount
                 } else {
-                    U256::zero()
+                    U256::from(0)
                 };
 
                 let Ok(swap) = make_uniswap_v2_protocol_swap_info(router, path, cur_input_amount, cur_output_amount)

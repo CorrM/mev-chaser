@@ -3,9 +3,9 @@ use std::{
     time::Duration,
 };
 
+use alloy_primitives::Address;
 use anyhow::Result;
 use dashmap::DashMap;
-use ethers::types::Address;
 use hashbrown::HashMap;
 
 use crate::amm::AmmPoolKind;

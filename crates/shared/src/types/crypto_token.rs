@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
+use alloy_primitives::{Address, U256};
 use anyhow::Result;
-use ethers::types::{Address, U256};
 
 #[derive(Debug, Clone)]
 pub struct CryptoToken {
@@ -39,10 +39,25 @@ impl CryptoToken {
             balance_contract_slot,
         })
     }
+}
 
+impl CryptoToken {
     #[inline]
     pub fn address(&self) -> &Address {
         &self.address
+    }
+
+    #[inline]
+    pub fn proxy_address(&self) -> &Option<Address> {
+        &self.proxy_address
+    }
+
+    #[inline]
+    pub fn proxy_or_address(&self) -> Address {
+        match self.proxy_address {
+            Some(proxy) => proxy,
+            None => self.address,
+        }
     }
 
     #[inline]

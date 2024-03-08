@@ -1,10 +1,11 @@
 use std::sync::Arc;
 use std::{collections::HashMap, str::FromStr};
 
+use alloy_primitives::Address;
 use anyhow::Result;
 use ethers::{
     abi::{Log, RawLog},
-    types::{Address, CallLogFrame},
+    types::CallLogFrame,
 };
 
 use contracts::uniswap_v2_pair::UNISWAPV2PAIRABI_ABI;
@@ -52,7 +53,7 @@ impl UniswapV2Protocol {
                 data: trace_log.data.as_ref().unwrap().to_vec(),
             });
             if let Ok(log) = log_result {
-                ret.insert(ev.name.clone(), (trace_log.address.unwrap(), log));
+                ret.insert(ev.name.clone(), (trace_log.address.unwrap().0.into(), log));
             }
         }
 
@@ -87,7 +88,7 @@ impl UniswapV2Protocol {
             return None;
         };
 
-        Some((trace_log.address.unwrap(), log))
+        Some((trace_log.address.unwrap().0.into(), log))
     }
 }
 

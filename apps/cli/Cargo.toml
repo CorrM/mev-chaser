@@ -9,11 +9,14 @@ vidger = { path = "../../crates/vidger" }
 contracts = { path = "../../crates/contracts" }
 
 anyhow = { workspace = true }
-tokio = { workspace = true }
-async-trait = { workspace = true }
 serde_json = { workspace = true }
 hashbrown = { workspace = true }
-ethers = { workspace = true }
+
+tokio = { workspace = true }
+async-trait = { workspace = true }
 rayon = { workspace = true }
 
-dotenv = "0.15.0"
+alloy-primitives = { workspace = true }
+ethers = { workspace = true }
+
+dotenv = { workspace = true }

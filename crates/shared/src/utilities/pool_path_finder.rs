@@ -1,10 +1,8 @@
 use std::fmt::Debug;
 use std::{collections::HashSet, sync::Arc};
 
-use vidger::types::CryptoToken;
-
 use crate::amm::AmmPoolKind;
-use crate::types::PoolPath;
+use crate::types::{CryptoToken, PoolPath};
 
 #[derive(Clone)]
 pub struct PoolPathItem {

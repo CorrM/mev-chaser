@@ -1,10 +1,9 @@
 use std::sync::Arc;
 
-use ethers::types::Address;
-
-use vidger::types::CryptoToken;
+use alloy_primitives::Address;
 
 use crate::amm::AmmProtocolKind;
+use crate::types::CryptoToken;
 
 pub(super) trait AmmPool: Send + Sync {
     fn address(&self) -> &Address;

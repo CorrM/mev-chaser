@@ -1,8 +1,8 @@
 use anyhow::Result;
+use futures::StreamExt;
 use log::{error, warn};
 use tokio::sync::broadcast::{self, Receiver, Sender};
 use tokio::task::JoinSet;
-use tokio_stream::StreamExt;
 
 use crate::core::pre_strategy::PreStrategy;
 use crate::core::{Collector, Executor, Notifier, Strategy};

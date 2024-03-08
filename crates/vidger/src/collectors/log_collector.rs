@@ -5,7 +5,7 @@ use ethers::{
     providers::{Middleware, PubsubClient},
     types::{Filter, Log},
 };
-use tokio_stream::StreamExt;
+use futures::StreamExt;
 
 use crate::core::{Collector, CollectorStream};
 use crate::utilities::block_on;
@@ -33,7 +33,7 @@ where
 {
     fn get_event_stream(&self) -> Result<CollectorStream<'_, Log>> {
         let stream = block_on(self.provider.subscribe_logs(&self.filter))?;
-        let stream = stream.filter_map(Some);
+        let stream = stream.filter_map(|log| async move { Some(log) });
         Ok(Box::pin(stream))
     }
 }

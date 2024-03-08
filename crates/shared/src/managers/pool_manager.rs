@@ -1,10 +1,12 @@
 use std::sync::{Arc, RwLock};
 
+use alloy_primitives::{Address, U256, U64};
 use anyhow::Result;
 use dashmap::DashMap;
-use ethers::providers::Middleware;
-use ethers::types::{Address, Filter, Log, U256, U64};
-use ethers::utils::to_checksum;
+use ethers::{
+    providers::Middleware,
+    types::{Filter, Log},
+};
 use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
 
 use vidger::logger::{error, info};
@@ -33,7 +35,7 @@ impl PoolContainer {
         Self {
             pool,
             paths: Arc::new(RwLock::new(Vec::new())),
-            input_to_output: (0.into(), 0.into()),
+            input_to_output: (U256::from(0), U256::from(0)),
             top_profitable_paths: Arc::new(RwLock::new(Vec::new())),
         }
     }
@@ -79,19 +81,15 @@ where
     }
 }
 
-impl<M> PoolManager<M>
-where
-    M: Middleware + 'static,
-{
+impl<M: Middleware + 'static> PoolManager<M> {
     #[inline]
     pub fn get_optimal_input_and_output(&self, pool: &AmmPoolKind) -> (U256, U256) {
-        // TODO: Simulation needed here
         self.simulator
             .read()
             .unwrap()
             .get_amounts_out(pool, pool.token0().convert_to_amount(1_f64))
             .unwrap();
-        (0.into(), 0.into())
+        (U256::from(0), U256::from(0))
     }
 
     pub fn add_path(&mut self, path: PoolPath) {
@@ -133,8 +131,8 @@ where
         let event_filter: Filter = self
             .pools_sync_filter
             .clone()
-            .from_block(block_number)
-            .to_block(block_number);
+            .from_block(ethers::types::U64::from_little_endian(block_number.as_le_slice()))
+            .to_block(block_number.into());
 
         let logs: Result<Vec<Log>, <M as Middleware>::Error> = block_on(self.provider.get_logs(&event_filter));
         let Ok(logs) = logs else {
@@ -152,8 +150,8 @@ where
         let touched_pools: Vec<Arc<RwLock<PoolContainer>>> = logs
             .par_iter()
             .filter_map(|log| {
-                let pool_address = self.pools.get(&log.address).map(|_| log.address);
-                let Some(pool_address) = pool_address else {
+                let pool_address: Address = log.address.0.into();
+                if self.pools.get(&pool_address).is_none() {
                     return None;
                 };
 
@@ -193,7 +191,7 @@ where
             //    .collect();
             //*pool_container.top_profitable_paths.write().unwrap() = top_profitable_paths;
 
-            info!("syncing pool {}", to_checksum(pool_container.pool.address(), None));
+            info!("syncing pool {}", pool_container.pool.address().to_checksum(None));
         });
     }
 }

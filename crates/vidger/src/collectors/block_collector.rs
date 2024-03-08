@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use ethers::providers::{Middleware, PubsubClient};
-use tokio_stream::StreamExt;
+use futures::StreamExt;
 
 use crate::core::{Collector, CollectorStream};
 use crate::types::NewBlock;
@@ -35,15 +35,17 @@ where
 {
     fn get_event_stream(&self) -> Result<CollectorStream<'_, NewBlock>> {
         let stream = block_on(self.provider.subscribe_blocks())?;
-        let stream = stream.filter_map(|block| match block.number {
-            Some(number) => Some(NewBlock {
-                number,
-                gas_limit: block.gas_limit,
-                gas_used: block.gas_used,
-                base_fee_per_gas: block.base_fee_per_gas.unwrap_or_default(),
-                timestamp: block.timestamp,
-            }),
-            None => None,
+        let stream = stream.filter_map(|block| async move {
+            match block.number {
+                Some(number) => Some(NewBlock {
+                    number,
+                    gas_limit: block.gas_limit,
+                    gas_used: block.gas_used,
+                    base_fee_per_gas: block.base_fee_per_gas.unwrap_or_default(),
+                    timestamp: block.timestamp,
+                }),
+                None => None,
+            }
         });
 
         Ok(Box::pin(stream))
