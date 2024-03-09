@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
-use colored::Colorize;
 use ethers::prelude::{Block, H256};
 use ethers::{providers::Middleware, types::BlockNumber};
 
+use vidger::logger::info;
 use vidger::utilities::block_on;
 
-use crate::{log_new_block_info, startup_info_log, types::BlockInfo};
+use crate::types::BlockInfo;
 
 pub struct BlockManager {
     latest_block: BlockInfo,
@@ -28,7 +28,7 @@ impl BlockManager {
             .ok_or(anyhow!("Failed to get current block"))?;
 
         let latest_block: BlockInfo = latest_block.try_into()?;
-        startup_info_log!("latest block synced: {}", latest_block.number);
+        info!("latest block synced: {}", latest_block.number);
 
         self.update_block_info(latest_block);
         Ok(())
@@ -51,7 +51,10 @@ impl BlockManager {
         self.latest_block = latest_block;
         self.next_block = latest_block.get_next_block();
 
-        log_new_block_info!(latest_block);
+        info!(
+            "Found New Block: (number: {:?}, timestamp: {:?}, base_fee: {:?})",
+            latest_block.number, latest_block.timestamp, latest_block.base_fee_per_gas
+        );
     }
 }
 

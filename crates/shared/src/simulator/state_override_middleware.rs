@@ -1,7 +1,6 @@
-use async_trait::async_trait;
 use ethers::{
-    core::types::{BlockId, transaction::eip2718::TypedTransaction},
-    providers::{CallBuilder, Middleware, MiddlewareError, RawCall, spoof},
+    core::types::{transaction::eip2718::TypedTransaction, BlockId},
+    providers::{spoof, CallBuilder, Middleware, MiddlewareError, RawCall},
     types::{Address, Bytes},
 };
 use thiserror::Error;
@@ -16,8 +15,8 @@ pub struct StateOverrideMiddleware<M> {
 }
 
 impl<M> StateOverrideMiddleware<M>
-    where
-        M: Middleware,
+where
+    M: Middleware,
 {
     /// Creates an instance of StateOverrideMiddleware
     /// `ìnner` the inner Middleware
@@ -29,10 +28,9 @@ impl<M> StateOverrideMiddleware<M>
     }
 }
 
-#[async_trait]
 impl<M> Middleware for StateOverrideMiddleware<M>
-    where
-        M: Middleware,
+where
+    M: Middleware,
 {
     type Error = StateOverrideMiddlewareError<M>;
     type Provider = M::Provider;

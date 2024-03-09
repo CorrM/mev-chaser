@@ -8,14 +8,12 @@ shared = { path = "../../crates/shared" }
 vidger = { path = "../../crates/vidger" }
 contracts = { path = "../../crates/contracts" }
 
+dotenv = { workspace = true }
 anyhow = { workspace = true }
 serde_json = { workspace = true }
 hashbrown = { workspace = true }
 
 tokio = { workspace = true }
-async-trait = { workspace = true }
 rayon = { workspace = true }
 
 ethers = { workspace = true }
-
-dotenv = { workspace = true }

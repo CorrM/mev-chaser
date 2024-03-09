@@ -53,10 +53,10 @@ impl CryptoToken {
     }
 
     #[inline]
-    pub fn proxy_or_address(&self) -> Address {
+    pub fn proxy_or_address(&self) -> &Address {
         match self.proxy_address {
-            Some(proxy) => proxy,
-            None => self.address,
+            Some(ref proxy) => proxy,
+            None => &self.address,
         }
     }
 

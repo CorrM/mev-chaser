@@ -1,5 +1,5 @@
 use std::str::FromStr;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use anyhow::{anyhow, Result};
 use ethers::abi::{AbiDecode, AbiEncode};
@@ -53,25 +53,35 @@ impl<M> RevmSimulator<M>
 where
     M: Middleware + 'static,
 {
-    fn deploy_token_and_spoof_balance(db: &mut InMemoryDB, ethers_db: &mut EthersDB<M>, token: &CryptoToken) {
+    fn deploy_token_and_spoof_balance(
+        db: Arc<RwLock<InMemoryDB>>,
+        ethers_db: Arc<RwLock<EthersDB<M>>>,
+        token: &CryptoToken,
+    ) {
         let hundred_grand_eth: revm::primitives::U256 = revm::primitives::U256::from(100_000)
             .checked_mul(revm::primitives::U256::from(10).pow(revm::primitives::U256::from(18)))
             .unwrap();
 
+        // Deploy token
         let token_address: revm::primitives::Address = token.proxy_or_address().0.into();
-        let token_acc_info: AccountInfo = ethers_db.basic(token_address).unwrap().unwrap();
-        db.insert_account_info(token_address, token_acc_info);
+        let token_acc_info: AccountInfo = ethers_db.read().unwrap().basic_ref(token_address).unwrap().unwrap();
 
+        // Spoof balance
         let input_balance_slot: [u8; 32] = keccak256(abi::encode(&[
             abi::Token::Address(ethers::types::Address::from(token_address.0 .0)),
             abi::Token::Uint(ethers::types::U256::from(token.balance_contract_slot())),
         ]));
-        db.insert_account_storage(
-            token_address,
-            revm::primitives::U256::from_be_bytes(input_balance_slot),
-            hundred_grand_eth,
-        )
-        .expect("failed to insert token balance in DB");
+
+        // Commit changes
+        let mut write_guard = db.write().unwrap();
+        write_guard.insert_account_info(token_address, token_acc_info);
+        write_guard
+            .insert_account_storage(
+                token_address,
+                revm::primitives::U256::from_be_bytes(input_balance_slot),
+                hundred_grand_eth,
+            )
+            .expect("failed to insert token balance in DB");
     }
 
     pub(super) fn new(provider: Arc<M>, tokens: &[CryptoToken]) -> Result<Self> {
@@ -84,8 +94,7 @@ where
             block_on(provider.get_block(BlockNumber::Latest))?.ok_or(anyhow!("failed to retrieve block"))?;
 
         // Prepare in-memory DB
-        let mut ethersdb = EthersDB::new(provider.clone(), Some(cur_block.number.unwrap().into())).unwrap();
-        let mut db: InMemoryDB = InMemoryDB::new(EmptyDB::default());
+        let mut db = InMemoryDB::new(EmptyDB::default());
 
         // Give the user enough ETH to pay for gas
         let user_acc_info = AccountInfo::new(hundred_grand_eth, 0, KECCAK_EMPTY, Bytecode::default());
@@ -104,9 +113,15 @@ where
         db.insert_account_info(simulator_address, simulator_acc_info);
 
         // Spoof tokens balance for the user
-        for crypto_token in tokens {
-            Self::deploy_token_and_spoof_balance(&mut db, &mut ethersdb, crypto_token);
-        }
+        let db: Arc<RwLock<InMemoryDB>> = Arc::new(RwLock::new(db));
+        let ethers_db: Arc<RwLock<EthersDB<M>>> = Arc::new(RwLock::new(
+            EthersDB::new(provider.clone(), Some(cur_block.number.unwrap().into())).unwrap(),
+        ));
+        tokens.par_iter().for_each(|token: &CryptoToken| {
+            Self::deploy_token_and_spoof_balance(Arc::clone(&db), Arc::clone(&ethers_db), token)
+        });
+
+        let db: InMemoryDB = Arc::try_unwrap(db).unwrap().into_inner().unwrap();
 
         // Create EVM
         let mut evm: Evm<'static, (), InMemoryDB> = Evm::builder().with_db(db).build();

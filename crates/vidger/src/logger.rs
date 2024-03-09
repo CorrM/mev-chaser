@@ -1,10 +1,10 @@
 use fern::colors::{Color, ColoredLevelConfig};
-pub use log::{debug, error, info, trace, warn};
+pub use log::{debug, error, info, trace, warn, LevelFilter};
 
 pub struct Logger;
 
 impl Logger {
-    pub fn setup_logger() -> Result<(), fern::InitError> {
+    pub fn setup_logger(level: LevelFilter) -> Result<(), fern::InitError> {
         let colors = ColoredLevelConfig {
             trace: Color::Cyan,
             debug: Color::Magenta,
@@ -23,7 +23,7 @@ impl Logger {
                 ))
             })
             .chain(std::io::stdout())
-            .level(log::LevelFilter::Info)
+            .level(level)
             .apply()?;
 
         Ok(())

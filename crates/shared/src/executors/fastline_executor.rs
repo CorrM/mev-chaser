@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use async_trait::async_trait;
 use ethers::providers::Middleware;
 
 use vidger::core::Executor;
@@ -18,7 +17,6 @@ impl<M> FastLineExecutor<M> {
     }
 }
 
-#[async_trait]
 impl<M> Executor<SubmitTxInfo> for FastLineExecutor<M>
 where
     M: Middleware,

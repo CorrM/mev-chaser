@@ -15,7 +15,9 @@ use shared::{
     simulator::EvmSimulator,
     types::{MevActions, MevEvents},
 };
+use vidger::logger::info;
 use vidger::types::NetworkKind;
+use vidger::utilities::block_on;
 use vidger::{
     collectors::BlockCollector,
     core::{CollectorMapper, ExecutorMapper},
@@ -180,7 +182,7 @@ impl RunCommand {
         Ok(ret)
     }
 
-    pub async fn process<M>(env: &Env, db: Database, network: NetworkKind, provider: Arc<M>) -> Result<()>
+    pub fn process<M>(env: &Env, db: Database, network: NetworkKind, provider: Arc<M>) -> Result<()>
     where
         M: Middleware + 'static,
         M::Provider: PubsubClient,
@@ -188,15 +190,23 @@ impl RunCommand {
         //Self::test(Arc::clone(&provider)).await;
         //return Ok(());
 
+        // Set up signer.
+        info!("Setting up signer");
         let searcher_signer = env
             .private_key
             .parse::<LocalWallet>()
             .map_err(|_| anyhow!("Failed to parse \"PRIVATE_KEY\""))?;
 
+        // Set up tokens.
+        info!("Setting up tokens");
         let tokens: Vec<CryptoToken> = Self::get_tokens(&db, &network).expect("Failed to get tokens");
+
+        // Set up simulator.
+        info!("Setting up simulator");
         let simulator = Arc::new(RwLock::new(EvmSimulator::new_revm(Arc::clone(&provider), &tokens)?));
 
         // Set up managers.
+        info!("Setting up managers");
         let token_manager = TokenManager::new(tokens, &network);
         let amm_manager = AmmManager::new(Self::get_dexes(&db, &network, &token_manager)?);
         let pool_manager = PoolManager::new(Arc::clone(&provider), Arc::clone(&simulator), &amm_manager);
@@ -206,6 +216,7 @@ impl RunCommand {
         let block_manager = Arc::new(RwLock::new(block_manager));
 
         // Set up engine.
+        info!("Setting up engine");
         let mut engine: VidgerEngine<MevEvents, MevActions> = VidgerEngine::new();
 
         // Set up block collector.
@@ -256,8 +267,9 @@ impl RunCommand {
         engine.add_notifier(Box::new(notifier));
 
         // Start engine.
-        if let Ok(mut set) = engine.run().await {
-            while let Some(res) = set.join_next().await {
+        info!("Starting engine");
+        if let Ok(mut set) = block_on(engine.run()) {
+            while let Some(res) = block_on(set.join_next()) {
                 println!("res: {:?}", res);
             }
         }

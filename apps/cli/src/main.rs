@@ -8,7 +8,7 @@ use commands::{AddTokenCommand, GenPoolCommand};
 use shared::database::Database;
 use shared::types::{NodeProvider, NodeProviderNetworkInfo};
 use utilities::env::Env;
-use vidger::logger::Logger;
+use vidger::logger::{LevelFilter, Logger};
 use vidger::types::NetworkKind;
 
 use crate::commands::RunCommand;
@@ -124,7 +124,16 @@ fn get_debug_node_provider(env: &Env, target_network: NetworkKind) -> Result<Nod
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let Ok(_) = Logger::setup_logger() else {
+    //let mut rt = tokio::runtime::Runtime::new().unwrap();
+    //rt.handle().block_on()
+
+    #[cfg(debug_assertions)]
+    let log_level = LevelFilter::Debug;
+
+    #[cfg(not(debug_assertions))]
+    let log_level = LevelFilter::Info;
+
+    let Ok(_) = Logger::setup_logger(log_level) else {
         return Err(anyhow!("Failed to setup logger"));
     };
 
@@ -167,7 +176,7 @@ async fn main() -> Result<()> {
             _ => panic!("Invalid command"),
         }
     } else {
-        RunCommand::process(&env, db, target_network, raw_provider).await?;
+        RunCommand::process(&env, db, target_network, raw_provider)?;
     }
 
     Ok(())

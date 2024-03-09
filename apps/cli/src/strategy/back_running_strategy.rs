@@ -1,7 +1,6 @@
 use std::sync::{Arc, RwLock};
 
 use anyhow::Result;
-use async_trait::async_trait;
 use ethers::providers::Middleware;
 use ethers::signers::LocalWallet;
 use ethers::types::Transaction;
@@ -44,7 +43,6 @@ impl<M: Middleware + 'static> BackRunningStrategy<M> {
     }
 }
 
-#[async_trait]
 impl<M: Middleware + 'static> Strategy<MevEvents, MevActions> for BackRunningStrategy<M> {
     fn sync_state(&mut self) -> Result<()> {
         Ok(())

@@ -8,16 +8,9 @@ contracts = { path = "../contracts" }
 vidger = { path = "../vidger" }
 
 tokio = { workspace = true }
-async-trait = { workspace = true }
 async-scoped = { workspace = true }
 futures = { workspace = true }
 rayon = { workspace = true }
-
-# Logging
-colored = { workspace = true }
-log = { workspace = true }
-fern = { workspace = true }
-chrono = { workspace = true }
 
 anyhow = { workspace = true }
 dashmap = { workspace = true }

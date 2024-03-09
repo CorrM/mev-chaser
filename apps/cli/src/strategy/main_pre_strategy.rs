@@ -1,7 +1,6 @@
 use std::sync::{Arc, RwLock};
 
 use anyhow::Result;
-use async_trait::async_trait;
 use ethers::providers::Middleware;
 
 use shared::managers::{BlockManager, PoolManager};
@@ -37,7 +36,6 @@ impl<M: Middleware + 'static> MainPreStrategy<M> {
     }
 }
 
-#[async_trait]
 impl<M: Middleware + 'static> PreStrategy<MevEvents> for MainPreStrategy<M> {
     /// Setup by getting all pools to monitor for swaps
     fn sync_state(&mut self) -> Result<()> {

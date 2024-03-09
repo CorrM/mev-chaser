@@ -22,7 +22,6 @@ chrono = "0.4"
 # Async and Threads
 tokio = { version = "1.36", features = ["full"] }
 async-scoped = { version = "0.9.0", features = ["use-tokio"] }
-async-trait = "0.1.77"
 futures = "0.3.30"
 rayon = "1.5"
 
