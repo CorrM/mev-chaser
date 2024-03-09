@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use alloy_primitives::{Address, Bytes, U256};
 use anyhow::{anyhow, Result};
 use ethers::abi::Token;
+use ethers::types::{Address, Bytes, U256};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
 use contracts::balancer_flash_loan_recipient::OneSwapInfo;
@@ -222,7 +222,7 @@ impl PoolPath {
 }
 
 /*
-async fn test_contract(env: &Env, provider_manager: &NodeProviderManager) -> Result<()> {
+fn test_contract(env: &Env, provider_manager: &NodeProviderManager) -> Result<()> {
     //let bot_address = SolidityBridge::deploy(provider_manager.get_next().raw_ws_provider().clone(), env.private_key.clone()).await;
     //let Ok(bot_address) = bot_address else { return Err(anyhow!("Failed to deploy")); };
 

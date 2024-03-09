@@ -1,8 +1,9 @@
 use std::sync::{Arc, RwLock};
 
-use alloy_primitives::{Address, U256, U64};
 use anyhow::Result;
 use dashmap::DashMap;
+use ethers::types::{Address, U256, U64};
+use ethers::utils::to_checksum;
 use ethers::{
     providers::Middleware,
     types::{Filter, Log},
@@ -131,8 +132,8 @@ impl<M: Middleware + 'static> PoolManager<M> {
         let event_filter: Filter = self
             .pools_sync_filter
             .clone()
-            .from_block(ethers::types::U64::from_little_endian(block_number.as_le_slice()))
-            .to_block(block_number.into());
+            .from_block(block_number)
+            .to_block(block_number);
 
         let logs: Result<Vec<Log>, <M as Middleware>::Error> = block_on(self.provider.get_logs(&event_filter));
         let Ok(logs) = logs else {
@@ -191,7 +192,7 @@ impl<M: Middleware + 'static> PoolManager<M> {
             //    .collect();
             //*pool_container.top_profitable_paths.write().unwrap() = top_profitable_paths;
 
-            info!("syncing pool {}", pool_container.pool.address().to_checksum(None));
+            info!("syncing pool {}", to_checksum(pool_container.pool.address(), None));
         });
     }
 }

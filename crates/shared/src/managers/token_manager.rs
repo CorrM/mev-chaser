@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use alloy_primitives::Address;
+use ethers::types::Address;
+use ethers::utils::to_checksum;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
 use vidger::types::NetworkKind;
@@ -14,7 +15,9 @@ pub struct TokenManager {
 
 impl TokenManager {
     fn get_by_address_str_impl<'a>(tokens: &'a Vec<Arc<CryptoToken>>, address: &str) -> Option<&'a Arc<CryptoToken>> {
-        tokens.iter().find(|token| token.address().to_checksum(None) == address)
+        tokens
+            .iter()
+            .find(|token| to_checksum(token.address(), None) == address)
     }
 
     pub fn new(tokens: Vec<CryptoToken>, network: &NetworkKind) -> Self {
@@ -25,11 +28,9 @@ impl TokenManager {
             NetworkKind::Polygon => "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270",
         };
 
-        let native_token: &Arc<CryptoToken> = Self::get_by_address_str_impl(&tokens, native_token_address).unwrap();
-        Self {
-            tokens,
-            native_token: Arc::clone(native_token),
-        }
+        let native_token: Arc<CryptoToken> =
+            Arc::clone(Self::get_by_address_str_impl(&tokens, native_token_address).unwrap());
+        Self { tokens, native_token }
     }
 }
 

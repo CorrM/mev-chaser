@@ -1,11 +1,13 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
-use alloy_primitives::{Address, U256, U64};
 use anyhow::Result;
+use ethers::prelude::H256;
 use ethers::providers::Middleware;
+use ethers::types::{Address, U256, U64};
 use ethers::types::{BigEndianHash, TxHash};
 use hashbrown::HashMap;
+use tokio::task::JoinError;
 
 use crate::amm::AmmPoolKind;
 use crate::simulator::RevmSimulator;
@@ -16,10 +18,13 @@ pub enum EvmSimulator<M> {
     //Ethers(EthersSimulator<M>),
 }
 
-impl<M: Middleware> EvmSimulator<M> {
+impl<M> EvmSimulator<M>
+where
+    M: Middleware + 'static,
+{
     #[inline]
-    pub async fn new_revm(provider: Arc<M>, tokens_to_override_balance: &[CryptoToken]) -> Self {
-        Self::Revm(RevmSimulator::new(provider, tokens_to_override_balance))
+    pub fn new_revm(provider: Arc<M>, tokens_to_override_balance: &[CryptoToken]) -> Result<Self> {
+        Ok(Self::Revm(RevmSimulator::new(provider, tokens_to_override_balance)?))
     }
 
     #[inline]
@@ -45,7 +50,10 @@ impl<M> EvmSimulator<M> {
     }
 }
 
-impl<M: Middleware> EvmSimulator<M> {
+impl<M> EvmSimulator<M>
+where
+    M: Middleware + 'static,
+{
     pub fn update_block(&mut self) {
         match self {
             Self::Revm(ref mut revm) => revm.on_new_block(),
@@ -70,16 +78,17 @@ impl<M: Middleware> EvmSimulator<M> {
             eip_1822_logic_slot,
         ];
 
-        let slots = async_scoped::TokioScope::scope_and_block(|s| {
-            for slot in &implementation_slots {
-                s.spawn(async {
-                    self.provider()
-                        .get_storage_at(token, TxHash::from_uint(slot), Some(block_number.into()))
-                        .await
-                });
-            }
-        })
-        .1;
+        let slots: Vec<Result<Result<H256, <M as Middleware>::Error>, JoinError>> =
+            async_scoped::TokioScope::scope_and_block(|s| {
+                for slot in &implementation_slots {
+                    s.spawn(async {
+                        self.provider()
+                            .get_storage_at(token, TxHash::from_uint(slot), Some(block_number.into()))
+                            .await
+                    });
+                }
+            })
+            .1;
 
         for slot in slots {
             let out: TxHash = slot??;

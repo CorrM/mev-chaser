@@ -63,7 +63,7 @@ impl<M> EthersSimulator<M>
 where
     M: Middleware + 'static,
 {
-    pub(super) async fn new(provider: Arc<M>, tokens_to_override_balance: &[CryptoToken]) -> Self {
+    pub(super) fn new(provider: Arc<M>, tokens_to_override_balance: &[CryptoToken]) -> Self {
         let ten_eth: U256 = U256::from(10).checked_mul(U256::from(10).pow(U256::from(18))).unwrap();
         let gas_price: U256 = U256::from(100).checked_mul(U256::from(10).pow(U256::from(9))).unwrap();
 
@@ -145,7 +145,7 @@ where
     }
 
     #[inline]
-    async fn debug_trace_call_get_state_diff(&self, tx: TypedTransaction, block_number: U64) -> Result<GethTrace> {
+    fn debug_trace_call_get_state_diff(&self, tx: TypedTransaction, block_number: U64) -> Result<GethTrace> {
         static OPTIONS: GethDebugTracingCallOptions = GethDebugTracingCallOptions {
             tracing_options: GethDebugTracingOptions {
                 disable_storage: None,
@@ -170,7 +170,7 @@ where
         Ok(trace)
     }
 
-    pub async fn debug_trace_call(&self, tx: &Transaction, block_number: Option<U64>) -> Result<Option<CallFrame>> {
+    pub fn debug_trace_call(&self, tx: &Transaction, block_number: Option<U64>) -> Result<Option<CallFrame>> {
         static TRACE_OPTIONS: GethDebugTracingCallOptions = GethDebugTracingCallOptions {
             tracing_options: GethDebugTracingOptions {
                 tracer: Some(GethDebugTracerType::BuiltInTracer(
@@ -301,7 +301,7 @@ where
         Ok(out)
     }
 
-    pub async fn multi_swap(&self, block_number: U64, swaps: Vec<OneSwapInfo>, chain_swaps: bool) -> Result<U256> {
+    pub fn multi_swap(&self, block_number: U64, swaps: Vec<OneSwapInfo>, chain_swaps: bool) -> Result<U256> {
         let calldata: Vec<u8>;
         unsafe {
             let swaps: Vec<contracts::simulator::OneSwapInfo> =
@@ -352,7 +352,7 @@ where
         Ok(out)
     }
 
-    pub async fn multicall_multi_swap(
+    pub fn multicall_multi_swap(
         &self,
         block_number: U64,
         swaps: Vec<OneSwapInfo>,

@@ -1,13 +1,18 @@
+use std::sync::{Mutex, MutexGuard};
 use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
 
+use anyhow::{Context, Result};
 use ethers::types::U64;
-use reqwest::header::CONTENT_TYPE;
-use reqwest::header::{HeaderValue, CONNECTION};
-use reqwest::Client;
-use tokio::sync::Mutex;
+use reqwest::{
+    header::CONTENT_TYPE,
+    header::{HeaderValue, CONNECTION},
+    Client, Response, StatusCode,
+};
+
+use vidger::utilities::block_on;
 
 use crate::executors::bundle::{PostData, RelayType};
 
@@ -20,7 +25,7 @@ pub struct BundleProvider {
 }
 
 impl BundleProvider {
-    pub(super) async fn new() -> Self {
+    pub(super) fn new() -> Self {
         let client = Client::builder()
             .timeout(Duration::from_secs(60))
             .default_headers({
@@ -39,15 +44,15 @@ impl BundleProvider {
         }
     }
 
-    async fn get_id(&self) -> u32 {
-        let mut id_guard = self.id.lock().await;
-        let id = *id_guard;
+    fn get_id(&self) -> u32 {
+        let mut id_guard: MutexGuard<u32> = self.id.lock().unwrap();
+        let id: u32 = *id_guard;
         *id_guard = id.wrapping_add(1);
         id
     }
 
-    async fn send_bundle(&self, post_data: PostData) -> reqwest::Result<String> {
-        let relay = match post_data {
+    fn send_bundle(&self, post_data: PostData) -> Result<String> {
+        let relay: &str = match post_data {
             PostData::FastLaneFastBid(_) => FLASH_RELAY,
             PostData::FastLaneFlashBid(_) => FLASH_RELAY,
             PostData::Marlin(_) => MARLIN_RELAY,
@@ -55,45 +60,48 @@ impl BundleProvider {
 
         println!("post_data: {}", post_data.to_json());
 
-        self.client
-            .post(relay)
-            .header(CONTENT_TYPE, "application/json")
-            .body(post_data.to_json())
-            .send()
-            .await?
-            .text()
-            .await
+        block_on(
+            block_on(
+                self.client
+                    .post(relay)
+                    .header(CONTENT_TYPE, "application/json")
+                    .body(post_data.to_json())
+                    .send(),
+            )?
+            .text(),
+        )
+        .context("Failed to send bundle: {}")
     }
 
-    pub(super) async fn ping(&self) {
+    pub(super) fn ping(&self) {
         let start_time = Instant::now();
-        let response = self.client.get(&format!("{}/ping", FLASH_RELAY)).send().await.unwrap();
+        let response: Response = block_on(self.client.get(&format!("{}/ping", FLASH_RELAY)).send()).unwrap();
 
-        let status = response.status();
-        let response_time = start_time.elapsed().as_millis();
-        println!("PONG : {:?}, responseTime: {}", status, response_time);
+        let status: StatusCode = response.status();
+        println!(
+            "PONG : {:?}, responseTime: {}",
+            status,
+            start_time.elapsed().as_millis()
+        );
     }
 
-    pub async fn send_flashbid_bundle(&self, bundle: Vec<String>) -> reqwest::Result<String> {
-        let post_data_fast_lane = PostData::new(bundle, self.get_id().await, RelayType::FastLaneFlashBid, U64::zero());
-
-        self.send_bundle(post_data_fast_lane).await
+    pub fn send_flashbid_bundle(&self, bundle: Vec<String>) -> Result<String> {
+        let post_data_fast_lane = PostData::new(bundle, self.get_id(), RelayType::FastLaneFlashBid, U64::zero());
+        self.send_bundle(post_data_fast_lane)
     }
 
-    pub async fn send_fastbid(&self, tx: String) -> reqwest::Result<String> {
-        let post_data_fast_lane = PostData::new(vec![tx], self.get_id().await, RelayType::FastLaneFastBid, U64::zero());
+    pub fn send_fastbid(&self, tx: String) -> Result<String> {
+        let post_data_fast_lane = PostData::new(vec![tx], self.get_id(), RelayType::FastLaneFastBid, U64::zero());
 
-        self.send_bundle(post_data_fast_lane).await
+        self.send_bundle(post_data_fast_lane)
     }
 
-    pub async fn send_marlin_bundle(&self, bundle: Vec<String>, block_number: U64) -> String {
-        let post_data_fast_lane = PostData::new(bundle, self.get_id().await, RelayType::Marlin, block_number);
+    pub fn send_marlin_bundle(&self, bundle: Vec<String>, block_number: U64) -> String {
+        let post_data_fast_lane = PostData::new(bundle, self.get_id(), RelayType::Marlin, block_number);
 
         // let json_post = post_data_fast_lane.to_json();
         // write_to_json("test.json", &json_post);
 
-        self.send_bundle(post_data_fast_lane)
-            .await
-            .unwrap_or_else(|e| e.to_string())
+        self.send_bundle(post_data_fast_lane).unwrap_or_else(|e| e.to_string())
     }
 }

@@ -16,7 +16,6 @@ tokio = { workspace = true }
 async-trait = { workspace = true }
 rayon = { workspace = true }
 
-alloy-primitives = { workspace = true }
 ethers = { workspace = true }
 
 dotenv = { workspace = true }

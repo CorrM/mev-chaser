@@ -32,7 +32,7 @@ fn read_env_file() -> Result<Env> {
 }
 
 /*
-async fn get_node_providers(env: &Env, target_network: &NetworkKind) -> Result<Vec<NodeProvider>> {
+fn get_node_providers(env: &Env, target_network: &NetworkKind) -> Result<Vec<NodeProvider>> {
     let providers: Vec<NodeProvider> = vec![
         NodeProvider::new(
             "Alchemy",
@@ -57,13 +57,13 @@ async fn get_node_providers(env: &Env, target_network: &NetworkKind) -> Result<V
     Ok(providers)
 }
 
-async fn create_node_provider_manager(env: &Env, target_network: &NetworkKind) -> Result<NodeProviderManager> {
+fn create_node_provider_manager(env: &Env, target_network: &NetworkKind) -> Result<NodeProviderManager> {
     let providers: Vec<NodeProvider> = get_node_providers(env, target_network).await?;
     NodeProviderManager::new(providers, get_debug_node_providers(env, target_network).await?)
 }
 */
 
-async fn get_node_provider(env: &Env, target_network: NetworkKind) -> Result<NodeProvider> {
+fn get_node_provider(env: &Env, target_network: NetworkKind) -> Result<NodeProvider> {
     //#[cfg(debug_assertions)]
     //let provider: NodeProvider = NodeProvider::new(
     //    "Alchemy",
@@ -77,7 +77,7 @@ async fn get_node_provider(env: &Env, target_network: NetworkKind) -> Result<Nod
     //.await?;
 
     #[cfg(debug_assertions)]
-    let provider: NodeProvider = get_debug_node_provider(env, target_network).await?;
+    let provider: NodeProvider = get_debug_node_provider(env, target_network)?;
 
     #[cfg(not(debug_assertions))]
     let provider: NodeProvider = NodeProvider::new(
@@ -94,7 +94,7 @@ async fn get_node_provider(env: &Env, target_network: NetworkKind) -> Result<Nod
     Ok(provider)
 }
 
-async fn get_debug_node_provider(env: &Env, target_network: NetworkKind) -> Result<NodeProvider> {
+fn get_debug_node_provider(env: &Env, target_network: NetworkKind) -> Result<NodeProvider> {
     let blockpi_network_subdomain: String = match target_network {
         NetworkKind::Ethereum => "ethereum".to_string(),
         NetworkKind::Polygon => "polygon".to_string(),
@@ -119,7 +119,7 @@ async fn get_debug_node_provider(env: &Env, target_network: NetworkKind) -> Resu
         ipc_path: None,
     };
 
-    NodeProvider::new("blockpi", blockpi_net_info).await
+    NodeProvider::new("blockpi", blockpi_net_info)
 }
 
 #[tokio::main]
@@ -132,7 +132,7 @@ async fn main() -> Result<()> {
     let db = Database::new(Path::new("./Main.db"))?;
     let target_network = NetworkKind::from(env.chain_id);
 
-    let provider: NodeProvider = get_node_provider(&env, target_network.clone()).await?;
+    let provider: NodeProvider = get_node_provider(&env, target_network.clone())?;
 
     #[cfg(debug_assertions)]
     let raw_provider = Arc::clone(provider.raw_ws_provider());
@@ -155,14 +155,14 @@ async fn main() -> Result<()> {
     if args.len() > 1 {
         match args[1].as_str() {
             "gen_pools" => {
-                GenPoolCommand::process(&db, &target_network, raw_provider).await?;
+                GenPoolCommand::process(&db, &target_network, raw_provider)?;
             }
             "add_token" => {
                 let file_name: &String = &args[2];
                 let tokens: String = std::fs::read_to_string(file_name).expect("Something went wrong reading the file");
                 let tokens: Vec<&str> = tokens.lines().filter(|s| !s.is_empty()).collect();
 
-                AddTokenCommand::process(tokens, &db, &target_network, raw_provider).await?;
+                AddTokenCommand::process(tokens, &db, &target_network, raw_provider)?;
             }
             _ => panic!("Invalid command"),
         }

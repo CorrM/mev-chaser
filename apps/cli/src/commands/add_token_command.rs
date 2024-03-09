@@ -10,18 +10,20 @@ use ethers::{
 
 use contracts::erc20_token::ERC20TokenAbi;
 use shared::database::Database;
-use vidger::types::{CryptoToken, NetworkKind};
+use shared::types::CryptoToken;
+use vidger::types::NetworkKind;
+use vidger::utilities::block_on;
 
 pub struct AddTokenCommand;
 
 impl AddTokenCommand {
-    async fn add_token_info<M: Middleware>(
+    fn add_token_info<M: Middleware>(
         tokens: &[&str],
         db: &Database,
         target_network: &NetworkKind,
         provider: &Arc<M>,
     ) -> Result<()> {
-        let mut multicall: Multicall<M> = Multicall::new(Arc::clone(provider), None).await.unwrap();
+        let mut multicall: Multicall<M> = block_on(Multicall::new(Arc::clone(provider), None)).unwrap();
 
         for token_address in tokens {
             // Can't execlude tokens here, because it will cause an error in the next for loop
@@ -32,7 +34,7 @@ impl AddTokenCommand {
             multicall.add_call(token_contract.decimals(), false);
         }
 
-        let result: Vec<Result<Token, Bytes>> = multicall.call_raw().await.unwrap();
+        let result: Vec<Result<Token, Bytes>> = block_on(multicall.call_raw()).unwrap();
         for i in (0..result.len()).step_by(3) {
             let token_address: &str = tokens[i / 3];
             if db.get_token_by_address(token_address, target_network)?.is_some() {
@@ -74,7 +76,7 @@ impl AddTokenCommand {
         Ok(())
     }
 
-    pub async fn process<M: Middleware>(
+    pub fn process<M: Middleware>(
         tokens: Vec<&str>,
         db: &Database,
         target_network: &NetworkKind,
@@ -89,7 +91,7 @@ impl AddTokenCommand {
             let start_idx: usize = i * tokens_per_batch;
             let end_idx: usize = std::cmp::min(start_idx + tokens_per_batch, tokens_cnt);
 
-            AddTokenCommand::add_token_info(&tokens[start_idx..end_idx], db, target_network, &provider).await?;
+            AddTokenCommand::add_token_info(&tokens[start_idx..end_idx], db, target_network, &provider)?;
         }
 
         Ok(())

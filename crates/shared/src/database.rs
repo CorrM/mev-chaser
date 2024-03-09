@@ -336,7 +336,7 @@ impl Database {
 
         // check if token already exists
         if self
-            .get_token_network(token.address().to_checksum(None), network)?
+            .get_token_network(to_checksum(token.address(), None), network)?
             .is_some()
         {
             return Err(rusqlite::Error::ExecuteReturnedResults);
@@ -365,7 +365,7 @@ impl Database {
             )?
         };
 
-        let token_address: String = token.address().to_checksum(None);
+        let token_address: String = to_checksum(token.address(), None);
         let db_token_network: DbTokenNetwork = self.add_token_network(db_token.id, network, &token_address)?;
 
         let mut stmt: Statement = self.db.prepare("UPDATE Tokens SET tokenNetworksIds = ? WHERE id = ?")?;

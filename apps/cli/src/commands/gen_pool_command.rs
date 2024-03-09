@@ -12,6 +12,7 @@ use ethers::{
 use contracts::{uniswap_v2_factory::UniswapV2FactoryAbi, uniswap_v2_pair::UniswapV2PairAbi};
 use shared::database::{Database, DbDex, DbDexNetwork, DbDexProtocol, DbToken};
 use vidger::types::NetworkKind;
+use vidger::utilities::block_on;
 
 fn generate_pairs<T>(list: &[T]) -> Vec<(&T, &T)> {
     let mut pairs: Vec<(&T, &T)> = Vec::new();
@@ -26,7 +27,7 @@ fn generate_pairs<T>(list: &[T]) -> Vec<(&T, &T)> {
 pub struct GenPoolCommand;
 
 impl GenPoolCommand {
-    async fn add_uniswap_v2_pools<M: Middleware>(
+    fn add_uniswap_v2_pools<M: Middleware>(
         token_pairs: &[(&String, &String)],
         db_dex: &DbDex,
         db: &Database,
@@ -58,7 +59,7 @@ impl GenPoolCommand {
                 "[-] Getting pools [{} -> {}] addresses for dex '{}'",
                 start_idx, end_idx, db_dex.name
             );
-            let mut multicall: Multicall<M> = Multicall::new(Arc::clone(provider), None).await.unwrap();
+            let mut multicall: Multicall<M> = block_on(Multicall::new(Arc::clone(provider), None)).unwrap();
             for (token_a, token_b) in pairs_chank {
                 // Can't execlude pairs here, because it will cause an error in the next for loop
                 let token_a: Address = Address::from_str(token_a).unwrap();
@@ -67,7 +68,7 @@ impl GenPoolCommand {
                 multicall.add_call(factory_contract.get_pair(token_a, token_b), false);
             }
 
-            let result: Vec<Result<Token, Bytes>> = multicall.call_raw().await.unwrap();
+            let result: Vec<Result<Token, Bytes>> = block_on(multicall.call_raw()).unwrap();
             let mut pools_to_add: Vec<Address> = Vec::new();
             for i in 0..result.len() {
                 let (token_a, token_b): (&String, &String) = pairs_chank[i];
@@ -125,7 +126,7 @@ impl GenPoolCommand {
                 multicall.add_call(pool_contract.token_1(), false);
             }
 
-            let result: Vec<Result<Token, Bytes>> = multicall.call_raw().await.unwrap();
+            let result: Vec<Result<Token, Bytes>> = block_on(multicall.call_raw()).unwrap();
             for i in (0..result.len()).step_by(2) {
                 let pool_address: &Address = &pools_to_add[i / 2];
 
@@ -166,7 +167,7 @@ impl GenPoolCommand {
         Ok(())
     }
 
-    pub async fn process<M: Middleware>(db: &Database, target_network: &NetworkKind, provider: Arc<M>) -> Result<()> {
+    pub fn process<M: Middleware>(db: &Database, target_network: &NetworkKind, provider: Arc<M>) -> Result<()> {
         let tokens_address: Vec<String> = db
             .get_tokens(target_network)?
             .iter()
@@ -185,9 +186,7 @@ impl GenPoolCommand {
             let protocol_name: &str = db_dex_protocol.name.as_str();
 
             match protocol_name {
-                "UniswapV2" => {
-                    GenPoolCommand::add_uniswap_v2_pools(&pairs, db_dex, db, target_network, &provider).await?
-                }
+                "UniswapV2" => GenPoolCommand::add_uniswap_v2_pools(&pairs, db_dex, db, target_network, &provider)?,
                 _ => panic!("Unsupported dex protocol"),
             }
         }

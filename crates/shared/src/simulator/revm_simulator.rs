@@ -1,10 +1,14 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
-use alloy_primitives::{Address, Bytes, U256};
 use anyhow::{anyhow, Result};
-use ethers::prelude::{Block, H256};
-use ethers::{abi, providers::Middleware, types::BlockNumber, utils::keccak256};
+use ethers::abi::{AbiDecode, AbiEncode};
+use ethers::{
+    abi,
+    providers::Middleware,
+    types::{Address, Block, BlockNumber, H256, U256},
+    utils::keccak256,
+};
 use hashbrown::HashMap;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use revm::{
@@ -41,17 +45,20 @@ pub struct TxResult {
 
 pub struct RevmSimulator<M> {
     provider: Arc<M>,
-    account: Address,
+    account: revm::primitives::Address,
     ctx_with_handler: ContextWithHandlerCfg<(), InMemoryDB>,
 }
 
-impl<M: Middleware> RevmSimulator<M> {
+impl<M> RevmSimulator<M>
+where
+    M: Middleware + 'static,
+{
     fn deploy_token_and_spoof_balance(db: &mut InMemoryDB, ethers_db: &mut EthersDB<M>, token: &CryptoToken) {
-        let hundred_grand_eth: U256 = U256::from(100_000)
-            .checked_mul(U256::from(10).pow(U256::from(18)))
+        let hundred_grand_eth: revm::primitives::U256 = revm::primitives::U256::from(100_000)
+            .checked_mul(revm::primitives::U256::from(10).pow(revm::primitives::U256::from(18)))
             .unwrap();
 
-        let token_address: Address = token.proxy_or_address().0.into();
+        let token_address: revm::primitives::Address = token.proxy_or_address().0.into();
         let token_acc_info: AccountInfo = ethers_db.basic(token_address).unwrap().unwrap();
         db.insert_account_info(token_address, token_acc_info);
 
@@ -61,18 +68,18 @@ impl<M: Middleware> RevmSimulator<M> {
         ]));
         db.insert_account_storage(
             token_address,
-            U256::from_be_bytes(input_balance_slot),
+            revm::primitives::U256::from_be_bytes(input_balance_slot),
             hundred_grand_eth,
         )
         .expect("failed to insert token balance in DB");
     }
 
-    pub(super) fn new(provider: Arc<M>, tokens: &[CryptoToken]) -> Self {
+    pub(super) fn new(provider: Arc<M>, tokens: &[CryptoToken]) -> Result<Self> {
         // https://github.com/bluealloy/revm/issues/1062
-        let hundred_grand_eth: U256 = U256::from(100_000)
-            .checked_mul(U256::from(10).pow(U256::from(18)))
+        let hundred_grand_eth: revm::primitives::U256 = revm::primitives::U256::from(100_000)
+            .checked_mul(revm::primitives::U256::from(10).pow(revm::primitives::U256::from(18)))
             .unwrap();
-        let account = Address::from_str("0x9cf277A22EB4c551c6E18F7a6C0ee1893bcB034f").unwrap();
+        let account = revm::primitives::Address::from_str("0x9cf277A22EB4c551c6E18F7a6C0ee1893bcB034f").unwrap();
         let cur_block: Block<H256> =
             block_on(provider.get_block(BlockNumber::Latest))?.ok_or(anyhow!("failed to retrieve block"))?;
 
@@ -82,13 +89,19 @@ impl<M: Middleware> RevmSimulator<M> {
 
         // Give the user enough ETH to pay for gas
         let user_acc_info = AccountInfo::new(hundred_grand_eth, 0, KECCAK_EMPTY, Bytecode::default());
-        db.insert_account_info(account.into(), user_acc_info); // TODO: Remove .into()
+        db.insert_account_info(account, user_acc_info); // TODO: Remove .into()
 
         // Deploy Simulator contract
-        let simulator_address = Address::from_str("0xF2d01Ee818509a9540d8324a5bA52329af27D19E").unwrap();
+        let simulator_address =
+            revm::primitives::Address::from_str("0xF2d01Ee818509a9540d8324a5bA52329af27D19E").unwrap();
         let simulator_bytes = Bytecode::new_raw((*SIMULATORABI_DEPLOYED_BYTECODE.0).into());
-        let simulator_acc_info = AccountInfo::new(U256::ZERO, 0, simulator_bytes.hash_slow(), simulator_bytes);
-        db.insert_account_info(simulator_address.into(), simulator_acc_info);
+        let simulator_acc_info = AccountInfo::new(
+            revm::primitives::U256::ZERO,
+            0,
+            simulator_bytes.hash_slow(),
+            simulator_bytes,
+        );
+        db.insert_account_info(simulator_address, simulator_acc_info);
 
         // Spoof tokens balance for the user
         for crypto_token in tokens {
@@ -107,11 +120,11 @@ impl<M: Middleware> RevmSimulator<M> {
         // Create context
         let ctx_with_handler: ContextWithHandlerCfg<(), InMemoryDB> = evm.into_context_with_handler_cfg();
 
-        Self {
+        Ok(Self {
             provider,
             account,
             ctx_with_handler,
-        }
+        })
     }
 }
 
@@ -122,11 +135,15 @@ impl<M> RevmSimulator<M> {
     }
 }
 
-impl<M: Middleware> RevmSimulator<M> {
+impl<M> RevmSimulator<M>
+where
+    M: Middleware + 'static,
+{
     #[inline]
     fn get_evm(&self) -> Evm<(), InMemoryDB> {
-        let cfg = ContextWithHandlerCfg::new(self.ctx_with_handler.context.clone(), self.ctx_with_handler.cfg);
-        Evm::builder().with_context_with_handler_cfg(cfg).build()
+        Evm::builder()
+            .with_context_with_handler_cfg(self.ctx_with_handler.clone())
+            .build()
     }
 
     #[inline]
@@ -173,8 +190,8 @@ impl<M: Middleware> RevmSimulator<M> {
     }
 
     pub fn get_token_balance(&self, token: Address) -> Result<U256> {
-        let calldata: Vec<u8> = ethers::abi::AbiEncode::encode(BalanceOfCall {
-            who: self.account.0.into(),
+        let calldata: Vec<u8> = abi::AbiEncode::encode(BalanceOfCall {
+            who: self.account.0 .0.into(),
         });
 
         let mut evm: Evm<(), InMemoryDB> = self.get_evm();
@@ -230,12 +247,13 @@ impl<M: Middleware> RevmSimulator<M> {
         // Get token account info from ethers middleware and insert it into EVM
         let cur_block: Block<H256> =
             block_on(self.provider.get_block(BlockNumber::Latest))?.ok_or(anyhow!("failed to retrieve block"))?;
-        let ethers_db: EthersDB<M> = EthersDB::new(Arc::clone(&self.provider), Some(cur_block.into())).unwrap();
+        let ethers_db: EthersDB<M> =
+            EthersDB::new(Arc::clone(&self.provider), Some(cur_block.number.unwrap().into())).unwrap();
 
-        let tokens_accounts: Vec<(AccountInfo, Address)> = tokens
+        let tokens_accounts: Vec<(AccountInfo, revm::primitives::Address)> = tokens
             .par_iter()
-            .map(|token| {
-                let token: Address = token.0.into();
+            .map(|token: &Address| {
+                let token: revm::primitives::Address = token.0.into();
                 let token_acc_info: AccountInfo = ethers_db.basic_ref(token).unwrap().unwrap();
 
                 (token_acc_info, token)
@@ -243,12 +261,12 @@ impl<M: Middleware> RevmSimulator<M> {
             .collect();
 
         for (token_acc_info, token) in tokens_accounts {
-            evm.context.evm.db.insert_account_info(token, token_acc_info);
+            evm.db_mut().insert_account_info(token, token_acc_info);
         }
 
         // Call balanceOf
-        let calldata: Bytes = ethers::abi::AbiEncode::encode(BalanceOfCall {
-            who: self.account.0.into(),
+        let calldata: revm::primitives::Bytes = AbiEncode::encode(BalanceOfCall {
+            who: self.account.0 .0.into(),
         })
         .into();
 
@@ -259,7 +277,7 @@ impl<M: Middleware> RevmSimulator<M> {
                 let cfg = ContextWithHandlerCfg::new(handler_cfg.context.clone(), handler_cfg.cfg);
                 let mut evm: Evm<(), InMemoryDB> = self.clone_evm(cfg);
 
-                let _token: Address = token.0.into();
+                let _token: revm::primitives::Address = token.0.into();
 
                 let tx: &mut TxEnv = evm.tx_mut();
                 tx.caller = self.account.0.into();
@@ -280,11 +298,11 @@ impl<M: Middleware> RevmSimulator<M> {
 
                 for i in 0..20 {
                     let slot: [u8; 32] = keccak256(&abi::encode(&[
-                        abi::Token::Address(self.account.0.into()),
+                        abi::Token::Address(self.account.0 .0.into()),
                         abi::Token::Uint(U256::from(i).into()),
                     ]));
 
-                    let slot: U256 = U256::from_be_bytes(slot);
+                    let slot = revm::primitives::U256::from_be_bytes(slot);
                     if touched_storage.get(&slot).is_none() {
                         continue;
                     };

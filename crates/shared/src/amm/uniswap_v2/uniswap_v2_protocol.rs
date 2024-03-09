@@ -1,8 +1,8 @@
 use std::sync::Arc;
 use std::{collections::HashMap, str::FromStr};
 
-use alloy_primitives::Address;
 use anyhow::Result;
+use ethers::types::Address;
 use ethers::{
     abi::{Log, RawLog},
     types::CallLogFrame,

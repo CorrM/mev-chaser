@@ -1,4 +1,3 @@
-use std::str::FromStr;
 use std::sync::{Arc, RwLock};
 
 use anyhow::{anyhow, Result};
@@ -10,12 +9,13 @@ use ethers::types::Address;
 use shared::amm::{AmmPoolKind, AmmProtocolKind, UniswapV2Pool, UniswapV2Protocol};
 use shared::database::{Database, DbDex, DbDexPool, DbToken, DbTokenNetwork};
 use shared::managers::{AmmManager, BlockManager, PoolManager, TokenManager};
+use shared::types::CryptoToken;
 use shared::{
     executors::FastLineExecutor,
     simulator::EvmSimulator,
     types::{MevActions, MevEvents},
 };
-use vidger::types::{CryptoToken, NetworkKind};
+use vidger::types::NetworkKind;
 use vidger::{
     collectors::BlockCollector,
     core::{CollectorMapper, ExecutorMapper},
@@ -31,7 +31,7 @@ use crate::utilities::env::Env;
 pub struct RunCommand;
 
 impl RunCommand {
-    /*async fn test<M>(provider: Arc<M>)
+    /*fn test<M>(provider: Arc<M>)
     where
         M: Middleware + 'static,
         M::Provider: PubsubClient,
@@ -149,16 +149,16 @@ impl RunCommand {
                         let db_token1_network: DbTokenNetwork =
                             db.get_token_network_by_token(token1.unwrap().id, network)?.unwrap();
 
-                        let token0: Arc<CryptoToken> =
+                        let token0: &Arc<CryptoToken> =
                             token_manager.get_by_address_str(&db_token0_network.address).unwrap();
-                        let token1: Arc<CryptoToken> =
+                        let token1: &Arc<CryptoToken> =
                             token_manager.get_by_address_str(&db_token1_network.address).unwrap();
 
                         let pool = AmmPoolKind::UniswapV2(UniswapV2Pool::new(
                             pool_address,
                             Arc::clone(&uniswap_v2),
-                            token0,
-                            token1,
+                            Arc::clone(token0),
+                            Arc::clone(token1),
                         )?);
                         pools.push(pool);
                     }
@@ -194,9 +194,7 @@ impl RunCommand {
             .map_err(|_| anyhow!("Failed to parse \"PRIVATE_KEY\""))?;
 
         let tokens: Vec<CryptoToken> = Self::get_tokens(&db, &network).expect("Failed to get tokens");
-        let simulator = Arc::new(RwLock::new(
-            EvmSimulator::new_revm(Arc::clone(&provider), &tokens).await,
-        ));
+        let simulator = Arc::new(RwLock::new(EvmSimulator::new_revm(Arc::clone(&provider), &tokens)?));
 
         // Set up managers.
         let token_manager = TokenManager::new(tokens, &network);

@@ -1,6 +1,9 @@
+use std::{str::FromStr, sync::Arc};
+
 use anyhow::Result;
 use ethers::providers::{Http, Ipc, Provider, Ws};
-use std::{str::FromStr, sync::Arc};
+use futures::executor::block_on;
+
 use vidger::types::NetworkKind;
 
 pub struct NodeProviderNetworkInfo {
@@ -40,26 +43,21 @@ impl NodeProvider {
         self.ipc_provider.as_ref().unwrap()
     }
 
-    pub async fn new(name: impl Into<String>, network_info: NodeProviderNetworkInfo) -> Result<Self> {
+    pub fn new(name: impl Into<String>, network_info: NodeProviderNetworkInfo) -> Result<Self> {
         let http: Option<Provider<Http>> = network_info
             .http_url
             .map(|url| Provider::<Http>::new(Http::from_str(&url).unwrap()));
 
         let ws: Option<Provider<Ws>> = if let Some(url) = network_info.ws_url {
-            Some(Provider::<Ws>::new(Ws::connect(url).await?))
+            let result: Ws = block_on(Ws::connect(url))?;
+            Some(Provider::<Ws>::new(result))
         } else {
             None
         };
 
-        let ipc: Option<Provider<Ipc>> = if let Some(path) = network_info.ipc_path {
-            Some(
-                Provider::<Ipc>::connect_ipc(path)
-                    .await
-                    .expect("Failed to connect to IPC provider"),
-            )
-        } else {
-            None
-        };
+        let ipc: Option<Provider<Ipc>> = network_info.ipc_path.map(|path: String| {
+            block_on(Provider::<Ipc>::connect_ipc(path)).expect("Failed to connect to IPC provider")
+        });
 
         Ok(Self {
             name: name.into(),

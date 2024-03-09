@@ -62,7 +62,7 @@ where
     M: Middleware + Clone + 'static,
     <M as Middleware>::Provider: PubsubClient,
 {
-    pub async fn new(
+    pub fn new(
         solidity_bridge: SolidityBridge<M>,
         provider: &Arc<M>,
         token_manager: TokenManager,
@@ -254,7 +254,7 @@ where
         })
     }
 
-    async fn on_new_block(&mut self, provider: &Arc<M>, block: &NewBlock) {
+    fn on_new_block(&mut self, provider: &Arc<M>, block: &NewBlock) {
         update_touched_pool_reserves(provider, block.block_number, &mut self.pools)
             .await
             .unwrap_or_else(|e| {
@@ -262,7 +262,7 @@ where
             });
     }
 
-    async fn on_pending_tx(&mut self, tx: &Transaction, debug_provider: &Arc<M>) {
+    fn on_pending_tx(&mut self, tx: &Transaction, debug_provider: &Arc<M>) {
         let start = Instant::now();
 
         /*
@@ -442,7 +442,7 @@ where
         println!("============");
     }
 
-    pub async fn run(&mut self, provider: Arc<M>, debug_provider: Arc<M>) -> Result<()> {
+    pub fn run(&mut self, provider: Arc<M>, debug_provider: Arc<M>) -> Result<()> {
         let router_addresses: Vec<Address> = self
             .dexes
             .iter()

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use alloy_primitives::Address;
+use ethers::types::Address;
 
 use crate::amm::AmmProtocolKind;
 use crate::types::CryptoToken;

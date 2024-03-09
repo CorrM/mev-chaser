@@ -1,7 +1,7 @@
 use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 
-use alloy_primitives::Address;
+use ethers::types::Address;
 
 use crate::amm::amm_pool::AmmPool;
 use crate::amm::{AmmProtocolKind, UniswapV2Pool};

@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
-use alloy_primitives::{Address, U256};
 use anyhow::Result;
+use ethers::types::{Address, U256};
 
 #[derive(Debug, Clone)]
 pub struct CryptoToken {
