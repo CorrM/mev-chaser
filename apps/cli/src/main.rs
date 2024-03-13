@@ -122,11 +122,7 @@ fn get_debug_node_provider(env: &Env, target_network: NetworkKind) -> Result<Nod
     NodeProvider::new("blockpi", blockpi_net_info)
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    //let mut rt = tokio::runtime::Runtime::new().unwrap();
-    //rt.handle().block_on()
-
+async fn entry_point() -> Result<()> {
     #[cfg(debug_assertions)]
     let log_level = LevelFilter::Debug;
 
@@ -180,6 +176,20 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    //let rt = tokio::runtime::Builder::new_multi_thread()
+    //    // For now vidger use async, so will not limit the number of threads
+    //    //.worker_threads(4) // I don't use async, so it's fair to set this to 4
+    //    .enable_all()
+    //    .build()
+    //    .unwrap();
+
+    //rt.block_on(entry_point())
+
+    entry_point().await
 }
 
 /*

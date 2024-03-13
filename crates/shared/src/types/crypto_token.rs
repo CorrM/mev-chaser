@@ -2,6 +2,7 @@ use std::str::FromStr;
 
 use anyhow::Result;
 use ethers::types::{Address, U256};
+use revm::primitives::bytes;
 
 #[derive(Debug, Clone)]
 pub struct CryptoToken {
@@ -14,6 +15,7 @@ pub struct CryptoToken {
     one_token_amount: U256,
     input_token_unit: U256,
     balance_contract_slot: i32,
+    code: bytes::Bytes,
 }
 
 impl CryptoToken {
@@ -24,6 +26,7 @@ impl CryptoToken {
         symbol: impl Into<String>,
         decimals: u8,
         balance_contract_slot: i32,
+        code: bytes::Bytes,
     ) -> Result<Self> {
         let decimals_pow: f64 = 10_f64.powi(decimals as i32);
 
@@ -37,6 +40,7 @@ impl CryptoToken {
             one_token_amount: U256::from((1_f64 * decimals_pow) as i128),
             input_token_unit: U256::from(10).pow(U256::from(decimals)),
             balance_contract_slot,
+            code,
         })
     }
 }
@@ -88,6 +92,11 @@ impl CryptoToken {
     #[inline]
     pub fn balance_contract_slot(&self) -> i32 {
         self.balance_contract_slot
+    }
+
+    #[inline]
+    pub fn code(&self) -> &bytes::Bytes {
+        &self.code
     }
 
     #[inline]

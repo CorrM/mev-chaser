@@ -1,28 +1,25 @@
 use std::sync::{Arc, RwLock};
 
 use anyhow::{anyhow, Result};
-use ethers::prelude::PubsubClient;
-use ethers::providers::Middleware;
-use ethers::signers::LocalWallet;
-use ethers::types::Address;
+use ethers::{prelude::PubsubClient, providers::Middleware, signers::LocalWallet, types::Address};
 
-use shared::amm::{AmmPoolKind, AmmProtocolKind, UniswapV2Pool, UniswapV2Protocol};
-use shared::database::{Database, DbDex, DbDexPool, DbToken, DbTokenNetwork};
-use shared::managers::{AmmManager, BlockManager, PoolManager, TokenManager};
-use shared::types::CryptoToken;
 use shared::{
+    amm::{AmmPoolKind, AmmProtocolKind, UniswapV2Pool, UniswapV2Protocol},
+    database::{Database, DbAmm, DbAmmPool, DbToken, DbTokenNetwork},
     executors::FastLineExecutor,
+    managers::{AmmManager, BlockManager, PoolManager, TokenManager},
     simulator::EvmSimulator,
+    types::CryptoToken,
     types::{MevActions, MevEvents},
 };
-use vidger::logger::info;
-use vidger::types::NetworkKind;
-use vidger::utilities::block_on;
 use vidger::{
     collectors::BlockCollector,
     core::{CollectorMapper, ExecutorMapper},
     executors::MempoolExecutor,
+    logger::info,
     notifiers::TelegramNotifier,
+    types::NetworkKind,
+    utilities::block_on,
     VidgerEngine,
 };
 
@@ -93,35 +90,36 @@ impl RunCommand {
         for (db_token, db_token_network) in db_tokens {
             tokens.push(CryptoToken::new(
                 db_token_network.address,
-                None, // TODO
+                db_token_network.proxy,
                 db_token.name,
                 db_token.symbol,
                 db_token.decimals as u8,
-                0, // TODO
+                db_token_network.balance_contract_slot,
+                db_token_network.code,
             )?);
         }
 
         Ok(tokens)
     }
 
-    fn get_dexes(
+    fn get_amms(
         db: &Database,
         network: &NetworkKind,
         token_manager: &TokenManager,
     ) -> Result<Vec<Arc<AmmProtocolKind>>> {
         let mut ret: Vec<Arc<AmmProtocolKind>> = Vec::new();
 
-        let db_dexes: Vec<DbDex> = db.get_dexes_by_network(network)?;
+        let db_dexes: Vec<DbAmm> = db.get_amms_by_network(network)?;
         for db_dex in db_dexes {
-            let Some(db_dex_protocol) = db.get_dex_protocol_by_id(db_dex.dex_protocol_id)? else {
+            let Some(db_dex_protocol) = db.get_amm_protocol_by_id(db_dex.amm_protocol_id)? else {
                 continue;
             };
 
-            let Some(db_dex_network) = db.get_dex_network(db_dex.id, network)? else {
+            let Some(db_dex_network) = db.get_amm_network(db_dex.id, network)? else {
                 continue;
             };
 
-            let db_dex_pools: Vec<DbDexPool> = db.get_dex_pools_by_dex_id(db_dex.id, network, true)?;
+            let db_dex_pools: Vec<DbAmmPool> = db.get_amm_pools_by_amm_id(db_dex.id, network, true)?;
             match db_dex_protocol.name.as_str() {
                 "UniswapV2" => {
                     //let dex_options: serde_json::Value = serde_json::from_str(&db_dex.options)?;
@@ -197,20 +195,29 @@ impl RunCommand {
             .parse::<LocalWallet>()
             .map_err(|_| anyhow!("Failed to parse \"PRIVATE_KEY\""))?;
 
-        // Set up tokens.
-        info!("Setting up tokens");
-        let tokens: Vec<CryptoToken> = Self::get_tokens(&db, &network).expect("Failed to get tokens");
-
-        // Set up simulator.
-        info!("Setting up simulator");
-        let simulator = Arc::new(RwLock::new(EvmSimulator::new_revm(Arc::clone(&provider), &tokens)?));
-
         // Set up managers.
-        info!("Setting up managers");
+        info!("Setting up managers:");
+        info!("  - TokenManager .. ⏳");
+        let tokens: Vec<CryptoToken> = Self::get_tokens(&db, &network).expect("Failed to get tokens");
         let token_manager = TokenManager::new(tokens, &network);
-        let amm_manager = AmmManager::new(Self::get_dexes(&db, &network, &token_manager)?);
+        info!("  - TokenManager .. ✅");
+
+        info!("  - AmmManager .. ⏳");
+        let amms: Vec<Arc<AmmProtocolKind>> = Self::get_amms(&db, &network, &token_manager)?;
+        let amm_manager = AmmManager::new(amms);
+        info!("  - AmmManager .. ✅");
+
+        info!("  - PoolManager .. ⏳");
+        let simulator = Arc::new(RwLock::new(EvmSimulator::new_revm(
+            Arc::clone(&provider),
+            &amm_manager,
+        )?));
         let pool_manager = PoolManager::new(Arc::clone(&provider), Arc::clone(&simulator), &amm_manager);
+        info!("  - PoolManager .. ✅");
+
+        info!("  - BlockManager .. ⏳");
         let block_manager = BlockManager::new();
+        info!("  - BlockManager .. ✅");
 
         let pool_manager = Arc::new(RwLock::new(pool_manager));
         let block_manager = Arc::new(RwLock::new(block_manager));

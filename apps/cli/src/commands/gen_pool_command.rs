@@ -10,17 +10,19 @@ use ethers::{
 };
 
 use contracts::{uniswap_v2_factory::UniswapV2FactoryAbi, uniswap_v2_pair::UniswapV2PairAbi};
-use shared::database::{Database, DbDex, DbDexNetwork, DbDexProtocol, DbToken};
+use shared::database::{Database, DbAmm, DbAmmNetwork, DbAmmProtocol, DbToken};
 use vidger::types::NetworkKind;
 use vidger::utilities::block_on;
 
 fn generate_pairs<T>(list: &[T]) -> Vec<(&T, &T)> {
     let mut pairs: Vec<(&T, &T)> = Vec::new();
+
     for (i, fst) in list.iter().enumerate() {
         for snd in list.iter().skip(i + 1) {
             pairs.push((fst, snd));
         }
     }
+
     pairs
 }
 
@@ -29,20 +31,20 @@ pub struct GenPoolCommand;
 impl GenPoolCommand {
     fn add_uniswap_v2_pools<M: Middleware>(
         token_pairs: &[(&String, &String)],
-        db_dex: &DbDex,
+        db_amm: &DbAmm,
         db: &Database,
         target_network: &NetworkKind,
         provider: &Arc<M>,
     ) -> Result<()> {
-        let db_dex_network: Option<DbDexNetwork> = db.get_dex_network(db_dex.id, target_network)?;
-        if db_dex_network.is_none() {
-            panic!("Failed to get dex network");
+        let db_amm_network: Option<DbAmmNetwork> = db.get_amm_network(db_amm.id, target_network)?;
+        if db_amm_network.is_none() {
+            panic!("Failed to get Amm network");
         }
-        let db_dex_network: DbDexNetwork = db_dex_network.unwrap();
-        let network_options: serde_json::Value = serde_json::from_str(&db_dex_network.options)?;
+        let db_amm_network: DbAmmNetwork = db_amm_network.unwrap();
+        let network_options: serde_json::Value = serde_json::from_str(&db_amm_network.options)?;
 
-        let dex_factory_address = Address::from_str(network_options["factory"].as_str().unwrap()).unwrap();
-        let factory_contract = UniswapV2FactoryAbi::new(dex_factory_address, Arc::clone(provider));
+        let amm_factory_address = Address::from_str(network_options["factory"].as_str().unwrap()).unwrap();
+        let factory_contract = UniswapV2FactoryAbi::new(amm_factory_address, Arc::clone(provider));
 
         let tokens_cnt = token_pairs.len() as f32;
         let batch: f32 = (tokens_cnt / 250_f32).ceil();
@@ -52,15 +54,15 @@ impl GenPoolCommand {
         for i in 0..(batch as usize) {
             let start_idx: usize = i * tokens_per_batch;
             let end_idx: usize = std::cmp::min(start_idx + tokens_per_batch, tokens_cnt);
-            let pairs_chank: &[(&String, &String)] = &token_pairs[start_idx..end_idx];
+            let pairs_chunk: &[(&String, &String)] = &token_pairs[start_idx..end_idx];
 
             // Get pools addresses
             println!(
-                "[-] Getting pools [{} -> {}] addresses for dex '{}'",
-                start_idx, end_idx, db_dex.name
+                "[-] Getting pools [{} -> {}] addresses for amm '{}'",
+                start_idx, end_idx, db_amm.name
             );
             let mut multicall: Multicall<M> = block_on(Multicall::new(Arc::clone(provider), None)).unwrap();
-            for (token_a, token_b) in pairs_chank {
+            for (token_a, token_b) in pairs_chunk {
                 // Can't execlude pairs here, because it will cause an error in the next for loop
                 let token_a: Address = Address::from_str(token_a).unwrap();
                 let token_b: Address = Address::from_str(token_b).unwrap();
@@ -71,9 +73,9 @@ impl GenPoolCommand {
             let result: Vec<Result<Token, Bytes>> = block_on(multicall.call_raw()).unwrap();
             let mut pools_to_add: Vec<Address> = Vec::new();
             for i in 0..result.len() {
-                let (token_a, token_b): (&String, &String) = pairs_chank[i];
+                let (token_a, token_b): (&String, &String) = pairs_chunk[i];
                 if db
-                    .get_dex_pool_by_tokens(db_dex.id, target_network, token_a, token_b)?
+                    .get_amm_pool_by_tokens(db_amm.id, target_network, token_a, token_b)?
                     .is_some()
                 {
                     let pool_address: &Result<Token, Bytes> = &result[i];
@@ -85,8 +87,8 @@ impl GenPoolCommand {
                     let token1: DbToken = db.get_token_by_address(token_b, target_network)?.unwrap();
 
                     println!(
-                        "Dex pool ({})[{} - {}] '{}' already exists",
-                        db_dex.name,
+                        "Amm pool ({})[{} - {}] '{}' already exists",
+                        db_amm.name,
                         token0.symbol,
                         token1.symbol,
                         to_checksum(pool_address, None)
@@ -101,7 +103,7 @@ impl GenPoolCommand {
 
                 if pool_address.is_zero() {
                     if db
-                        .add_dex_pool_empty(db_dex.id, target_network, token_a, token_b)
+                        .add_amm_pool_empty(db_amm.id, target_network, token_a, token_b)
                         .is_err()
                     {
                         panic!("Failed to add empty pool '{}' '{}'", token_a, token_b);
@@ -114,7 +116,7 @@ impl GenPoolCommand {
             }
 
             // Add pools
-            println!("[+] Adding {} pools for dex '{}'", pools_to_add.len(), db_dex.name);
+            println!("[+] Adding {} pools for amm '{}'", pools_to_add.len(), db_amm.name);
             multicall.clear_calls();
             for pool_address in &pools_to_add {
                 let pool_contract = UniswapV2PairAbi::new(*pool_address, Arc::clone(provider));
@@ -146,15 +148,15 @@ impl GenPoolCommand {
                 let token1: DbToken = db.get_token_by_address(token1, target_network)?.unwrap();
 
                 if db
-                    .add_dex_pool(pool_address, target_network, db_dex.id, token0.id, token1.id)
+                    .add_amm_pool(pool_address, target_network, db_amm.id, token0.id, token1.id)
                     .is_err()
                 {
-                    panic!("Failed to add dex pool '{}'", pool_address);
+                    panic!("Failed to add amm pool '{}'", pool_address);
                 };
 
                 println!(
-                    "Added dex pool ({})[{} - {}] '{}'",
-                    db_dex.name,
+                    "Added amm pool ({})[{} - {}] '{}'",
+                    db_amm.name,
                     token0.symbol,
                     token1.symbol,
                     to_checksum(pool_address, None)
@@ -162,7 +164,7 @@ impl GenPoolCommand {
             }
         }
 
-        //db.add_dex_pool(pool_address, Arc::new(uniswap_v2.clone()), *network, token0, token1);
+        //db.add_Amm_pool(pool_address, Arc::new(uniswap_v2.clone()), *network, token0, token1);
 
         Ok(())
     }
@@ -175,19 +177,19 @@ impl GenPoolCommand {
             .collect::<Vec<_>>();
         let pairs: Vec<(&String, &String)> = generate_pairs(&tokens_address);
 
-        let db_dexes: Vec<DbDex> = db.get_dexes_by_network(target_network)?;
-        for db_dex in &db_dexes {
-            let db_dex_protocol: Option<DbDexProtocol> = db.get_dex_protocol_by_id(db_dex.dex_protocol_id)?;
-            if db_dex_protocol.is_none() {
-                panic!("No protocol found for dex {}", db_dex.name);
+        let db_amms: Vec<DbAmm> = db.get_amms_by_network(target_network)?;
+        for db_amm in &db_amms {
+            let db_amm_protocol: Option<DbAmmProtocol> = db.get_amm_protocol_by_id(db_amm.amm_protocol_id)?;
+            if db_amm_protocol.is_none() {
+                panic!("No protocol found for amm {}", db_amm.name);
             }
 
-            let db_dex_protocol: DbDexProtocol = db_dex_protocol.unwrap();
-            let protocol_name: &str = db_dex_protocol.name.as_str();
+            let db_amm_protocol: DbAmmProtocol = db_amm_protocol.unwrap();
+            let protocol_name: &str = db_amm_protocol.name.as_str();
 
             match protocol_name {
-                "UniswapV2" => GenPoolCommand::add_uniswap_v2_pools(&pairs, db_dex, db, target_network, &provider)?,
-                _ => panic!("Unsupported dex protocol"),
+                "UniswapV2" => GenPoolCommand::add_uniswap_v2_pools(&pairs, db_amm, db, target_network, &provider)?,
+                _ => panic!("Unsupported amm protocol"),
             }
         }
 

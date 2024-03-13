@@ -10,7 +10,6 @@ use ethers::{
 
 use contracts::erc20_token::ERC20TokenAbi;
 use shared::database::Database;
-use shared::types::CryptoToken;
 use vidger::types::NetworkKind;
 use vidger::utilities::block_on;
 
@@ -26,7 +25,7 @@ impl AddTokenCommand {
         let mut multicall: Multicall<M> = block_on(Multicall::new(Arc::clone(provider), None)).unwrap();
 
         for token_address in tokens {
-            // Can't execlude tokens here, because it will cause an error in the next for loop
+            // Can't exclude tokens here, because it will cause an error in the next for loop
             let token_contract = ERC20TokenAbi::new(Address::from_str(token_address).unwrap(), Arc::clone(provider));
 
             multicall.add_call(token_contract.name(), false);
@@ -63,14 +62,14 @@ impl AddTokenCommand {
 
             println!("Adding token {} '{}'", token_symbol, token_address);
             panic!("TODO"); // TODO
-            let token_add = db.add_token(
-                target_network,
-                &CryptoToken::new(token_address, None, token_name, token_symbol, token_decimals, 0)?,
-            );
-            if token_add.is_err() {
-                println!("Failed to add token {}", token_address);
-                continue;
-            }
+                            //let token_add = db.add_token(
+                            //    target_network,
+                            //    &CryptoToken::new(token_address, None, token_name, token_symbol, token_decimals, 0)?,
+                            //);
+                            //if token_add.is_err() {
+                            //    println!("Failed to add token {}", token_address);
+                            //    continue;
+                            //}
         }
 
         Ok(())

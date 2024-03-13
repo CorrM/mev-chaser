@@ -5,6 +5,8 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {OneSwapInfo, Swapper, AmmProtocol, NotSupportedAmmProtocolError} from "./Swapper.sol";
 
+error EmptyPath(string argName);
+
 contract Simulator {
     using SafeERC20 for IERC20;
 
@@ -22,7 +24,10 @@ contract Simulator {
         bytes memory path,
         uint256 amountIn
     ) external returns (uint256) {
-        return 50;
+        if (path.length == 0) {
+            revert EmptyPath("path");
+        }
+
         if (protocol == AmmProtocol.UniswapV2) {
             address[] memory pathDecoded = abi.decode(
                 path,

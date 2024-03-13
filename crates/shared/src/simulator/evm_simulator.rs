@@ -10,8 +10,8 @@ use hashbrown::HashMap;
 use tokio::task::JoinError;
 
 use crate::amm::AmmPoolKind;
+use crate::managers::AmmManager;
 use crate::simulator::RevmSimulator;
-use crate::types::CryptoToken;
 
 pub enum EvmSimulator<M> {
     Revm(RevmSimulator<M>),
@@ -23,8 +23,8 @@ where
     M: Middleware + 'static,
 {
     #[inline]
-    pub fn new_revm(provider: Arc<M>, tokens_to_override_balance: &[CryptoToken]) -> Result<Self> {
-        Ok(Self::Revm(RevmSimulator::new(provider, tokens_to_override_balance)?))
+    pub fn new_revm(provider: Arc<M>, amm_manager: &AmmManager) -> Result<Self> {
+        Ok(Self::Revm(RevmSimulator::new(provider, amm_manager)?))
     }
 
     #[inline]
