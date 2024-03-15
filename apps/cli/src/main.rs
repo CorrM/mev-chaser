@@ -11,7 +11,7 @@ use utilities::env::Env;
 use vidger::logger::{LevelFilter, Logger};
 use vidger::types::NetworkKind;
 
-use crate::commands::RunCommand;
+use crate::commands::{RunCommand, UpdateTokenCommand};
 
 mod commands;
 mod strategy;
@@ -162,12 +162,15 @@ async fn entry_point() -> Result<()> {
             "gen_pools" => {
                 GenPoolCommand::process(&db, &target_network, raw_provider)?;
             }
-            "add_token" => {
+            "add_tokens" => {
                 let file_name: &String = &args[2];
                 let tokens: String = std::fs::read_to_string(file_name).expect("Something went wrong reading the file");
                 let tokens: Vec<&str> = tokens.lines().filter(|s| !s.is_empty()).collect();
 
                 AddTokenCommand::process(tokens, &db, &target_network, raw_provider)?;
+            }
+            "update_tokens" => {
+                UpdateTokenCommand::process(&db, &target_network, raw_provider)?;
             }
             _ => panic!("Invalid command"),
         }

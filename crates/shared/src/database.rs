@@ -62,9 +62,9 @@ impl DbTokenNetwork {
             token_id: row.get(1)?,
             network_id: row.get(2)?,
             address: row.get(3)?,
-            proxy: row.get(4)?,
-            balance_contract_slot: row.get(5)?,
-            code: bytes::Bytes::from(row.get::<usize, Vec<u8>>(6)?),
+            proxy: row.get(4).unwrap_or_default(),
+            balance_contract_slot: row.get(5).unwrap_or_default(),
+            code: bytes::Bytes::from(row.get::<usize, Vec<u8>>(6).unwrap_or_default()),
         })
     }
 }
@@ -325,7 +325,7 @@ impl Database {
                 .prepare("SELECT * FROM Tokens WHERE instr(tokenNetworksIds, ?) > 0")?;
 
             let tokens = stmt.query_map(params![format!(",{},", db_token_network.id)], DbToken::from_row)?;
-            for token in tokens.map(|t| t.unwrap()) {
+            for token in tokens.map(|t: Result<DbToken>| t.unwrap()) {
                 ret.push((token, db_token_network.clone()))
             }
         }
@@ -384,6 +384,38 @@ impl Database {
         ])?;
 
         Ok(self.get_token_and_network(&token_address, network)?.unwrap())
+    }
+
+    pub fn update_token(&self, network: &NetworkKind, token: &CryptoToken) -> Result<()> {
+        let db_token: Option<DbToken> = self.get_token_by_address(to_checksum(token.address(), None), network)?;
+        let Some(db_token) = db_token else {
+            return Err(rusqlite::Error::QueryReturnedNoRows);
+        };
+
+        let mut stmt: Statement = self
+            .db
+            .prepare("UPDATE Tokens SET name = ?, symbol = ?, decimals = ? WHERE id = ?")?;
+        stmt.execute(params![token.name(), token.symbol(), token.decimals(), db_token.id])?;
+
+        // Update token network
+        let token_address: String = to_checksum(token.address(), None);
+        let db_token_network: Option<DbTokenNetwork> = self.get_token_network(&token_address, network)?;
+        let Some(db_token_network) = db_token_network else {
+            return Err(rusqlite::Error::QueryReturnedNoRows);
+        };
+
+        let mut stmt: Statement = self.db.prepare(
+            "UPDATE TokenNetworks SET address = ?, proxy = ?, balanceContractSlot = ?, code = ? WHERE id = ?",
+        )?;
+        stmt.execute(params![
+            token_address,
+            token.proxy_address().map(|pa| to_checksum(&pa, None)),
+            token.balance_contract_slot(),
+            token.code().to_vec(),
+            db_token_network.id
+        ])?;
+
+        Ok(())
     }
 
     pub fn get_amm_protocol(&self, protocol: &AmmProtocolKind) -> Result<Option<DbAmmProtocol>> {

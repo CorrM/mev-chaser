@@ -90,7 +90,7 @@ impl AddTokenCommand {
             let start_idx: usize = i * tokens_per_batch;
             let end_idx: usize = std::cmp::min(start_idx + tokens_per_batch, tokens_cnt);
 
-            AddTokenCommand::add_token_info(&tokens[start_idx..end_idx], db, target_network, &provider)?;
+            Self::add_token_info(&tokens[start_idx..end_idx], db, target_network, &provider)?;
         }
 
         Ok(())
