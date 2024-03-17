@@ -66,7 +66,7 @@ fn parse1167bytecode(code: String) -> Option<Address> {
 
     // address length is in bytes, 2 hex chars make up 1 byte
     let address_from_bytecode: &str =
-        &code[EIP_1167_BYTECODE_PREFIX.len()..EIP_1167_BYTECODE_PREFIX.len() + 2 + address_length * 2];
+        &code[EIP_1167_BYTECODE_PREFIX.len() + 2..EIP_1167_BYTECODE_PREFIX.len() + 2 + address_length * 2];
 
     // padStart is needed for vanity addresses
     Some(Address::from_str(&format!("{:0>40}", address_from_bytecode)).unwrap())

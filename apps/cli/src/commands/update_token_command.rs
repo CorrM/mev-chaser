@@ -21,6 +21,10 @@ use vidger::{
     utilities::block_on,
 };
 
+// TODO:
+// I know that command not work with all tokens but, I only need to get info for starting tokens
+// So, it is ok because they are stored in top of database
+
 pub struct UpdateTokenCommand;
 
 impl UpdateTokenCommand {
@@ -77,7 +81,7 @@ impl UpdateTokenCommand {
             let proxy_or_address: Address = proxy_address.unwrap_or(token_address);
             let slot: HashMap<Address, Result<Option<i32>>> = simulator.get_tokens_balance_slot(&[proxy_or_address])?;
             let slot: &Result<Option<i32>> = slot.get(&proxy_or_address).unwrap();
-            let slot: i32 = slot.as_ref().unwrap().unwrap();
+            let slot: i32 = slot.as_ref().unwrap().unwrap_or(-1);
 
             // Create new data
             let token_new_data = CryptoToken::new(
@@ -107,6 +111,7 @@ impl UpdateTokenCommand {
         target_network: &NetworkKind,
         provider: &Arc<M>,
     ) -> Result<()> {
+        /*
         let amm_manager = AmmManager::new(Vec::new());
         let simulator = EvmSimulator::new_revm(Arc::clone(provider), &amm_manager)?;
 
@@ -127,6 +132,7 @@ impl UpdateTokenCommand {
 
         assert!(slot >= 0, "Failed to get token balance slot");
         println!("Balance slot: {}", slot);
+        */
         // ===================
 
         let tokens: Vec<(DbToken, DbTokenNetwork)> = db.get_tokens(target_network)?;
