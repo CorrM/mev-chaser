@@ -170,12 +170,12 @@ async fn entry_point() -> Result<()> {
                 AddTokenCommand::process(tokens, &db, &target_network, raw_provider)?;
             }
             "update_tokens" => {
-                UpdateTokenCommand::process(&db, &target_network, raw_provider)?;
+                UpdateTokenCommand::process(&db, &target_network, &raw_provider)?;
             }
             _ => panic!("Invalid command"),
         }
     } else {
-        RunCommand::process(&env, db, target_network, raw_provider)?;
+        RunCommand::process(&env, db, target_network, &raw_provider)?;
     }
 
     Ok(())

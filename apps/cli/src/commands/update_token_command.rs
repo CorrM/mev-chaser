@@ -5,6 +5,7 @@ use anyhow::Result;
 use ethers::{
     abi::Token, addressbook::Address, contract::Multicall, middleware::Middleware, types::Bytes, utils::to_checksum,
 };
+use hashbrown::HashMap;
 
 use contracts::erc20_token::ERC20TokenAbi;
 use shared::{
@@ -14,7 +15,6 @@ use shared::{
     types::CryptoToken,
     utilities::get_proxy_implementation,
 };
-use vidger::logger::warn;
 use vidger::{
     logger::{error, info},
     types::NetworkKind,
@@ -69,17 +69,19 @@ impl UpdateTokenCommand {
             let token_code: Bytes = block_on(provider.get_code(token_address, None))?;
 
             // Get proxy
-            let proxy: Option<Address> = get_proxy_implementation(provider, token_address)?;
+            let proxy_address: Option<Address> =
+                get_proxy_implementation(provider, token_address).map(|kind_address| kind_address.1);
 
             // Get balance slot
-            let slot = simulator.get_tokens_balance_slot(&[token_address])?;
-            let slot: &Result<Option<i32>> = slot.get(&token_address).unwrap();
+            let proxy_or_address: Address = proxy_address.unwrap_or(token_address);
+            let slot: HashMap<Address, Result<Option<i32>>> = simulator.get_tokens_balance_slot(&[proxy_or_address])?;
+            let slot: &Result<Option<i32>> = slot.get(&proxy_or_address).unwrap();
             let slot: i32 = slot.as_ref().unwrap().unwrap();
 
             // Create new data
             let token_new_data = CryptoToken::new(
                 token_address_str,
-                proxy.map(|pa| to_checksum(&pa, None)),
+                proxy_address.map(|pa| to_checksum(&pa, None)),
                 token_name,
                 token_symbol,
                 token_decimals,
@@ -101,15 +103,28 @@ impl UpdateTokenCommand {
     pub fn process<M: Middleware + 'static>(
         db: &Database,
         target_network: &NetworkKind,
-        provider: Arc<M>,
+        provider: &Arc<M>,
     ) -> Result<()> {
-        let proxy: Option<Address> = get_proxy_implementation(
-            &provider,
-            Address::from_str("0xc2132D05D31c914a87C6611C10748AEb04B58e8F")?,
-        )?;
-        assert!(proxy.is_some(), "Failed to get proxy implementation");
+        let amm_manager = AmmManager::new(Vec::new());
+        let simulator = EvmSimulator::new_revm(Arc::clone(provider), &amm_manager)?;
 
-        println!("Proxy: {}", to_checksum(&proxy.unwrap(), None));
+        let proxy_address: Option<Address> = get_proxy_implementation(
+            &provider,
+            Address::from_str("0x9C9e5fD8bbc25984B178FdCE6117Defa39d2db39")?,
+        )
+        .map(|kind_address| kind_address.1);
+        assert!(proxy_address.is_some(), "Failed to get proxy implementation");
+
+        println!("Proxy: {}", to_checksum(&proxy_address.unwrap(), None));
+
+        let proxy_or_address: Address = proxy_address.unwrap();
+        let slot: HashMap<Address, Result<Option<i32>>> = simulator.get_tokens_balance_slot(&[proxy_or_address])?;
+        let slot: &Result<Option<i32>> = slot.get(&proxy_or_address).unwrap();
+        let slot: i32 = slot.as_ref().unwrap().unwrap();
+
+        assert!(slot >= 0, "Failed to get token balance slot");
+        println!("Balance slot: {}", slot);
+        // ===================
 
         let tokens: Vec<(DbToken, DbTokenNetwork)> = db.get_tokens(target_network)?;
 

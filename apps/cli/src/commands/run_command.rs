@@ -180,7 +180,7 @@ impl RunCommand {
         Ok(ret)
     }
 
-    pub fn process<M>(env: &Env, db: Database, network: NetworkKind, provider: Arc<M>) -> Result<()>
+    pub fn process<M>(env: &Env, db: Database, network: NetworkKind, provider: &Arc<M>) -> Result<()>
     where
         M: Middleware + 'static,
         M::Provider: PubsubClient,
@@ -208,11 +208,8 @@ impl RunCommand {
         info!("  - AmmManager .. ✅");
 
         info!("  - PoolManager .. ⏳");
-        let simulator = Arc::new(RwLock::new(EvmSimulator::new_revm(
-            Arc::clone(&provider),
-            &amm_manager,
-        )?));
-        let pool_manager = PoolManager::new(Arc::clone(&provider), Arc::clone(&simulator), &amm_manager);
+        let simulator = Arc::new(RwLock::new(EvmSimulator::new_revm(Arc::clone(provider), &amm_manager)?));
+        let pool_manager = PoolManager::new(Arc::clone(provider), Arc::clone(&simulator), &amm_manager);
         info!("  - PoolManager .. ✅");
 
         info!("  - BlockManager .. ⏳");
@@ -227,7 +224,7 @@ impl RunCommand {
         let mut engine: VidgerEngine<MevEvents, MevActions> = VidgerEngine::new();
 
         // Set up block collector.
-        let block_collector = Box::new(BlockCollector::new(Arc::clone(&provider)));
+        let block_collector = Box::new(BlockCollector::new(Arc::clone(provider)));
         let block_collector = CollectorMapper::new(block_collector, MevEvents::NewBlock);
         engine.add_collector(Box::new(block_collector));
 
