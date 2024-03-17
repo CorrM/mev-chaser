@@ -81,7 +81,7 @@ impl UpdateTokenCommand {
             let proxy_or_address: Address = proxy_address.unwrap_or(token_address);
             let slot: HashMap<Address, Result<Option<i32>>> = simulator.get_tokens_balance_slot(&[proxy_or_address])?;
             let slot: &Result<Option<i32>> = slot.get(&proxy_or_address).unwrap();
-            let slot: i32 = slot.as_ref().unwrap().unwrap_or(-1);
+            let slot: i32 = slot.as_ref().unwrap().unwrap_or(-1); // TODO: Should not just throw -1
 
             // Create new data
             let token_new_data = CryptoToken::new(
