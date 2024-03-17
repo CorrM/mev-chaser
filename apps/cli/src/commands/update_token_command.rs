@@ -69,7 +69,7 @@ impl UpdateTokenCommand {
             let token_code: Bytes = block_on(provider.get_code(token_address, None))?;
 
             // Get proxy
-            let proxy: Option<Address> = get_proxy_implementation(provider, token_address, None)?;
+            let proxy: Option<Address> = get_proxy_implementation(provider, token_address)?;
 
             // Get balance slot
             let slot = simulator.get_tokens_balance_slot(&[token_address])?;
@@ -106,9 +106,10 @@ impl UpdateTokenCommand {
         let proxy: Option<Address> = get_proxy_implementation(
             &provider,
             Address::from_str("0xc2132D05D31c914a87C6611C10748AEb04B58e8F")?,
-            None,
         )?;
         assert!(proxy.is_some(), "Failed to get proxy implementation");
+
+        println!("Proxy: {}", to_checksum(&proxy.unwrap(), None));
 
         let tokens: Vec<(DbToken, DbTokenNetwork)> = db.get_tokens(target_network)?;
 
