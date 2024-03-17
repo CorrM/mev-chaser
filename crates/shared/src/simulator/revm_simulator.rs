@@ -312,7 +312,10 @@ where
                 let touched_storage: &revm::primitives::Storage = &token_acc.storage;
                 println!("Touched storage slots: {:?}", touched_storage);
 
-                for i in 0..20 {
+                // Some tokens have a lot of storage slots like
+                // https://polygonscan.com/token/0x9C9e5fD8bbc25984B178FdCE6117Defa39d2db39
+                // balance slot are 51
+                for i in 0..200 {
                     let slot: [u8; 32] = keccak256(&abi::encode(&[
                         abi::Token::Address(self.account.0 .0.into()),
                         abi::Token::Uint(U256::from(i)),

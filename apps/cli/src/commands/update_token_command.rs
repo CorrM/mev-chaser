@@ -25,6 +25,7 @@ pub struct UpdateTokenCommand;
 
 impl UpdateTokenCommand {
     fn update_token_info<M: Middleware + 'static>(
+        ethers_api_key: &str,
         tokens: &[(DbToken, DbTokenNetwork)],
         db: &Database,
         target_network: &NetworkKind,
@@ -70,7 +71,7 @@ impl UpdateTokenCommand {
 
             // Get proxy
             let proxy_address: Option<Address> =
-                get_proxy_implementation(provider, token_address).map(|kind_address| kind_address.1);
+                get_proxy_implementation(ethers_api_key, provider, token_address).map(|kind_address| kind_address.1);
 
             // Get balance slot
             let proxy_or_address: Address = proxy_address.unwrap_or(token_address);
@@ -101,6 +102,7 @@ impl UpdateTokenCommand {
     }
 
     pub fn process<M: Middleware + 'static>(
+        ethers_api_key: String,
         db: &Database,
         target_network: &NetworkKind,
         provider: &Arc<M>,
@@ -109,8 +111,9 @@ impl UpdateTokenCommand {
         let simulator = EvmSimulator::new_revm(Arc::clone(provider), &amm_manager)?;
 
         let proxy_address: Option<Address> = get_proxy_implementation(
-            &provider,
-            Address::from_str("0x9C9e5fD8bbc25984B178FdCE6117Defa39d2db39")?,
+            &ethers_api_key,
+            provider,
+            Address::from_str("0x8a16D4bF8A0a716017e8D2262c4aC32927797a2F")?,
         )
         .map(|kind_address| kind_address.1);
         assert!(proxy_address.is_some(), "Failed to get proxy implementation");
@@ -137,7 +140,13 @@ impl UpdateTokenCommand {
             let start_idx: usize = i * tokens_per_batch;
             let end_idx: usize = std::cmp::min(start_idx + tokens_per_batch, tokens_cnt);
 
-            Self::update_token_info(&tokens[start_idx..end_idx], db, target_network, &provider)?;
+            Self::update_token_info(
+                &ethers_api_key,
+                &tokens[start_idx..end_idx],
+                db,
+                target_network,
+                &provider,
+            )?;
         }
 
         Ok(())

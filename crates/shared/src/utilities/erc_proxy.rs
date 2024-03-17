@@ -2,6 +2,7 @@ use std::str::FromStr;
 use std::sync::{Arc, OnceLock};
 use std::usize;
 
+use ethers::types::Chain;
 use ethers::{
     abi::AbiDecode,
     addressbook::Address,
@@ -12,6 +13,8 @@ use ethers::{
     types::TransactionRequest,
     types::{H256, U256},
 };
+use ethers_etherscan::contract::ContractMetadata;
+use ethers_etherscan::Client;
 
 use vidger::utilities::block_on;
 
@@ -24,6 +27,7 @@ pub enum ProxyKind {
     Eip897DelegateProxy,
     GnosisSafeProxy,
     ComptrollerProxy,
+    DiamondCustomProxy,
 }
 
 fn read_address(address: H256) -> Option<Address> {
@@ -83,12 +87,12 @@ fn is_eip_1167_minimal_proxy<M: Middleware + 'static>(provider: &Arc<M>, token: 
 
 /// EIP-1967 direct proxy
 fn is_eip_1967_direct_proxy<M: Middleware + 'static>(provider: &Arc<M>, token: Address) -> Option<Address> {
-    static EIP_1967_LOGIC_SLOT_LOCK: OnceLock<U256> = OnceLock::new();
-    let eip_1967_logic_slot: &U256 = EIP_1967_LOGIC_SLOT_LOCK
-        .get_or_init(|| U256::from_str("0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc").unwrap());
+    static EIP_1967_LOGIC_SLOT_LOCK: OnceLock<H256> = OnceLock::new();
+    let eip_1967_logic_slot: &H256 = EIP_1967_LOGIC_SLOT_LOCK.get_or_init(|| {
+        H256::from_uint(&U256::from_str("0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc").unwrap())
+    });
 
-    let Some(address) = block_on(provider.get_storage_at(token, H256::from_uint(eip_1967_logic_slot), None)).ok()
-    else {
+    let Some(address) = block_on(provider.get_storage_at(token, *eip_1967_logic_slot, None)).ok() else {
         return None;
     };
 
@@ -97,11 +101,12 @@ fn is_eip_1967_direct_proxy<M: Middleware + 'static>(provider: &Arc<M>, token: A
 
 /// EIP-1967 beacon proxy
 fn is_eip_1967_beacon_proxy<M: Middleware + 'static>(provider: &Arc<M>, token: Address) -> Option<Address> {
-    static EIP_1967_BEACON_SLOT_LOCK: OnceLock<U256> = OnceLock::new();
+    static EIP_1967_BEACON_SLOT_LOCK: OnceLock<H256> = OnceLock::new();
     static EIP_1167_BEACON_METHODS_LOCK: OnceLock<[Bytes; 2]> = OnceLock::new();
 
-    let eip_1967_beacon_slot: &U256 = EIP_1967_BEACON_SLOT_LOCK
-        .get_or_init(|| U256::from_str("0xa3f0ad74e5423aebfd80d3ef4346578335a9a72aeaee59ff6cb3582b35133d50").unwrap());
+    let eip_1967_beacon_slot: &H256 = EIP_1967_BEACON_SLOT_LOCK.get_or_init(|| {
+        H256::from_uint(&U256::from_str("0xa3f0ad74e5423aebfd80d3ef4346578335a9a72aeaee59ff6cb3582b35133d50").unwrap())
+    });
     let eip_1167_beacon_methods: &[Bytes; 2] = EIP_1167_BEACON_METHODS_LOCK.get_or_init(|| {
         [
             Bytes::from_str("0x5c60da1b00000000000000000000000000000000000000000000000000000000").unwrap(),
@@ -109,8 +114,7 @@ fn is_eip_1967_beacon_proxy<M: Middleware + 'static>(provider: &Arc<M>, token: A
         ]
     });
 
-    let Some(address) = block_on(provider.get_storage_at(token, H256::from_uint(eip_1967_beacon_slot), None)).ok()
-    else {
+    let Some(address) = block_on(provider.get_storage_at(token, *eip_1967_beacon_slot, None)).ok() else {
         return None;
     };
 
@@ -141,11 +145,12 @@ fn is_eip_1967_beacon_proxy<M: Middleware + 'static>(provider: &Arc<M>, token: A
 
 /// OpenZeppelin proxy pattern
 fn is_open_zeppelin_proxy<M: Middleware + 'static>(provider: &Arc<M>, token: Address) -> Option<Address> {
-    static OPEN_ZEPPELIN_SLOT_LOCK: OnceLock<U256> = OnceLock::new();
-    let open_zeppelin_slot: &U256 = OPEN_ZEPPELIN_SLOT_LOCK
-        .get_or_init(|| U256::from_str("0x7050c9e0f4ca769c69bd3a8ef740bc37934f8e2c036e5a723fd8ee048ed3f8c3").unwrap());
+    static OPEN_ZEPPELIN_SLOT_LOCK: OnceLock<H256> = OnceLock::new();
+    let open_zeppelin_slot: &H256 = OPEN_ZEPPELIN_SLOT_LOCK.get_or_init(|| {
+        H256::from_uint(&U256::from_str("0x7050c9e0f4ca769c69bd3a8ef740bc37934f8e2c036e5a723fd8ee048ed3f8c3").unwrap())
+    });
 
-    let Some(address) = block_on(provider.get_storage_at(token, H256::from_uint(open_zeppelin_slot), None)).ok() else {
+    let Some(address) = block_on(provider.get_storage_at(token, *open_zeppelin_slot, None)).ok() else {
         return None;
     };
 
@@ -157,12 +162,12 @@ fn is_eip_1822_universal_upgradeable_proxy<M: Middleware + 'static>(
     provider: &Arc<M>,
     token: Address,
 ) -> Option<Address> {
-    static EIP_1822_LOGIC_SLOT_LOCK: OnceLock<U256> = OnceLock::new();
-    let eip_1822_logic_slot: &U256 = EIP_1822_LOGIC_SLOT_LOCK
-        .get_or_init(|| U256::from_str("0xc5f16f0fcc639fa48a6947836d9850f504798523bf8c9a3a87d5876cf622bcf7").unwrap());
+    static EIP_1822_LOGIC_SLOT_LOCK: OnceLock<H256> = OnceLock::new();
+    let eip_1822_logic_slot: &H256 = EIP_1822_LOGIC_SLOT_LOCK.get_or_init(|| {
+        H256::from_uint(&U256::from_str("0xc5f16f0fcc639fa48a6947836d9850f504798523bf8c9a3a87d5876cf622bcf7").unwrap())
+    });
 
-    let Some(address) = block_on(provider.get_storage_at(token, H256::from_uint(eip_1822_logic_slot), None)).ok()
-    else {
+    let Some(address) = block_on(provider.get_storage_at(token, *eip_1822_logic_slot, None)).ok() else {
         return None;
     };
 
@@ -247,7 +252,21 @@ fn is_comptroller_proxy<M: Middleware + 'static>(provider: &Arc<M>, token: Addre
     read_address(address)
 }
 
+/// EIP-2535: Diamonds proxy https://polygonscan.com/token/0x431CD3C9AC9Fc73644BF68bF5691f4B83F9E104f
+fn is_other_proxy<M: Middleware + 'static>(provider: &Arc<M>, token: Address, ethers_api_key: &str) -> Option<Address> {
+    let chain = Chain::try_from(block_on(provider.get_chainid()).unwrap()).unwrap();
+    let client: Client = Client::new(chain, ethers_api_key).unwrap();
+
+    let metadata: ContractMetadata = block_on(client.contract_source_code(token)).unwrap();
+    if metadata.items[0].proxy == 0 {
+        return None;
+    }
+
+    metadata.items[0].implementation
+}
+
 pub fn get_proxy_implementation<M: Middleware + 'static>(
+    ethers_api_key: &str,
     provider: &Arc<M>,
     token: Address,
 ) -> Option<(ProxyKind, Address)> {
@@ -299,6 +318,12 @@ pub fn get_proxy_implementation<M: Middleware + 'static>(
     let proxy_address: Option<Address> = is_comptroller_proxy(provider, token);
     if let Some(proxy_address) = proxy_address {
         return Some((ProxyKind::ComptrollerProxy, proxy_address));
+    }
+
+    // EIP 2535: Diamond proxy
+    let proxy_address: Option<Address> = is_other_proxy(provider, token, ethers_api_key);
+    if let Some(proxy_address) = proxy_address {
+        return Some((ProxyKind::DiamondCustomProxy, proxy_address));
     }
 
     None

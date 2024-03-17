@@ -22,4 +22,5 @@ rusqlite = { workspace = true }
 reqwest = { workspace = true }
 
 ethers = { workspace = true }
+ethers-etherscan = { workspace = true }
 revm = { workspace = true }
