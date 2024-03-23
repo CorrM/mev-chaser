@@ -234,7 +234,7 @@ impl RunCommand {
 
         // Set up pre-strategy
         let pre_strategy = MainPreStrategy::new(
-            Arc::clone(&provider),
+            Arc::clone(provider),
             Arc::clone(&pool_manager),
             Arc::clone(&block_manager),
             Arc::clone(&simulator),
@@ -244,7 +244,7 @@ impl RunCommand {
         // Set up strategy.
         let config = BackRunningStrategyConfig { searcher_signer };
         let strategy = BackRunningStrategy::new(
-            Arc::clone(&provider),
+            Arc::clone(provider),
             config,
             Arc::clone(&pool_manager),
             Arc::clone(&block_manager),
@@ -252,14 +252,14 @@ impl RunCommand {
         engine.add_strategy(Box::new(strategy));
 
         // Set up executor.
-        let executor = Box::new(FastLineExecutor::new(Arc::clone(&provider)));
+        let executor = Box::new(FastLineExecutor::new(Arc::clone(provider)));
         let executor = ExecutorMapper::new(executor, |action| match action {
             MevActions::SubmitTxToFastLine(tx) => Some(tx),
             _ => None,
         });
         engine.add_executor(Box::new(executor));
 
-        let executor = Box::new(MempoolExecutor::new(Arc::clone(&provider)));
+        let executor = Box::new(MempoolExecutor::new(Arc::clone(provider)));
         let executor = ExecutorMapper::new(executor, |action| match action {
             MevActions::SubmitTxToMempool(tx) => Some(tx),
             _ => None,

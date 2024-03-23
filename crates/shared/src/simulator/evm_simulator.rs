@@ -5,6 +5,8 @@ use ethers::providers::Middleware;
 use ethers::types::{Address, U256};
 use hashbrown::HashMap;
 
+use vidger::types::NewBlock;
+
 use crate::amm::AmmPoolKind;
 use crate::managers::AmmManager;
 use crate::simulator::RevmSimulator;
@@ -51,9 +53,9 @@ where
     M: Middleware + 'static,
 {
     #[inline]
-    pub fn update_block(&mut self) {
+    pub fn update_block(&mut self, block: &NewBlock) {
         match self {
-            Self::Revm(ref mut revm) => revm.on_new_block(),
+            Self::Revm(ref mut revm) => revm.on_new_block(block),
         }
     }
 

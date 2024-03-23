@@ -53,6 +53,6 @@ impl<M: Middleware + 'static> PreStrategy<MevEvents> for MainPreStrategy<M> {
 
         self.block_manager.write().unwrap().update_block_info(block.clone());
         self.pool_manager.write().unwrap().on_new_block(block.number);
-        self.simulator.write().unwrap().update_block();
+        self.simulator.write().unwrap().update_block(block);
     }
 }

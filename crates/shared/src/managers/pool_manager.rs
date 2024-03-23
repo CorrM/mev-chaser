@@ -85,11 +85,14 @@ where
 impl<M: Middleware + 'static> PoolManager<M> {
     #[inline]
     pub fn get_optimal_input_and_output(&self, pool: &AmmPoolKind) -> (U256, U256) {
-        self.simulator
-            .read()
-            .unwrap()
-            .get_amounts_out(pool, pool.token0().convert_to_amount(1_f64))
-            .unwrap();
+        println!(
+            "gg => {}",
+            self.simulator
+                .read()
+                .unwrap()
+                .get_amounts_out(pool, pool.token0().convert_to_amount(1_f64))
+                .unwrap()
+        );
         (U256::from(0), U256::from(0))
     }
 
