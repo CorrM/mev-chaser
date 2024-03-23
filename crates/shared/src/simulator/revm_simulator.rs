@@ -429,8 +429,7 @@ where
         ])])
         .into();
 
-        println!("path: {}", path);
-
+        // TODO: For uniswap_v3 `contract_address` are the quarter
         let calldata: Vec<u8> = match pool {
             AmmPoolKind::UniswapV2(_) => AbiEncode::encode(SimulateGetAmountsOutCall {
                 protocol: 0, // UniswapV2

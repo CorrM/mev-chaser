@@ -101,7 +101,11 @@ impl CryptoToken {
 
     #[inline]
     pub fn convert_to_decimal(&self, value: U256) -> f64 {
-        (value.as_u64() as f64) / self.decimals_pow
+        ethers::utils::format_units(value, self.decimals as u32)
+            .unwrap()
+            .parse::<f64>()
+            .unwrap()
+        //(value.as_u64() as f64) / self.decimals_pow
     }
 
     #[inline]
