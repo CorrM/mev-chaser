@@ -26,7 +26,7 @@ use contracts::erc20_token::{BalanceOfCall, BalanceOfReturn};
 use contracts::simulator::{
     SimulateGetAmountsOutCall, SimulateGetAmountsOutReturn, SimulatorAbiErrors, SIMULATORABI_DEPLOYED_BYTECODE,
 };
-use vidger::logger::{error, warn};
+use vidger::logger::{debug, error, info, warn};
 use vidger::types::NewBlock;
 use vidger::utilities::block_on;
 
@@ -72,6 +72,7 @@ pub struct RevmSimulator<M> {
     provider: Arc<M>,
     simulator_address: alloy_primitives::Address,
     account: alloy_primitives::Address,
+    accounts_slots_to_update: HashMap<alloy_primitives::Address, Vec<alloy_primitives::U256>>,
     ctx_with_handler: ContextWithHandlerCfg<(), InMemoryDB>,
 }
 
@@ -149,6 +150,7 @@ impl<M: Middleware + 'static> RevmSimulator<M> {
         ethers_db: &Arc<RwLock<EthersDB<M>>>,
         pool: &AmmPoolKind,
         address: &[alloy_primitives::Address],
+        accounts_slots_to_update: &mut HashMap<alloy_primitives::Address, Vec<alloy_primitives::U256>>,
     ) {
         // Deploy tokens
         Self::deploy_token_and_spoof_balance(db, pool.token0(), address);
@@ -165,7 +167,10 @@ impl<M: Middleware + 'static> RevmSimulator<M> {
                 let slot = alloy_primitives::U256::from(8);
                 if let Ok(slot_value) = ethers_db.read().unwrap().storage_ref(pool_address, slot) {
                     slots.insert(slot, slot_value);
-                };
+                    accounts_slots_to_update.insert(pool_address, vec![slot]);
+                } else {
+                    warn!("Failed to get slot {} from pool {}", slot, pool_address);
+                }
             }
         };
 
@@ -178,92 +183,6 @@ impl<M: Middleware + 'static> RevmSimulator<M> {
                 .insert_account_storage(pool_address, slot, value)
                 .expect("failed to insert pool reserves in DB");
         }
-    }
-
-    pub(super) fn new(provider: Arc<M>, amm_manager: &AmmManager) -> Result<Self> {
-        // https://github.com/bluealloy/revm/issues/1062
-        let hundred_grand_eth: alloy_primitives::U256 = alloy_primitives::U256::from(100_000)
-            .checked_mul(alloy_primitives::U256::from(10).pow(alloy_primitives::U256::from(18)))
-            .unwrap();
-        let account = alloy_primitives::Address::from_str("0x9cf277A22EB4c551c6E18F7a6C0ee1893bcB034f").unwrap();
-
-        // Prepare in-memory DB
-        let mut db = InMemoryDB::new(EmptyDB::default());
-        let ethers_db: Arc<RwLock<EthersDB<M>>> = Arc::new(RwLock::new(
-            EthersDB::new(provider.clone(), Some(BlockId::Number(BlockNumber::Latest))).unwrap(),
-        ));
-
-        // Give the user enough ETH to pay for gas
-        let user_acc_info = AccountInfo::new(hundred_grand_eth, 0, KECCAK_EMPTY, Bytecode::default());
-        db.insert_account_info(account, user_acc_info); // TODO: Remove .into()
-
-        // Deploy Simulator contract
-        let simulator_address =
-            alloy_primitives::Address::from_str("0xF2d01Ee818509a9540d8324a5bA52329af27D19E").unwrap();
-        let simulator_bytes = Bytecode::new_raw((*SIMULATORABI_DEPLOYED_BYTECODE.0).into());
-        let simulator_acc_info = AccountInfo::new(hundred_grand_eth, 0, simulator_bytes.hash_slow(), simulator_bytes);
-        db.insert_account_info(simulator_address, simulator_acc_info);
-
-        // Deploy amm contracts
-        let db: Arc<RwLock<InMemoryDB>> = Arc::new(RwLock::new(db));
-        for amm in amm_manager.amms() {
-            Self::deploy_amm(&db, &ethers_db, amm);
-        }
-
-        // Deploy pools
-        // TODO: Parallelize
-        let address_to_spoof = [simulator_address, account];
-        for amm in amm_manager.amms() {
-            for pool in amm.pools() {
-                Self::deploy_pool(&db, &ethers_db, pool, &address_to_spoof)
-            }
-        }
-
-        // Create EVM
-        let db: InMemoryDB = Arc::try_unwrap(db).unwrap().into_inner().unwrap();
-        let mut evm: Evm<'static, (), InMemoryDB> = Evm::builder().with_db(db).build();
-
-        // overriding some default env values to make it more efficient for testing
-        let evm_cfg: &mut CfgEnv = evm.cfg_mut();
-        evm_cfg.limit_contract_code_size = None;
-        evm_cfg.disable_block_gas_limit = true;
-        evm_cfg.disable_base_fee = true;
-
-        // Create context
-        let ctx_with_handler: ContextWithHandlerCfg<(), InMemoryDB> = evm.into_context_with_handler_cfg();
-
-        Ok(Self {
-            provider,
-            simulator_address,
-            account,
-            ctx_with_handler,
-        })
-    }
-}
-
-impl<M> RevmSimulator<M> {
-    #[inline]
-    pub fn provider(&self) -> &Arc<M> {
-        &self.provider
-    }
-}
-
-impl<M> RevmSimulator<M>
-where
-    M: Middleware + 'static,
-{
-    #[inline]
-    fn get_evm(&self) -> Evm<(), InMemoryDB> {
-        Evm::builder()
-            .with_context_with_handler_cfg(self.ctx_with_handler.clone())
-            .build()
-    }
-
-    #[inline]
-    fn clone_evm(&self, context_with_handler_cfg: ContextWithHandlerCfg<(), InMemoryDB>) -> Evm<(), InMemoryDB> {
-        Evm::builder()
-            .with_context_with_handler_cfg(context_with_handler_cfg)
-            .build()
     }
 
     #[inline]
@@ -308,37 +227,150 @@ where
         output
     }
 
+    pub(super) fn new(provider: Arc<M>, amm_manager: &AmmManager) -> Result<Self> {
+        // https://github.com/bluealloy/revm/issues/1062
+        let hundred_grand_eth: alloy_primitives::U256 = alloy_primitives::U256::from(100_000)
+            .checked_mul(alloy_primitives::U256::from(10).pow(alloy_primitives::U256::from(18)))
+            .unwrap();
+        let account = alloy_primitives::Address::from_str("0x9cf277A22EB4c551c6E18F7a6C0ee1893bcB034f").unwrap();
+        let mut accounts_slots_to_update: HashMap<alloy_primitives::Address, Vec<alloy_primitives::U256>> =
+            HashMap::new();
+
+        // Prepare in-memory DB
+        let mut db = InMemoryDB::new(EmptyDB::default());
+        let ethers_db: Arc<RwLock<EthersDB<M>>> = Arc::new(RwLock::new(
+            EthersDB::new(provider.clone(), Some(BlockId::Number(BlockNumber::Latest))).unwrap(),
+        ));
+
+        // Give the user enough ETH to pay for gas
+        let user_acc_info = AccountInfo::new(hundred_grand_eth, 0, KECCAK_EMPTY, Bytecode::default());
+        db.insert_account_info(account, user_acc_info); // TODO: Remove .into()
+
+        // Deploy Simulator contract
+        let simulator_address =
+            alloy_primitives::Address::from_str("0xF2d01Ee818509a9540d8324a5bA52329af27D19E").unwrap();
+        let simulator_bytes = Bytecode::new_raw((*SIMULATORABI_DEPLOYED_BYTECODE.0).into());
+        let simulator_acc_info = AccountInfo::new(hundred_grand_eth, 0, simulator_bytes.hash_slow(), simulator_bytes);
+        db.insert_account_info(simulator_address, simulator_acc_info);
+
+        // Deploy amm contracts
+        let db: Arc<RwLock<InMemoryDB>> = Arc::new(RwLock::new(db));
+        for amm in amm_manager.amms() {
+            Self::deploy_amm(&db, &ethers_db, amm);
+        }
+
+        // Deploy pools
+        // TODO: Parallelize
+        let address_to_spoof = [simulator_address, account];
+        for amm in amm_manager.amms() {
+            for pool in amm.pools() {
+                Self::deploy_pool(&db, &ethers_db, pool, &address_to_spoof, &mut accounts_slots_to_update);
+            }
+        }
+
+        // Create EVM
+        let db: InMemoryDB = Arc::try_unwrap(db).unwrap().into_inner().unwrap();
+        let mut evm: Evm<'static, (), InMemoryDB> = Evm::builder().with_db(db).build();
+
+        // overriding some default env values to make it more efficient for testing
+        let evm_cfg: &mut CfgEnv = evm.cfg_mut();
+        evm_cfg.limit_contract_code_size = None;
+        evm_cfg.disable_block_gas_limit = true;
+        evm_cfg.disable_base_fee = true;
+
+        // Create context
+        let ctx_with_handler: ContextWithHandlerCfg<(), InMemoryDB> = evm.into_context_with_handler_cfg();
+
+        Ok(Self {
+            provider,
+            simulator_address,
+            account,
+            accounts_slots_to_update,
+            ctx_with_handler,
+        })
+    }
+}
+
+impl<M> RevmSimulator<M> {
+    #[inline]
+    pub fn provider(&self) -> &Arc<M> {
+        &self.provider
+    }
+}
+
+impl<M> RevmSimulator<M>
+where
+    M: Middleware + 'static,
+{
+    #[inline]
+    fn get_evm(&self) -> Evm<(), InMemoryDB> {
+        Evm::builder()
+            .with_context_with_handler_cfg(self.ctx_with_handler.clone())
+            .build()
+    }
+
+    #[inline]
+    fn clone_evm(&self, context_with_handler_cfg: ContextWithHandlerCfg<(), InMemoryDB>) -> Evm<(), InMemoryDB> {
+        Evm::builder()
+            .with_context_with_handler_cfg(context_with_handler_cfg)
+            .build()
+    }
+
     pub fn on_new_block(&mut self, new_block: &NewBlock, logs: &[Log]) {
-        let db: &InMemoryDB = &self.ctx_with_handler.context.evm.db;
-        let touched_addresses: Vec<alloy_primitives::Address> = logs
+        // Get touched addresses that need to be updated
+        let touched_addresses: HashMap<alloy_primitives::Address, &Vec<alloy_primitives::U256>> = logs
             .par_iter()
             .filter_map(|log: &Log| {
                 let address: alloy_primitives::Address = log.address.0.into();
-                db.accounts.get::<alloy_primitives::Address>(&address)?;
-                Some(address)
+                let slots_to_update: &Vec<alloy_primitives::U256> = self.accounts_slots_to_update.get(&address)?;
+                if slots_to_update.is_empty() {
+                    return None;
+                }
+
+                Some((address, slots_to_update))
             })
             .collect();
 
-        warn!("touched addresses: {:?}", touched_addresses);
         if touched_addresses.is_empty() {
+            info!("Simulator 'on_new_block' no touched addresses found for block {}", new_block.number);
             return;
         }
 
+        // Create ethers db
         let Some(e_db) = EthersDB::new(Arc::clone(&self.provider), Some(new_block.number.into())) else {
             error!(
-                "revm 'on_new_block' failed to create ethers db for block {}",
+                "Simulator 'on_new_block' failed to create ethers db for block {}",
                 new_block.number
             );
             return;
         };
-        //e_db.storage_ref();
 
-        //let db: &mut InMemoryDB = &mut self.ctx_with_handler.context.evm.db;
-        //let slots: HashMap<alloy_primitives::Address, (alloy_primitives::U256, alloy_primitives::U256)>;
-        //for (address, (slot, value)) in slots {
-        //    db.insert_account_storage(address, slot, value)
-        //        .expect("failed to slot storage value");
-        //}
+        // Get slots values from ethers db
+        // TODO: Parallelize
+        let mut slots_values: HashMap<alloy_primitives::Address, (alloy_primitives::U256, alloy_primitives::U256)> =
+            HashMap::new();
+        for (address, slots) in touched_addresses {
+            for slot in slots {
+                let Ok(slot_value) = e_db.storage_ref(address, *slot) else {
+                    error!(
+                        "Simulator 'on_new_block' failed to get storage value for address {:?} and slot {:?}",
+                        address, slot
+                    );
+                    continue;
+                };
+
+                slots_values.insert(address, (*slot, slot_value));
+            }
+        }
+
+        // Update EVM db
+        let db: &mut InMemoryDB = &mut self.ctx_with_handler.context.evm.db;
+        for (address, (slot, value)) in slots_values {
+            db.insert_account_storage(address, slot, value)
+                .expect("failed to slot storage value");
+        }
+
+        info!("Simulator updated storage values for block '{}'", new_block.number);
     }
 
     pub fn get_tokens_balance_slot(&self, tokens: &[Address]) -> Result<HashMap<Address, Result<Option<i32>>>> {
