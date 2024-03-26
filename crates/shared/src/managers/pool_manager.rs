@@ -1,9 +1,11 @@
 use std::sync::{Arc, RwLock};
 
 use anyhow::Result;
+use dashmap::mapref::one::RefMut;
 use dashmap::DashMap;
+use ethers::prelude::H256;
 use ethers::types::{Address, U256, U64};
-use ethers::utils::to_checksum;
+use ethers::utils::{keccak256, to_checksum};
 use ethers::{
     providers::Middleware,
     types::{Filter, Log},
@@ -11,6 +13,7 @@ use ethers::{
 use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
 
 use vidger::logger::{error, info};
+use vidger::types::NewBlock;
 use vidger::utilities::block_on;
 
 use crate::amm::{AmmPoolKind, AmmProtocolKind};
@@ -46,7 +49,7 @@ pub struct PoolManager<M> {
     provider: Arc<M>,
     simulator: Arc<RwLock<EvmSimulator<M>>>,
     pools: DashMap<Address, Arc<RwLock<PoolContainer>>>,
-    pools_sync_filter: Filter,
+    pools_sync_events: Vec<H256>,
 }
 
 impl<M> PoolManager<M>
@@ -54,8 +57,8 @@ where
     M: Middleware + 'static,
 {
     pub fn new(provider: Arc<M>, simulator: Arc<RwLock<EvmSimulator<M>>>, amm_manager: &AmmManager) -> Self {
-        const UNI_V2_V3_SYNC_EVENT: &str = "Sync(uint112,uint112)";
-        let pools_sync_filter: Filter = Filter::new().events(vec![UNI_V2_V3_SYNC_EVENT]);
+        static UNI_V2_V3_SYNC_EVENT: &str = "Sync(uint112,uint112)";
+        let pools_sync_events = vec![H256::from(keccak256(UNI_V2_V3_SYNC_EVENT))];
 
         let pools: DashMap<Address, Arc<RwLock<PoolContainer>>> = amm_manager
             .amms()
@@ -73,7 +76,7 @@ where
             provider,
             simulator,
             pools,
-            pools_sync_filter,
+            pools_sync_events,
         }
     }
 
@@ -127,7 +130,7 @@ impl<M: Middleware + 'static> PoolManager<M> {
             .map(|pool| Arc::clone(&pool.read().unwrap().paths))
     }
 
-    pub fn on_new_block(&mut self, block_number: U64) {
+    pub fn on_new_block(&mut self, new_block: &NewBlock, logs: &[Log]) {
         /*
         - Get touched pools then updates its tuple (optimal input, output)
         - Update most 50 profitable paths for touched pools
@@ -135,49 +138,31 @@ impl<M: Middleware + 'static> PoolManager<M> {
             (Most profitable output are the max input-to-output ratio)
         */
 
-        // Get touched pools
-        let event_filter: Filter = self
-            .pools_sync_filter
-            .clone()
-            .from_block(block_number)
-            .to_block(block_number);
-
-        let logs: Result<Vec<Log>, <M as Middleware>::Error> = block_on(self.provider.get_logs(&event_filter));
-        let Ok(logs) = logs else {
-            error!("failed to get logs for block {}", block_number);
-            return;
-        };
-
-        if logs.is_empty() {
-            return;
-        }
-
         // Get touched pools, Update optimal input to output, Must do it before update most profitable paths.
         // because `for_each` will call the callback on sequence, that's why use .collect() to execute the callback on
         // all touched pools, then we can get most profitable paths after
         let touched_pools: Vec<Arc<RwLock<PoolContainer>>> = logs
             .par_iter()
             .filter_map(|log| {
-                let pool_address: Address = log.address.0.into();
-                if self.pools.get(&pool_address).is_none() {
-                    return None;
-                };
+                self.pools.get(&log.address)?;
 
-                let pool_container = self.pools.get_mut(&pool_address);
-                let Some(pool_container_ref) = pool_container else {
+                // Check if this pool is touched
+                if !self.pools_sync_events.contains(&log.topics[0]) {
                     return None;
-                };
+                }
+
+                let pool_container: RefMut<Address, Arc<RwLock<PoolContainer>>> = self.pools.get_mut(&log.address)?;
 
                 // Take care there a possibility of race condition between read and write, keep use try_write
                 let input_output: (U256, U256) =
-                    self.get_optimal_input_and_output(&pool_container_ref.try_read().unwrap().pool);
+                    self.get_optimal_input_and_output(&pool_container.try_read().unwrap().pool);
 
-                pool_container_ref
+                pool_container
                     .try_write()
                     .expect("Failed to get write lock")
                     .input_to_output = input_output;
 
-                Some(Arc::clone(&*pool_container_ref))
+                Some(Arc::clone(&*pool_container))
             })
             .collect();
 

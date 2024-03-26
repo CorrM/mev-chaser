@@ -3,7 +3,7 @@ use std::sync::{Arc, RwLock, RwLockWriteGuard};
 
 use anyhow::{anyhow, Result};
 use ethers::abi::{AbiDecode, AbiEncode};
-use ethers::prelude::BlockId;
+use ethers::types::{BlockId, Log};
 use ethers::{
     abi,
     providers::Middleware,
@@ -12,22 +12,21 @@ use ethers::{
 };
 use hashbrown::HashMap;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
-use revm::db::CacheDB;
-use revm::primitives::HaltReason;
+use revm::primitives::alloy_primitives;
 use revm::{
     db::{EmptyDB, EthersDB, InMemoryDB},
+    primitives::HaltReason,
     primitives::{
         AccountInfo, Bytecode, CfgEnv, ExecutionResult, Output, ResultAndState, TransactTo, TxEnv, KECCAK_EMPTY,
     },
     ContextWithHandlerCfg, DatabaseRef, Evm,
 };
 
-use contracts::balancer_flash_loan_recipient::OneSwapInfo;
 use contracts::erc20_token::{BalanceOfCall, BalanceOfReturn};
 use contracts::simulator::{
     SimulateGetAmountsOutCall, SimulateGetAmountsOutReturn, SimulatorAbiErrors, SIMULATORABI_DEPLOYED_BYTECODE,
 };
-use vidger::logger::error;
+use vidger::logger::{error, warn};
 use vidger::types::NewBlock;
 use vidger::utilities::block_on;
 
@@ -45,8 +44,8 @@ use ethers::{
 */
 #[derive(Debug, Clone)]
 pub struct TxSuccessResult {
-    pub output: revm::primitives::Bytes,
-    pub logs: Option<Vec<revm::primitives::Log>>,
+    pub output: alloy_primitives::Bytes,
+    pub logs: Option<Vec<alloy_primitives::Log>>,
     pub gas_used: u64,
     pub gas_refunded: u64,
 }
@@ -71,19 +70,19 @@ pub enum TxResult {
 
 pub struct RevmSimulator<M> {
     provider: Arc<M>,
-    simulator_address: revm::primitives::Address,
-    account: revm::primitives::Address,
+    simulator_address: alloy_primitives::Address,
+    account: alloy_primitives::Address,
     ctx_with_handler: ContextWithHandlerCfg<(), InMemoryDB>,
 }
 
 impl<M: Middleware + 'static> RevmSimulator<M> {
     fn deploy_amm(db: &Arc<RwLock<InMemoryDB>>, ethers_db: &Arc<RwLock<EthersDB<M>>>, amm: &Arc<AmmProtocolKind>) {
-        let mut account_info_list: Vec<(revm::primitives::Address, AccountInfo)> = vec![];
+        let mut account_info_list: Vec<(alloy_primitives::Address, AccountInfo)> = vec![];
 
         // TODO: For uniswap_v3 you need quoter and router
         match &**amm {
             AmmProtocolKind::UniswapV2(uniswap2) => {
-                let router_address: revm::primitives::Address = uniswap2.router().0.into();
+                let router_address: alloy_primitives::Address = uniswap2.router().0.into();
                 account_info_list.push((
                     router_address,
                     ethers_db.read().unwrap().basic_ref(router_address).unwrap().unwrap(),
@@ -101,27 +100,27 @@ impl<M: Middleware + 'static> RevmSimulator<M> {
     fn deploy_token_and_spoof_balance(
         db: &Arc<RwLock<InMemoryDB>>,
         token: &CryptoToken,
-        address: &[revm::primitives::Address],
+        address: &[alloy_primitives::Address],
     ) {
-        let hundred_grand_eth: revm::primitives::U256 = revm::primitives::U256::from(100_000)
-            .checked_mul(revm::primitives::U256::from(10).pow(revm::primitives::U256::from(18)))
+        let hundred_grand_eth: alloy_primitives::U256 = alloy_primitives::U256::from(100_000)
+            .checked_mul(alloy_primitives::U256::from(10).pow(alloy_primitives::U256::from(18)))
             .unwrap();
 
         // Deploy token
-        let token_address: revm::primitives::Address = token.proxy_or_address().0.into();
-        let code = Bytecode::new_raw(revm::primitives::Bytes::from(token.code().clone()));
+        let token_address: alloy_primitives::Address = token.proxy_or_address().0.into();
+        let code = Bytecode::new_raw(alloy_primitives::Bytes::from(token.code().clone()));
         let token_acc_info = AccountInfo::new(hundred_grand_eth, 0, code.hash_slow(), code);
 
         // Spoof balance
         // https://ethereum.stackexchange.com/questions/147205/how-to-view-the-amount-of-storage-a-contract-uses
         // https://ethereum.stackexchange.com/questions/47986/using-getstorageat-on-mappingaddress-uint64
-        let input_balance_slots: Option<Vec<revm::primitives::U256>> = if token.balance_contract_slot() != -1 {
+        let input_balance_slots: Option<Vec<alloy_primitives::U256>> = if token.balance_contract_slot() != -1 {
             // Inject simulator contract with token balance
             // Inject account with token balance
-            let slots_to_spoof: Vec<revm::primitives::U256> = address
+            let slots_to_spoof: Vec<alloy_primitives::U256> = address
                 .iter()
                 .map(|address_to_spoof| {
-                    revm::primitives::U256::from_be_bytes(keccak256(abi::encode(&[
+                    alloy_primitives::U256::from_be_bytes(keccak256(abi::encode(&[
                         abi::Token::Address(ethers::types::Address::from(address_to_spoof.0 .0)),
                         abi::Token::Uint(ethers::types::U256::from(token.balance_contract_slot())),
                     ])))
@@ -149,21 +148,21 @@ impl<M: Middleware + 'static> RevmSimulator<M> {
         db: &Arc<RwLock<InMemoryDB>>,
         ethers_db: &Arc<RwLock<EthersDB<M>>>,
         pool: &AmmPoolKind,
-        address: &[revm::primitives::Address],
+        address: &[alloy_primitives::Address],
     ) {
         // Deploy tokens
         Self::deploy_token_and_spoof_balance(db, pool.token0(), address);
         Self::deploy_token_and_spoof_balance(db, pool.token1(), address);
 
         // Deploy pool
-        let pool_address: revm::primitives::Address = pool.address().0.into();
+        let pool_address: alloy_primitives::Address = pool.address().0.into();
         let pool_acc_info: AccountInfo = ethers_db.read().unwrap().basic_ref(pool_address).unwrap().unwrap();
 
         // Prepare pool
-        let mut slots: HashMap<revm::primitives::U256, revm::primitives::U256> = HashMap::new();
+        let mut slots: HashMap<alloy_primitives::U256, alloy_primitives::U256> = HashMap::new();
         match pool {
             AmmPoolKind::UniswapV2(_) => {
-                let slot = revm::primitives::U256::from(8);
+                let slot = alloy_primitives::U256::from(8);
                 if let Ok(slot_value) = ethers_db.read().unwrap().storage_ref(pool_address, slot) {
                     slots.insert(slot, slot_value);
                 };
@@ -183,10 +182,10 @@ impl<M: Middleware + 'static> RevmSimulator<M> {
 
     pub(super) fn new(provider: Arc<M>, amm_manager: &AmmManager) -> Result<Self> {
         // https://github.com/bluealloy/revm/issues/1062
-        let hundred_grand_eth: revm::primitives::U256 = revm::primitives::U256::from(100_000)
-            .checked_mul(revm::primitives::U256::from(10).pow(revm::primitives::U256::from(18)))
+        let hundred_grand_eth: alloy_primitives::U256 = alloy_primitives::U256::from(100_000)
+            .checked_mul(alloy_primitives::U256::from(10).pow(alloy_primitives::U256::from(18)))
             .unwrap();
-        let account = revm::primitives::Address::from_str("0x9cf277A22EB4c551c6E18F7a6C0ee1893bcB034f").unwrap();
+        let account = alloy_primitives::Address::from_str("0x9cf277A22EB4c551c6E18F7a6C0ee1893bcB034f").unwrap();
 
         // Prepare in-memory DB
         let mut db = InMemoryDB::new(EmptyDB::default());
@@ -200,7 +199,7 @@ impl<M: Middleware + 'static> RevmSimulator<M> {
 
         // Deploy Simulator contract
         let simulator_address =
-            revm::primitives::Address::from_str("0xF2d01Ee818509a9540d8324a5bA52329af27D19E").unwrap();
+            alloy_primitives::Address::from_str("0xF2d01Ee818509a9540d8324a5bA52329af27D19E").unwrap();
         let simulator_bytes = Bytecode::new_raw((*SIMULATORABI_DEPLOYED_BYTECODE.0).into());
         let simulator_acc_info = AccountInfo::new(hundred_grand_eth, 0, simulator_bytes.hash_slow(), simulator_bytes);
         db.insert_account_info(simulator_address, simulator_acc_info);
@@ -309,8 +308,37 @@ where
         output
     }
 
-    pub fn on_new_block(&mut self, block: &NewBlock) {
-        // Update all touched AccountInfo in the db
+    pub fn on_new_block(&mut self, new_block: &NewBlock, logs: &[Log]) {
+        let db: &InMemoryDB = &self.ctx_with_handler.context.evm.db;
+        let touched_addresses: Vec<alloy_primitives::Address> = logs
+            .par_iter()
+            .filter_map(|log: &Log| {
+                let address: alloy_primitives::Address = log.address.0.into();
+                db.accounts.get::<alloy_primitives::Address>(&address)?;
+                Some(address)
+            })
+            .collect();
+
+        warn!("touched addresses: {:?}", touched_addresses);
+        if touched_addresses.is_empty() {
+            return;
+        }
+
+        let Some(e_db) = EthersDB::new(Arc::clone(&self.provider), Some(new_block.number.into())) else {
+            error!(
+                "revm 'on_new_block' failed to create ethers db for block {}",
+                new_block.number
+            );
+            return;
+        };
+        //e_db.storage_ref();
+
+        //let db: &mut InMemoryDB = &mut self.ctx_with_handler.context.evm.db;
+        //let slots: HashMap<alloy_primitives::Address, (alloy_primitives::U256, alloy_primitives::U256)>;
+        //for (address, (slot, value)) in slots {
+        //    db.insert_account_storage(address, slot, value)
+        //        .expect("failed to slot storage value");
+        //}
     }
 
     pub fn get_tokens_balance_slot(&self, tokens: &[Address]) -> Result<HashMap<Address, Result<Option<i32>>>> {
@@ -322,10 +350,10 @@ where
         let ethers_db: EthersDB<M> =
             EthersDB::new(Arc::clone(&self.provider), Some(cur_block.number.unwrap().into())).unwrap();
 
-        let tokens_accounts: Vec<(AccountInfo, revm::primitives::Address)> = tokens
+        let tokens_accounts: Vec<(AccountInfo, alloy_primitives::Address)> = tokens
             .par_iter()
             .map(|token: &Address| {
-                let token: revm::primitives::Address = token.0.into();
+                let token: alloy_primitives::Address = token.0.into();
                 let token_acc_info: AccountInfo = ethers_db.basic_ref(token).unwrap().unwrap();
 
                 (token_acc_info, token)
@@ -337,7 +365,7 @@ where
         }
 
         // Call balanceOf
-        let calldata: revm::primitives::Bytes = AbiEncode::encode(BalanceOfCall {
+        let calldata: alloy_primitives::Bytes = AbiEncode::encode(BalanceOfCall {
             who: self.account.0 .0.into(),
         })
         .into();
@@ -348,7 +376,7 @@ where
             .map(|token: &Address| {
                 let mut evm: Evm<(), InMemoryDB> = self.clone_evm(handler_cfg.clone());
 
-                let _token: revm::primitives::Address = token.0.into();
+                let _token: alloy_primitives::Address = token.0.into();
 
                 let tx: &mut TxEnv = evm.tx_mut();
                 tx.caller = self.account.0.into();
@@ -376,7 +404,7 @@ where
                         abi::Token::Uint(U256::from(i)),
                     ]));
 
-                    let slot = revm::primitives::U256::from_be_bytes(slot);
+                    let slot = alloy_primitives::U256::from_be_bytes(slot);
                     if touched_storage.get(&slot).is_none() {
                         continue;
                     };
@@ -423,20 +451,22 @@ where
     }
 
     pub fn get_amounts_out(&self, pool: &AmmPoolKind, amount_in: U256) -> Result<U256> {
-        let path: ethers::types::Bytes = abi::encode(&[abi::Token::Array(vec![
-            abi::Token::Address(*pool.token0().address()),
-            abi::Token::Address(*pool.token1().address()),
-        ])])
-        .into();
-
         // TODO: For uniswap_v3 `contract_address` are the quarter
         let calldata: Vec<u8> = match pool {
-            AmmPoolKind::UniswapV2(_) => AbiEncode::encode(SimulateGetAmountsOutCall {
-                protocol: 0, // UniswapV2
-                contract_address: pool.dex().router().0.into(),
-                path,
-                amount_in,
-            }),
+            AmmPoolKind::UniswapV2(_) => {
+                let path: ethers::types::Bytes = abi::encode(&[abi::Token::Array(vec![
+                    abi::Token::Address(*pool.token0().address()),
+                    abi::Token::Address(*pool.token1().address()),
+                ])])
+                .into();
+
+                AbiEncode::encode(SimulateGetAmountsOutCall {
+                    protocol: 0, // UniswapV2
+                    contract_address: pool.dex().router().0.into(),
+                    path,
+                    amount_in,
+                })
+            }
         };
 
         let mut evm: Evm<(), InMemoryDB> = self.get_evm();
@@ -462,9 +492,5 @@ where
             TxResult::Revert(revert) => Err(anyhow!("Failed to get token balance REVERT: {:?}", revert.output)),
             TxResult::Halt(halt) => Err(anyhow!("Failed to get token balance HALT: {:?}", halt.reason)),
         }
-    }
-
-    pub fn multi_swaps(&self, swaps: Vec<OneSwapInfo>, chain_swaps: bool) -> Result<U256> {
-        todo!()
     }
 }

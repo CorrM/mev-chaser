@@ -52,7 +52,7 @@ impl BlockInfo {
         BlockInfo {
             number: self.number + 1,
             base_fee_per_gas: calculate_next_block_base_fee(self),
-            timestamp: self.timestamp + 2, // TODO: Polygon block is 2 seconds, Ethereum block is 10-15 seconds
+            timestamp: self.timestamp + 2, // TODO: Polygon block is 2 seconds, Ethereum block is 15 seconds
             gas_used: None,
             gas_limit: None,
         }

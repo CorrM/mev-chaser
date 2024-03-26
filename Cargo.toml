@@ -48,7 +48,7 @@ ethers = { version = "2.0", features = [
     "rustls",
 ] }
 ethers-etherscan = { version = "2.0.14" }
-revm = { version = "7.0", default-features = false, features = [
+revm = { version = "7.2.0", default-features = false, features = [
     "std",
     "serde",
     "memory_limit",

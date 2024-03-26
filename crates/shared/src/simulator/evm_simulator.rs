@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use ethers::providers::Middleware;
-use ethers::types::{Address, U256};
+use ethers::types::{Address, Log, U256};
 use hashbrown::HashMap;
 
 use vidger::types::NewBlock;
@@ -53,9 +53,9 @@ where
     M: Middleware + 'static,
 {
     #[inline]
-    pub fn update_block(&mut self, block: &NewBlock) {
+    pub fn on_new_block(&mut self, new_block: &NewBlock, logs: &[Log]) {
         match self {
-            Self::Revm(ref mut revm) => revm.on_new_block(block),
+            Self::Revm(ref mut revm) => revm.on_new_block(new_block, logs),
         }
     }
 

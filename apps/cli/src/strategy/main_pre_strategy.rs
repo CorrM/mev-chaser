@@ -1,12 +1,15 @@
 use std::sync::{Arc, RwLock};
 
 use anyhow::Result;
+use ethers::prelude::Filter;
 use ethers::providers::Middleware;
 
 use shared::managers::{BlockManager, PoolManager};
 use shared::simulator::EvmSimulator;
-use shared::types::MevEvents;
+use shared::types::{BlockInfo, MevEvents};
 use vidger::core::PreStrategy;
+use vidger::logger::error;
+use vidger::utilities::block_on;
 
 pub struct MainPreStrategy<M> {
     /// Ethers client
@@ -51,8 +54,19 @@ impl<M: Middleware + 'static> PreStrategy<MevEvents> for MainPreStrategy<M> {
             return;
         };
 
-        self.block_manager.write().unwrap().update_block_info(block.clone());
-        self.pool_manager.write().unwrap().on_new_block(block.number);
-        self.simulator.write().unwrap().update_block(block);
+        let b_info: BlockInfo = block.clone().into();
+        let event_filter: Filter = Filter::new().from_block(block.number).to_block(block.number);
+        let Ok(logs) = block_on(self.provider.get_logs(&event_filter)) else {
+            error!("Pre-Strategy: Failed to get logs from block '{}'", block.number);
+            return;
+        };
+
+        rayon::scope(|s| {
+            s.spawn(|_| self.block_manager.write().unwrap().update_block_info(b_info));
+
+            // Simulator should be updated first
+            s.spawn(|_| self.simulator.write().unwrap().on_new_block(block, &logs.clone()));
+            s.spawn(|_| self.pool_manager.write().unwrap().on_new_block(block, &logs));
+        });
     }
 }
