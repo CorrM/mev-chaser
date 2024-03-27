@@ -375,7 +375,6 @@ pub mod simulator_abi {
                 .expect("method not found (this should never happen)")
         }
     }
-
     impl<M: ::ethers::providers::Middleware> From<::ethers::contract::Contract<M>>
     for SimulatorAbi<M> {
         fn from(contract: ::ethers::contract::Contract<M>) -> Self {

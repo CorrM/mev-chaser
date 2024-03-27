@@ -61,12 +61,9 @@ impl<M: Middleware + 'static> PreStrategy<MevEvents> for MainPreStrategy<M> {
             return;
         };
 
-        rayon::scope(|s| {
-            s.spawn(|_| self.block_manager.write().unwrap().update_block_info(b_info));
-
-            // Simulator should be updated first
-            s.spawn(|_| self.simulator.write().unwrap().on_new_block(block, &logs.clone()));
-            s.spawn(|_| self.pool_manager.write().unwrap().on_new_block(block, &logs));
-        });
+        // Don't change the order of these calls, And don't call them in parallel
+        self.block_manager.write().unwrap().update_block_info(b_info);
+        self.simulator.write().unwrap().on_new_block(block, &logs.clone());
+        self.pool_manager.write().unwrap().on_new_block(block, &logs);
     }
 }

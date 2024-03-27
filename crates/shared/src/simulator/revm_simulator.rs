@@ -26,7 +26,7 @@ use contracts::erc20_token::{BalanceOfCall, BalanceOfReturn};
 use contracts::simulator::{
     SimulateGetAmountsOutCall, SimulateGetAmountsOutReturn, SimulatorAbiErrors, SIMULATORABI_DEPLOYED_BYTECODE,
 };
-use vidger::logger::{debug, error, info, warn};
+use vidger::logger::{error, info, warn};
 use vidger::types::NewBlock;
 use vidger::utilities::block_on;
 
@@ -34,14 +34,6 @@ use crate::amm::{AmmPoolKind, AmmProtocolKind};
 use crate::managers::AmmManager;
 use crate::types::CryptoToken;
 
-/*
-use ethers::{
-    abi::{self, AbiDecode, AbiEncode},
-    providers::Middleware,
-    types::{Address, H256, U256, U64},
-    utils::keccak256,
-};
-*/
 #[derive(Debug, Clone)]
 pub struct TxSuccessResult {
     pub output: alloy_primitives::Bytes,

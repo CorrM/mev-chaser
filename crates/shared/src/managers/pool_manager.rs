@@ -6,15 +6,12 @@ use dashmap::DashMap;
 use ethers::prelude::H256;
 use ethers::types::{Address, U256, U64};
 use ethers::utils::{keccak256, to_checksum};
-use ethers::{
-    providers::Middleware,
-    types::{Filter, Log},
-};
+use ethers::{providers::Middleware, types::Log};
+use hashbrown::HashSet;
 use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
 
-use vidger::logger::{error, info};
+use vidger::logger::info;
 use vidger::types::NewBlock;
-use vidger::utilities::block_on;
 
 use crate::amm::{AmmPoolKind, AmmProtocolKind};
 use crate::managers::AmmManager;
@@ -130,7 +127,7 @@ impl<M: Middleware + 'static> PoolManager<M> {
             .map(|pool| Arc::clone(&pool.read().unwrap().paths))
     }
 
-    pub fn on_new_block(&mut self, new_block: &NewBlock, logs: &[Log]) {
+    pub fn on_new_block(&mut self, _new_block: &NewBlock, logs: &[Log]) {
         /*
         - Get touched pools then updates its tuple (optimal input, output)
         - Update most 50 profitable paths for touched pools
@@ -143,7 +140,7 @@ impl<M: Middleware + 'static> PoolManager<M> {
         // all touched pools, then we can get most profitable paths after
         let touched_pools: Vec<Arc<RwLock<PoolContainer>>> = logs
             .par_iter()
-            .filter_map(|log| {
+            .filter_map(|log: &Log| {
                 self.pools.get(&log.address)?;
 
                 // Check if this pool is touched
@@ -151,7 +148,12 @@ impl<M: Middleware + 'static> PoolManager<M> {
                     return None;
                 }
 
-                let pool_container: RefMut<Address, Arc<RwLock<PoolContainer>>> = self.pools.get_mut(&log.address)?;
+                Some(log.address)
+            })
+            .collect::<HashSet<_>>()
+            .into_par_iter()
+            .filter_map(|address: Address| {
+                let pool_container: RefMut<Address, Arc<RwLock<PoolContainer>>> = self.pools.get_mut(&address)?;
 
                 // Take care there a possibility of race condition between read and write, keep use try_write
                 let input_output: (U256, U256) =
@@ -184,7 +186,7 @@ impl<M: Middleware + 'static> PoolManager<M> {
             //    .collect();
             //*pool_container.top_profitable_paths.write().unwrap() = top_profitable_paths;
 
-            info!("syncing pool {}", to_checksum(pool_container.pool.address(), None));
+            info!("Generate most profitable paths for pool '{}'", to_checksum(pool_container.pool.address(), None));
         });
     }
 }
