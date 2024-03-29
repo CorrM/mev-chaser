@@ -63,7 +63,7 @@ impl<M: Middleware + 'static> PreStrategy<MevEvents> for MainPreStrategy<M> {
 
         // Don't change the order of these calls, And don't call them in parallel
         self.block_manager.write().unwrap().update_block_info(b_info);
-        self.simulator.write().unwrap().on_new_block(block, &logs.clone());
+        self.simulator.write().unwrap().sync_by_block(block, &logs.clone());
         self.pool_manager.write().unwrap().on_new_block(block, &logs);
     }
 }

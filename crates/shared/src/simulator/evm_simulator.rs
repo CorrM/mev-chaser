@@ -54,13 +54,6 @@ where
     M: Middleware + 'static,
 {
     #[inline]
-    pub fn on_new_block(&mut self, new_block: &NewBlock, logs: &[Log]) {
-        match self {
-            Self::Revm(ref mut revm) => revm.on_new_block(new_block, logs),
-        }
-    }
-
-    #[inline]
     pub fn get_tokens_balance_slot(&self, tokens: &[Address]) -> Result<HashMap<Address, Result<Option<i32>>>> {
         match self {
             Self::Revm(ref revm) => revm.get_tokens_balance_slot(tokens),
@@ -71,6 +64,13 @@ where
     pub fn get_amounts_out(&self, pool: &AmmPoolKind, input: &CryptoToken, amount_in: U256) -> Result<U256> {
         match self {
             Self::Revm(ref revm) => revm.get_amounts_out(pool, input, amount_in),
+        }
+    }
+
+    #[inline]
+    pub fn sync_by_block(&mut self, new_block: &NewBlock, logs: &[Log]) {
+        match self {
+            Self::Revm(ref mut revm) => revm.sync_by_block(new_block, logs),
         }
     }
 }

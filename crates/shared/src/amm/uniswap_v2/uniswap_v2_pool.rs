@@ -6,7 +6,7 @@ use ethers::types::Address;
 use crate::amm::{AmmPool, AmmProtocolKind};
 use crate::types::CryptoToken;
 
-///
+/// UniswapV2 Pool layout
 /// | Name                 | Type                                            | Slot | Offset | Bytes |
 /// |----------------------|-------------------------------------------------|------|--------|-------|
 /// | totalSupply          | uint256                                         | 0    | 0      | 32    |

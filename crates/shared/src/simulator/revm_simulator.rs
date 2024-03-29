@@ -102,7 +102,7 @@ impl<M: Middleware + 'static> RevmSimulator<M> {
     fn deploy_token_and_spoof_balance(
         db: &Arc<RwLock<InMemoryDB>>,
         token: &CryptoToken,
-        address_list_to_spoof: &[alloy_primitives::Address],
+        accounts_list_to_spoof: &[alloy_primitives::Address],
     ) {
         let hundred_grand_eth: alloy_primitives::U256 = alloy_primitives::U256::from(100_000)
             .checked_mul(alloy_primitives::U256::from(10).pow(alloy_primitives::U256::from(18)))
@@ -119,7 +119,7 @@ impl<M: Middleware + 'static> RevmSimulator<M> {
         let input_balance_slots: Option<Vec<alloy_primitives::U256>> = if token.balance_contract_slot() != -1 {
             // Inject simulator contract with token balance
             // Inject account with token balance
-            let slots_to_spoof: Vec<alloy_primitives::U256> = address_list_to_spoof
+            let slots_to_spoof: Vec<alloy_primitives::U256> = accounts_list_to_spoof
                 .iter()
                 .map(|address_to_spoof| {
                     alloy_primitives::U256::from_be_bytes(keccak256(abi::encode(&[
@@ -150,7 +150,7 @@ impl<M: Middleware + 'static> RevmSimulator<M> {
         db: &Arc<RwLock<InMemoryDB>>,
         ethers_db: &Arc<RwLock<EthersDB<M>>>,
         pool: &AmmPoolKind,
-        address_list_to_spoof: &mut Vec<alloy_primitives::Address>,
+        accounts_list_to_spoof: &[alloy_primitives::Address],
         accounts_slots_to_update: &mut HashMap<alloy_primitives::Address, Vec<alloy_primitives::U256>>,
     ) {
         /*
@@ -158,11 +158,13 @@ impl<M: Middleware + 'static> RevmSimulator<M> {
         This means that our newly deployed pair contract has to have real token balances to perform a real swap.
         */
         // Add pool to spoof
-        address_list_to_spoof.push(pool.address().0.into());
+        // Don't make `accounts_list_to_spoof` as mutable vector, as it will keep push all pools to spoof
+        let mut accounts_list_to_spoof: Vec<alloy_primitives::Address> = accounts_list_to_spoof.to_vec();
+        accounts_list_to_spoof.push(pool.address().0.into());
 
         // Deploy tokens
-        Self::deploy_token_and_spoof_balance(db, pool.token0(), address_list_to_spoof);
-        Self::deploy_token_and_spoof_balance(db, pool.token1(), address_list_to_spoof);
+        Self::deploy_token_and_spoof_balance(db, pool.token0(), &accounts_list_to_spoof);
+        Self::deploy_token_and_spoof_balance(db, pool.token1(), &accounts_list_to_spoof);
 
         // Deploy pool
         let pool_address: alloy_primitives::Address = pool.address().0.into();
@@ -180,6 +182,7 @@ impl<M: Middleware + 'static> RevmSimulator<M> {
                   and the default value is 0
                 */
 
+                // uniswapV2 pool has 13 slots (0 -> 12)
                 let slots_idx = (0..=12).map(alloy_primitives::U256::from);
                 for slot_idx in slots_idx {
                     if let Ok(slot_value) = ethers_db.read().unwrap().storage_ref(pool_address, slot_idx) {
@@ -349,7 +352,7 @@ where
         self.get_evm().db().storage_ref(address, slot).unwrap()
     }
 
-    pub fn on_new_block(&mut self, new_block: &NewBlock, logs: &[Log]) {
+    pub fn sync_by_block(&mut self, new_block: &NewBlock, logs: &[Log]) {
         // Get touched addresses that need to be updated
         let touched_addresses: HashMap<alloy_primitives::Address, &Vec<alloy_primitives::U256>> = logs
             .par_iter()
@@ -385,8 +388,8 @@ where
         // TODO: Parallelize
         let mut slots_values: HashMap<alloy_primitives::Address, (alloy_primitives::U256, alloy_primitives::U256)> =
             HashMap::new();
-        for (address, slots) in touched_addresses {
-            for slot in slots {
+        for (address, slots_to_update) in touched_addresses {
+            for slot in slots_to_update {
                 let Ok(slot_value) = e_db.storage_ref(address, *slot) else {
                     error!(
                         "Simulator 'on_new_block' failed to get storage value for address {:?} and slot {:?}",
