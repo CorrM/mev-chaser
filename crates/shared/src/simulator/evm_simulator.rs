@@ -10,6 +10,7 @@ use vidger::types::NewBlock;
 use crate::amm::AmmPoolKind;
 use crate::managers::AmmManager;
 use crate::simulator::RevmSimulator;
+use crate::types::CryptoToken;
 
 pub enum EvmSimulator<M> {
     Revm(RevmSimulator<M>),
@@ -67,9 +68,9 @@ where
     }
 
     #[inline]
-    pub fn get_amounts_out(&self, pool: &AmmPoolKind, amount_in: U256) -> Result<U256> {
+    pub fn get_amounts_out(&self, pool: &AmmPoolKind, input: &CryptoToken, amount_in: U256) -> Result<U256> {
         match self {
-            Self::Revm(ref revm) => revm.get_amounts_out(pool, amount_in),
+            Self::Revm(ref revm) => revm.get_amounts_out(pool, input, amount_in),
         }
     }
 }

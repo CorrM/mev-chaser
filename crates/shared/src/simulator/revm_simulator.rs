@@ -2,7 +2,7 @@ use std::str::FromStr;
 use std::sync::{Arc, RwLock, RwLockWriteGuard};
 
 use anyhow::{anyhow, Result};
-use ethers::abi::{AbiDecode, AbiEncode};
+use ethers::abi::{AbiDecode, AbiEncode, AbiError};
 use ethers::types::{BlockId, Log};
 use ethers::{
     abi,
@@ -24,7 +24,8 @@ use revm::{
 
 use contracts::erc20_token::{BalanceOfCall, BalanceOfReturn};
 use contracts::simulator::{
-    SimulateGetAmountsOutCall, SimulateGetAmountsOutReturn, SimulatorAbiErrors, SIMULATORABI_DEPLOYED_BYTECODE,
+    SimulateGetAmountsOutUniswapV2Call, SimulateGetAmountsOutUniswapV2Return, SimulatorAbiErrors,
+    SIMULATORABI_DEPLOYED_BYTECODE,
 };
 use vidger::logger::{error, info, warn};
 use vidger::types::NewBlock;
@@ -76,10 +77,18 @@ impl<M: Middleware + 'static> RevmSimulator<M> {
         match &**amm {
             AmmProtocolKind::UniswapV2(uniswap2) => {
                 let router_address: alloy_primitives::Address = uniswap2.router().0.into();
-                account_info_list.push((
-                    router_address,
-                    ethers_db.read().unwrap().basic_ref(router_address).unwrap().unwrap(),
-                ));
+                let factory_address: alloy_primitives::Address = uniswap2.factory().0.into();
+
+                account_info_list.extend([
+                    (
+                        router_address,
+                        ethers_db.read().unwrap().basic_ref(router_address).unwrap().unwrap(),
+                    ),
+                    (
+                        factory_address,
+                        ethers_db.read().unwrap().basic_ref(factory_address).unwrap().unwrap(),
+                    ),
+                ]);
             }
         };
 
@@ -93,7 +102,7 @@ impl<M: Middleware + 'static> RevmSimulator<M> {
     fn deploy_token_and_spoof_balance(
         db: &Arc<RwLock<InMemoryDB>>,
         token: &CryptoToken,
-        address: &[alloy_primitives::Address],
+        address_list_to_spoof: &[alloy_primitives::Address],
     ) {
         let hundred_grand_eth: alloy_primitives::U256 = alloy_primitives::U256::from(100_000)
             .checked_mul(alloy_primitives::U256::from(10).pow(alloy_primitives::U256::from(18)))
@@ -110,7 +119,7 @@ impl<M: Middleware + 'static> RevmSimulator<M> {
         let input_balance_slots: Option<Vec<alloy_primitives::U256>> = if token.balance_contract_slot() != -1 {
             // Inject simulator contract with token balance
             // Inject account with token balance
-            let slots_to_spoof: Vec<alloy_primitives::U256> = address
+            let slots_to_spoof: Vec<alloy_primitives::U256> = address_list_to_spoof
                 .iter()
                 .map(|address_to_spoof| {
                     alloy_primitives::U256::from_be_bytes(keccak256(abi::encode(&[
@@ -141,12 +150,19 @@ impl<M: Middleware + 'static> RevmSimulator<M> {
         db: &Arc<RwLock<InMemoryDB>>,
         ethers_db: &Arc<RwLock<EthersDB<M>>>,
         pool: &AmmPoolKind,
-        address: &[alloy_primitives::Address],
+        address_list_to_spoof: &mut Vec<alloy_primitives::Address>,
         accounts_slots_to_update: &mut HashMap<alloy_primitives::Address, Vec<alloy_primitives::U256>>,
     ) {
+        /*
+        we can notice that it retrieves the balance of token0, token1 making calls to the token contracts.
+        This means that our newly deployed pair contract has to have real token balances to perform a real swap.
+        */
+        // Add pool to spoof
+        address_list_to_spoof.push(pool.address().0.into());
+
         // Deploy tokens
-        Self::deploy_token_and_spoof_balance(db, pool.token0(), address);
-        Self::deploy_token_and_spoof_balance(db, pool.token1(), address);
+        Self::deploy_token_and_spoof_balance(db, pool.token0(), address_list_to_spoof);
+        Self::deploy_token_and_spoof_balance(db, pool.token1(), address_list_to_spoof);
 
         // Deploy pool
         let pool_address: alloy_primitives::Address = pool.address().0.into();
@@ -156,13 +172,25 @@ impl<M: Middleware + 'static> RevmSimulator<M> {
         let mut slots: HashMap<alloy_primitives::U256, alloy_primitives::U256> = HashMap::new();
         match pool {
             AmmPoolKind::UniswapV2(_) => {
-                let slot = alloy_primitives::U256::from(8);
-                if let Ok(slot_value) = ethers_db.read().unwrap().storage_ref(pool_address, slot) {
-                    slots.insert(slot, slot_value);
-                    accounts_slots_to_update.insert(pool_address, vec![slot]);
-                } else {
-                    warn!("Failed to get slot {} from pool {}", slot, pool_address);
+                const RESERVE_SLOT: u32 = 8;
+
+                /*
+                Why set unlocked slot?
+                  Because it is only initialized when the pool is initialized with Creation Bytecode
+                  and the default value is 0
+                */
+
+                let slots_idx = (0..=12).map(alloy_primitives::U256::from);
+                for slot_idx in slots_idx {
+                    if let Ok(slot_value) = ethers_db.read().unwrap().storage_ref(pool_address, slot_idx) {
+                        slots.insert(slot_idx, slot_value);
+                    } else {
+                        warn!("Failed to get slot {} from pool {}", slot_idx, pool_address);
+                    }
                 }
+
+                // Only reserve slot needs to be updated
+                accounts_slots_to_update.insert(pool_address, vec![alloy_primitives::U256::from(RESERVE_SLOT)]);
             }
         };
 
@@ -206,10 +234,14 @@ impl<M: Middleware + 'static> RevmSimulator<M> {
                 }
 
                 println!("DECODE: {}", output);
+                let error: Result<SimulatorAbiErrors, AbiError> = SimulatorAbiErrors::decode(output);
+                if error.is_err() {
+                    panic!("Failed to decode revert output: {:?}", error.unwrap_err());
+                }
 
                 TxResult::Revert(TxRevertResult {
                     // TODO: That's not necessary
-                    output: SimulatorAbiErrors::decode(output).unwrap(),
+                    output: error.unwrap(),
                     gas_used,
                 })
             }
@@ -236,7 +268,7 @@ impl<M: Middleware + 'static> RevmSimulator<M> {
 
         // Give the user enough ETH to pay for gas
         let user_acc_info = AccountInfo::new(hundred_grand_eth, 0, KECCAK_EMPTY, Bytecode::default());
-        db.insert_account_info(account, user_acc_info); // TODO: Remove .into()
+        db.insert_account_info(account, user_acc_info);
 
         // Deploy Simulator contract
         let simulator_address =
@@ -253,10 +285,10 @@ impl<M: Middleware + 'static> RevmSimulator<M> {
 
         // Deploy pools
         // TODO: Parallelize
-        let address_to_spoof = [simulator_address, account];
+        let mut address_to_spoof: Vec<alloy_primitives::Address> = vec![simulator_address, account];
         for amm in amm_manager.amms() {
             for pool in amm.pools() {
-                Self::deploy_pool(&db, &ethers_db, pool, &address_to_spoof, &mut accounts_slots_to_update);
+                Self::deploy_pool(&db, &ethers_db, pool, &mut address_to_spoof, &mut accounts_slots_to_update);
             }
         }
 
@@ -308,6 +340,15 @@ where
             .build()
     }
 
+    #[inline]
+    fn get_storage_at(
+        &self,
+        address: alloy_primitives::Address,
+        slot: alloy_primitives::U256,
+    ) -> alloy_primitives::U256 {
+        self.get_evm().db().storage_ref(address, slot).unwrap()
+    }
+
     pub fn on_new_block(&mut self, new_block: &NewBlock, logs: &[Log]) {
         // Get touched addresses that need to be updated
         let touched_addresses: HashMap<alloy_primitives::Address, &Vec<alloy_primitives::U256>> = logs
@@ -324,7 +365,10 @@ where
             .collect();
 
         if touched_addresses.is_empty() {
-            info!("Simulator 'on_new_block' no touched addresses found for block {}", new_block.number);
+            info!(
+                "Simulator 'on_new_block' no touched addresses found for block {}",
+                new_block.number
+            );
             return;
         }
 
@@ -474,19 +518,24 @@ where
         }
     }
 
-    pub fn get_amounts_out(&self, pool: &AmmPoolKind, amount_in: U256) -> Result<U256> {
+    pub fn get_amounts_out(&self, pool: &AmmPoolKind, input: &CryptoToken, amount_in: U256) -> Result<U256> {
         // TODO: For uniswap_v3 `contract_address` are the quarter
         let calldata: Vec<u8> = match pool {
             AmmPoolKind::UniswapV2(_) => {
-                let path: ethers::types::Bytes = abi::encode(&[abi::Token::Array(vec![
-                    abi::Token::Address(*pool.token0().address()),
-                    abi::Token::Address(*pool.token1().address()),
-                ])])
-                .into();
+                //let path: ethers::types::Bytes = abi::encode(&[abi::Token::Array(vec![
+                //    abi::Token::Address(*pool.token0().address()),
+                //    abi::Token::Address(*pool.token1().address()),
+                //])])
+                //.into();
 
-                AbiEncode::encode(SimulateGetAmountsOutCall {
-                    protocol: 0, // UniswapV2
-                    contract_address: pool.dex().router().0.into(),
+                let path: Vec<Address> = if pool.token0().address() == input.address() {
+                    vec![*pool.token0().address(), *pool.token1().address()]
+                } else {
+                    vec![*pool.token1().address(), *pool.token0().address()]
+                };
+
+                AbiEncode::encode(SimulateGetAmountsOutUniswapV2Call {
+                    router: pool.dex().router().0.into(),
                     path,
                     amount_in,
                 })
@@ -506,15 +555,121 @@ where
 
         let tx_result: TxResult = Self::get_tx_result(result_and_state.result);
         match tx_result {
-            TxResult::Success(result) => {
-                let Ok(decoded_output) = SimulateGetAmountsOutReturn::decode(&result.output) else {
-                    return Err(anyhow!("Failed to decode output"));
-                };
+            TxResult::Success(result) => match pool {
+                AmmPoolKind::UniswapV2(_) => {
+                    let Ok(decoded_output) = SimulateGetAmountsOutUniswapV2Return::decode(&result.output) else {
+                        return Err(anyhow!("Failed to decode output"));
+                    };
 
-                Ok(decoded_output.0)
-            }
+                    Ok(decoded_output.0)
+                }
+            },
             TxResult::Revert(revert) => Err(anyhow!("Failed to get token balance REVERT: {:?}", revert.output)),
             TxResult::Halt(halt) => Err(anyhow!("Failed to get token balance HALT: {:?}", halt.reason)),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::amm::{UniswapV2Pool, UniswapV2Protocol};
+    use ethers::providers::{Http, Provider};
+    use std::sync::OnceLock;
+
+    fn get_provider<'a>() -> &'a Arc<Provider<Http>> {
+        static PROVIDER: OnceLock<Arc<Provider<Http>>> = OnceLock::new();
+        PROVIDER.get_or_init(|| {
+            Arc::new(
+                Provider::<Http>::try_from("https://polygon-mainnet.infura.io/v3/c230ccbf294b44bcac907f4a719d06c4")
+                    .unwrap(),
+            )
+        })
+    }
+
+    /// Polygon network, SushiSwapV2
+    fn get_amm_manager<'a>(provider: &Arc<Provider<Http>>) -> &'a AmmManager {
+        static AMM_MANAGER: OnceLock<AmmManager> = OnceLock::new();
+        AMM_MANAGER.get_or_init(|| {
+            let mut uniswap_v2 = Arc::new(AmmProtocolKind::UniswapV2(
+                UniswapV2Protocol::new(
+                    "SushiSwapV2",
+                    "0xc35DADB65012eC5796536bD9864eD8773aBc74C4",
+                    "0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506",
+                )
+                    .unwrap(),
+            ));
+
+            let token0_address: &str = "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270";
+            let token0 = CryptoToken::new(
+                token0_address,
+                None,
+                "Wrapped Matic",
+                "WMATIC",
+                18,
+                3,
+                block_on(provider.get_code(Address::from_str(token0_address).unwrap(), None))
+                    .unwrap()
+                    .0,
+            )
+                .unwrap();
+
+            let token1_address: &str = "0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619";
+            let token1 = CryptoToken::new(
+                token1_address,
+                None,
+                "Wrapped Ether",
+                "WETH",
+                18,
+                0,
+                block_on(provider.get_code(Address::from_str(token1_address).unwrap(), None))
+                    .unwrap()
+                    .0,
+            )
+                .unwrap();
+            let pool = AmmPoolKind::UniswapV2(
+                UniswapV2Pool::new(
+                    Address::from_str("0xc4e595acDD7d12feC385E5dA5D43160e8A0bAC0E").unwrap(),
+                    Arc::clone(&uniswap_v2),
+                    Arc::new(token0),
+                    Arc::new(token1),
+                )
+                    .unwrap(),
+            );
+
+            unsafe {
+                let _uniswap_v2 = Arc::into_raw(uniswap_v2) as *mut AmmProtocolKind;
+                (*_uniswap_v2).add_pool(pool);
+                uniswap_v2 = Arc::from_raw(_uniswap_v2);
+            }
+
+            let amms: Vec<Arc<AmmProtocolKind>> = vec![uniswap_v2];
+            AmmManager::new(amms)
+        })
+    }
+
+    fn get_simulator(provider: &Arc<Provider<Http>>, amm_manager: &AmmManager) -> RevmSimulator<Provider<Http>> {
+        RevmSimulator::new(Arc::clone(provider), amm_manager).unwrap()
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_get_amounts_out_uniswap_v2() {
+        let provider: &Arc<Provider<Http>> = get_provider();
+        let amm_manager: &AmmManager = get_amm_manager(provider);
+        let pool: &Arc<AmmPoolKind> = amm_manager.amms().first().unwrap().pools().first().unwrap();
+        let simulator: RevmSimulator<Provider<Http>> = get_simulator(provider, amm_manager);
+
+        let result: U256 = simulator
+            .get_amounts_out(pool, pool.token0(), pool.token0().convert_to_amount(1.0_f64))
+            .unwrap();
+        assert_ne!(result, U256::zero());
+        assert!(result > U256::zero());
+
+        println!(
+            "{} -> {} = {}",
+            pool.token0().symbol(),
+            pool.token1().symbol(),
+            pool.token1().convert_to_decimal(result)
+        );
     }
 }

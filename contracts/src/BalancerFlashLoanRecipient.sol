@@ -22,7 +22,7 @@ error InsufficientFundsToRepayLoanError(
 );
 
 // TODO: Split into multiple contracts, dont do every thing in one contract, as this contract are only a "Balancer" FlashLoanRecipient
-//       Use another contract to handle more that one provider, with passing callback to the main contract, Don't forget to change the token recipient
+//       Use another contract to handle more that one PROVIDER, with passing callback to the main contract, Don't forget to change the token recipient
 //       to main contract not to that contract
 
 

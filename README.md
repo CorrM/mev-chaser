@@ -8,4 +8,6 @@
 
 # Notes
 
-[async-what-is-blocking](https://ryhl.io/blog/async-what-is-blocking/#the-rayon-crate)
+- [async-what-is-blocking](https://ryhl.io/blog/async-what-is-blocking/#the-rayon-crate)
+- To get contract storage you can use foundry cast tool
+  - `cast storage 0xc4e595acDD7d12feC385E5dA5D43160e8A0bAC0E -r https://polygon-mainnet.infura.io/v3/c230ccbf294b44bcac907f4a719d06c4 -e GX8ARGFMAK1RJTEY2WN79ID3A3PTD4DR6B > /home/corrm/Desktop/cast.txt`

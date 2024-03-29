@@ -83,23 +83,6 @@ where
 }
 
 impl<M: Middleware + 'static> PoolManager<M> {
-    #[inline]
-    pub fn get_optimal_input_and_output(&self, pool: &AmmPoolKind) -> (U256, U256) {
-        println!(
-            "{} -> {} => {}",
-            pool.token0().symbol(),
-            pool.token1().symbol(),
-            pool.token1().convert_to_decimal(
-                self.simulator
-                    .read()
-                    .unwrap()
-                    .get_amounts_out(pool, pool.token0().convert_to_amount(1_f64))
-                    .unwrap()
-            )
-        );
-        (U256::from(0), U256::from(0))
-    }
-
     pub fn add_path(&mut self, path: PoolPath) {
         for path_item in path.path() {
             self.pools
@@ -127,6 +110,23 @@ impl<M: Middleware + 'static> PoolManager<M> {
             .map(|pool| Arc::clone(&pool.read().unwrap().paths))
     }
 
+    #[inline]
+    pub fn get_optimal_input_and_output(&self, pool: &AmmPoolKind) -> (U256, U256) {
+        println!(
+            "{} -> {} => {}",
+            pool.token0().symbol(),
+            pool.token1().symbol(),
+            pool.token1().convert_to_decimal(
+                self.simulator
+                    .read()
+                    .unwrap()
+                    .get_amounts_out(pool, pool.token0(), pool.token0().convert_to_amount(1_f64))
+                    .unwrap()
+            )
+        );
+        (U256::from(0), U256::from(0))
+    }
+    
     pub fn on_new_block(&mut self, _new_block: &NewBlock, logs: &[Log]) {
         /*
         - Get touched pools then updates its tuple (optimal input, output)
@@ -173,7 +173,7 @@ impl<M: Middleware + 'static> PoolManager<M> {
         }
 
         // Generate most profitable paths for touched pools
-        touched_pools.into_par_iter().for_each(|pool_container| {
+        touched_pools.into_par_iter().for_each(|pool_container: Arc<RwLock<PoolContainer>>| {
             // Keep in mind that's block the lock, so you can't get write lock here only read lock or change your mind
             let pool_container: &PoolContainer = &pool_container.read().unwrap();
 
