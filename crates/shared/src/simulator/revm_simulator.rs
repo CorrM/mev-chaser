@@ -249,7 +249,7 @@ where
                 .iter()
                 .map(|address_to_spoof| {
                     U256::from_be_bytes(keccak256(abi::encode(&[
-                        abi::Token::Address(ethers::types::Address::from(address_to_spoof.0.0)),
+                        abi::Token::Address(ethers::types::Address::from(address_to_spoof.0 .0)),
                         abi::Token::Uint(ethers::types::U256::from(token.balance_contract_slot())),
                     ])))
                 })
@@ -312,7 +312,7 @@ where
                     token_a: pool.token0().address().0.into(),
                     token_b: pool.token1().address().0.into(),
                 })
-                    .into();
+                .into();
 
                 let tx_result: Result<(ExecutionResult, Option<State>)> = Self::send_tx(
                     self.revm_ctx.clone(),
@@ -544,7 +544,7 @@ where
         let calldata: Bytes = AbiEncode::encode(BalanceOfCall {
             who: self.account.0 .0.into(),
         })
-            .into();
+        .into();
 
         let tx_result: Result<(ExecutionResult, Option<State>)> = Self::send_tx(
             self.revm_ctx.clone(),
@@ -596,7 +596,7 @@ where
                 })
             }
         }
-            .into();
+        .into();
 
         let tx_result: Result<(ExecutionResult, Option<State>)> = Self::send_tx(
             self.revm_ctx.clone(),
@@ -655,7 +655,7 @@ mod tests {
                     "0xc35DADB65012eC5796536bD9864eD8773aBc74C4",
                     "0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506",
                 )
-                    .unwrap(),
+                .unwrap(),
             ));
 
             let token0_address: &str = "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270";
@@ -670,7 +670,7 @@ mod tests {
                     .unwrap()
                     .0,
             )
-                .unwrap();
+            .unwrap();
 
             let token1_address: &str = "0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619";
             let token1 = CryptoToken::new(
@@ -684,7 +684,7 @@ mod tests {
                     .unwrap()
                     .0,
             )
-                .unwrap();
+            .unwrap();
             let pool = AmmPoolKind::UniswapV2(
                 UniswapV2Pool::new(
                     eAddress::from_str("0xc4e595acDD7d12feC385E5dA5D43160e8A0bAC0E").unwrap(),
@@ -692,7 +692,7 @@ mod tests {
                     Arc::new(token0),
                     Arc::new(token1),
                 )
-                    .unwrap(),
+                .unwrap(),
             );
 
             unsafe {
