@@ -208,7 +208,7 @@ impl RunCommand {
         info!("  - AmmManager .. ✅");
 
         info!("  - PoolManager .. ⏳");
-        let simulator = Arc::new(RwLock::new(EvmSimulator::new_revm(Arc::clone(provider), &amm_manager)?));
+        let simulator = Arc::new(RwLock::new(EvmSimulator::new(Arc::clone(provider), &amm_manager)?));
         let pool_manager = PoolManager::new(Arc::clone(provider), Arc::clone(&simulator), &amm_manager);
         info!("  - PoolManager .. ✅");
 
