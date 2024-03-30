@@ -1,5 +1,5 @@
 use std::str::FromStr;
-use std::sync::{Arc, RwLock, RwLockWriteGuard};
+use std::sync::{Arc, RwLock};
 
 use anyhow::{anyhow, Result};
 use ethers::abi::{AbiDecode, AbiEncode, AbiError};
@@ -14,7 +14,7 @@ use hashbrown::HashMap;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use revm::primitives::alloy_primitives;
 use revm::{
-    db::{EmptyDB, EthersDB, InMemoryDB},
+    db::{EmptyDB, EthersDB},
     primitives::HaltReason,
     primitives::{
         AccountInfo, Bytecode, CfgEnv, ExecutionResult, Output, ResultAndState, TransactTo, TxEnv, KECCAK_EMPTY,
@@ -33,6 +33,7 @@ use vidger::utilities::block_on;
 
 use crate::amm::{AmmPoolKind, AmmProtocolKind};
 use crate::managers::AmmManager;
+use crate::simulator::ThreadSafeInMemoryDB;
 use crate::types::CryptoToken;
 
 #[derive(Debug, Clone)]
@@ -66,11 +67,15 @@ pub struct RevmSimulator<M> {
     simulator_address: alloy_primitives::Address,
     account: alloy_primitives::Address,
     accounts_slots_to_update: HashMap<alloy_primitives::Address, Vec<alloy_primitives::U256>>,
-    ctx_with_handler: ContextWithHandlerCfg<(), InMemoryDB>,
+    ctx_with_handler: ContextWithHandlerCfg<(), ThreadSafeInMemoryDB>,
 }
 
 impl<M: Middleware + 'static> RevmSimulator<M> {
-    fn deploy_amm(db: &Arc<RwLock<InMemoryDB>>, ethers_db: &Arc<RwLock<EthersDB<M>>>, amm: &Arc<AmmProtocolKind>) {
+    fn deploy_amm(
+        mut revm_ctx: ContextWithHandlerCfg<(), ThreadSafeInMemoryDB>,
+        ethers_db: &Arc<RwLock<EthersDB<M>>>,
+        amm: &Arc<AmmProtocolKind>,
+    ) {
         let mut account_info_list: Vec<(alloy_primitives::Address, AccountInfo)> = vec![];
 
         // TODO: For uniswap_v3 you need quoter and router
@@ -93,14 +98,14 @@ impl<M: Middleware + 'static> RevmSimulator<M> {
         };
 
         // Commit
-        let mut write_guard: RwLockWriteGuard<InMemoryDB> = db.write().unwrap();
+        let db: &mut ThreadSafeInMemoryDB = &mut revm_ctx.context.evm.db;
         for (acc, info) in account_info_list {
-            write_guard.insert_account_info(acc, info);
+            db.insert_account_info(acc, info);
         }
     }
 
     fn deploy_token_and_spoof_balance(
-        db: &Arc<RwLock<InMemoryDB>>,
+        mut revm_ctx: ContextWithHandlerCfg<(), ThreadSafeInMemoryDB>,
         token: &CryptoToken,
         accounts_list_to_spoof: &[alloy_primitives::Address],
     ) {
@@ -134,12 +139,12 @@ impl<M: Middleware + 'static> RevmSimulator<M> {
         };
 
         // Commit
-        let mut write_guard: RwLockWriteGuard<InMemoryDB> = db.write().unwrap();
-        write_guard.insert_account_info(token_address, token_acc_info);
+        let db: &mut ThreadSafeInMemoryDB = &mut revm_ctx.context.evm.db;
+        db.insert_account_info(token_address, token_acc_info);
 
         if let Some(input_balance_slots) = input_balance_slots {
             for input_balance_slot_index in input_balance_slots {
-                write_guard
+                db
                     .insert_account_storage(token_address, input_balance_slot_index, hundred_grand_eth)
                     .expect("failed to insert token balance in DB");
             }
@@ -147,7 +152,7 @@ impl<M: Middleware + 'static> RevmSimulator<M> {
     }
 
     fn deploy_pool(
-        db: &Arc<RwLock<InMemoryDB>>,
+        mut revm_ctx: ContextWithHandlerCfg<(), ThreadSafeInMemoryDB>,
         ethers_db: &Arc<RwLock<EthersDB<M>>>,
         pool: &AmmPoolKind,
         accounts_list_to_spoof: &[alloy_primitives::Address],
@@ -163,8 +168,8 @@ impl<M: Middleware + 'static> RevmSimulator<M> {
         accounts_list_to_spoof.push(pool.address().0.into());
 
         // Deploy tokens
-        Self::deploy_token_and_spoof_balance(db, pool.token0(), &accounts_list_to_spoof);
-        Self::deploy_token_and_spoof_balance(db, pool.token1(), &accounts_list_to_spoof);
+        Self::deploy_token_and_spoof_balance(revm_ctx.clone(), pool.token0(), &accounts_list_to_spoof);
+        Self::deploy_token_and_spoof_balance(revm_ctx.clone(), pool.token1(), &accounts_list_to_spoof);
 
         // Deploy pool
         let pool_address: alloy_primitives::Address = pool.address().0.into();
@@ -198,13 +203,29 @@ impl<M: Middleware + 'static> RevmSimulator<M> {
         };
 
         // Commit
-        let mut write_guard: RwLockWriteGuard<InMemoryDB> = db.write().unwrap();
-        write_guard.insert_account_info(pool_address, pool_acc_info);
+        let db: &mut ThreadSafeInMemoryDB = &mut revm_ctx.context.evm.db;
+        db.insert_account_info(pool_address, pool_acc_info);
 
         for (slot, value) in slots {
-            write_guard
+            db
                 .insert_account_storage(pool_address, slot, value)
                 .expect("failed to insert pool reserves in DB");
+        }
+    }
+
+    fn deploy_full_amm(
+        revm_ctx: ContextWithHandlerCfg<(), ThreadSafeInMemoryDB>,
+        ethers_db: &Arc<RwLock<EthersDB<M>>>,
+        amm: &Arc<AmmProtocolKind>,
+        accounts_list_to_spoof: &[alloy_primitives::Address],
+        accounts_slots_to_update: &mut HashMap<alloy_primitives::Address, Vec<alloy_primitives::U256>>,
+    ) {
+        Self::deploy_amm(revm_ctx.clone(), ethers_db, amm);
+
+        // Deploy pools
+        // TODO: Parallelize
+        for pool in amm.pools() {
+            Self::deploy_pool(revm_ctx.clone(), ethers_db, pool, accounts_list_to_spoof, accounts_slots_to_update);
         }
     }
 
@@ -264,7 +285,7 @@ impl<M: Middleware + 'static> RevmSimulator<M> {
             HashMap::new();
 
         // Prepare in-memory DB
-        let mut db = InMemoryDB::new(EmptyDB::default());
+        let mut db = ThreadSafeInMemoryDB::new(EmptyDB::new());
         let ethers_db: Arc<RwLock<EthersDB<M>>> = Arc::new(RwLock::new(
             EthersDB::new(provider.clone(), Some(BlockId::Number(BlockNumber::Latest))).unwrap(),
         ));
@@ -280,24 +301,9 @@ impl<M: Middleware + 'static> RevmSimulator<M> {
         let simulator_acc_info = AccountInfo::new(hundred_grand_eth, 0, simulator_bytes.hash_slow(), simulator_bytes);
         db.insert_account_info(simulator_address, simulator_acc_info);
 
-        // Deploy amm contracts
-        let db: Arc<RwLock<InMemoryDB>> = Arc::new(RwLock::new(db));
-        for amm in amm_manager.amms() {
-            Self::deploy_amm(&db, &ethers_db, amm);
-        }
-
-        // Deploy pools
-        // TODO: Parallelize
-        let mut address_to_spoof: Vec<alloy_primitives::Address> = vec![simulator_address, account];
-        for amm in amm_manager.amms() {
-            for pool in amm.pools() {
-                Self::deploy_pool(&db, &ethers_db, pool, &mut address_to_spoof, &mut accounts_slots_to_update);
-            }
-        }
-
         // Create EVM
-        let db: InMemoryDB = Arc::try_unwrap(db).unwrap().into_inner().unwrap();
-        let mut evm: Evm<'static, (), InMemoryDB> = Evm::builder().with_db(db).build();
+        //let db: ThreadSafeInMemoryDB = Arc::try_unwrap(db).unwrap().into_inner().unwrap();
+        let mut evm: Evm<'static, (), ThreadSafeInMemoryDB> = Evm::builder().with_db(db).build();
 
         // overriding some default env values to make it more efficient for testing
         let evm_cfg: &mut CfgEnv = evm.cfg_mut();
@@ -306,7 +312,20 @@ impl<M: Middleware + 'static> RevmSimulator<M> {
         evm_cfg.disable_base_fee = true;
 
         // Create context
-        let ctx_with_handler: ContextWithHandlerCfg<(), InMemoryDB> = evm.into_context_with_handler_cfg();
+        let ctx_with_handler: ContextWithHandlerCfg<(), ThreadSafeInMemoryDB> = evm.into_context_with_handler_cfg();
+
+        // Deploy amm
+        let address_to_spoof: Vec<alloy_primitives::Address> = vec![simulator_address, account];
+        //let db: Arc<RwLock<ThreadSafeInMemoryDB>> = Arc::new(RwLock::new(db));
+        for amm in amm_manager.amms() {
+            Self::deploy_full_amm(
+                ctx_with_handler.clone(),
+                &ethers_db,
+                amm,
+                &address_to_spoof,
+                &mut accounts_slots_to_update,
+            );
+        }
 
         Ok(Self {
             provider,
@@ -330,14 +349,17 @@ where
     M: Middleware + 'static,
 {
     #[inline]
-    fn get_evm(&self) -> Evm<(), InMemoryDB> {
+    fn get_evm(&self) -> Evm<(), ThreadSafeInMemoryDB> {
         Evm::builder()
             .with_context_with_handler_cfg(self.ctx_with_handler.clone())
             .build()
     }
 
     #[inline]
-    fn clone_evm(&self, context_with_handler_cfg: ContextWithHandlerCfg<(), InMemoryDB>) -> Evm<(), InMemoryDB> {
+    fn clone_evm(
+        &self,
+        context_with_handler_cfg: ContextWithHandlerCfg<(), ThreadSafeInMemoryDB>,
+    ) -> Evm<(), ThreadSafeInMemoryDB> {
         Evm::builder()
             .with_context_with_handler_cfg(context_with_handler_cfg)
             .build()
@@ -403,7 +425,7 @@ where
         }
 
         // Update EVM db
-        let db: &mut InMemoryDB = &mut self.ctx_with_handler.context.evm.db;
+        let db: &mut ThreadSafeInMemoryDB = &mut self.ctx_with_handler.context.evm.db;
         for (address, (slot, value)) in slots_values {
             db.insert_account_storage(address, slot, value)
                 .expect("failed to slot storage value");
@@ -413,7 +435,7 @@ where
     }
 
     pub fn get_tokens_balance_slot(&self, tokens: &[Address]) -> Result<HashMap<Address, Result<Option<i32>>>> {
-        let mut evm: Evm<(), InMemoryDB> = self.get_evm();
+        let mut evm: Evm<(), ThreadSafeInMemoryDB> = self.get_evm();
 
         // Get token account info from ethers middleware and insert it into EVM
         let cur_block: Block<H256> =
@@ -441,11 +463,11 @@ where
         })
         .into();
 
-        let handler_cfg: &ContextWithHandlerCfg<(), InMemoryDB> = &evm.into_context_with_handler_cfg();
+        let handler_cfg: &ContextWithHandlerCfg<(), ThreadSafeInMemoryDB> = &evm.into_context_with_handler_cfg();
         let ret: HashMap<Address, Result<Option<i32>>> = tokens
             .par_iter()
             .map(|token: &Address| {
-                let mut evm: Evm<(), InMemoryDB> = self.clone_evm(handler_cfg.clone());
+                let mut evm: Evm<(), ThreadSafeInMemoryDB> = self.clone_evm(handler_cfg.clone());
 
                 let _token: alloy_primitives::Address = token.0.into();
 
@@ -496,7 +518,7 @@ where
             who: self.account.0 .0.into(),
         });
 
-        let mut evm: Evm<(), InMemoryDB> = self.get_evm();
+        let mut evm: Evm<(), ThreadSafeInMemoryDB> = self.get_evm();
         let tx: &mut TxEnv = evm.tx_mut();
         tx.caller = self.account.0.into();
         tx.transact_to = TransactTo::Call(token.0.into());
@@ -545,7 +567,7 @@ where
             }
         };
 
-        let mut evm: Evm<(), InMemoryDB> = self.get_evm();
+        let mut evm: Evm<(), ThreadSafeInMemoryDB> = self.get_evm();
         let tx: &mut TxEnv = evm.tx_mut();
         tx.caller = self.account.0.into();
         tx.transact_to = TransactTo::Call(self.simulator_address);
@@ -591,7 +613,7 @@ mod tests {
     }
 
     /// Polygon network, SushiSwapV2
-    fn get_amm_manager<'a>(provider: &Arc<Provider<Http>>) -> &'a AmmManager {
+    fn get_amm_manager(provider: &Arc<Provider<Http>>) -> &'static AmmManager {
         static AMM_MANAGER: OnceLock<AmmManager> = OnceLock::new();
         AMM_MANAGER.get_or_init(|| {
             let mut uniswap_v2 = Arc::new(AmmProtocolKind::UniswapV2(

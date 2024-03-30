@@ -689,7 +689,6 @@ pub mod simulator_abi {
             Self::SafeERC20FailedOperation(value)
         }
     }
-
     ///Container type for all input parameters for the `simulateGetAmountsOutUniswapV2` function with signature `simulateGetAmountsOutUniswapV2(address,address[],uint256)` and selector `0x9531d189`
     #[derive(
     Clone,
@@ -710,7 +709,6 @@ pub mod simulator_abi {
         pub path: ::std::vec::Vec<::ethers::core::types::Address>,
         pub amount_in: ::ethers::core::types::U256,
     }
-
     ///Container type for all input parameters for the `simulateGetAmountsOutUniswapV3` function with signature `simulateGetAmountsOutUniswapV3(address,address,bytes,uint256)` and selector `0x2657015a`
     #[derive(
     Clone,
@@ -809,14 +807,12 @@ pub mod simulator_abi {
             }
         }
     }
-
     impl ::core::convert::From<SimulateGetAmountsOutUniswapV2Call>
     for SimulatorAbiCalls {
         fn from(value: SimulateGetAmountsOutUniswapV2Call) -> Self {
             Self::SimulateGetAmountsOutUniswapV2(value)
         }
     }
-
     impl ::core::convert::From<SimulateGetAmountsOutUniswapV3Call>
     for SimulatorAbiCalls {
         fn from(value: SimulateGetAmountsOutUniswapV3Call) -> Self {
@@ -828,7 +824,6 @@ pub mod simulator_abi {
             Self::SimulateMultiSwap(value)
         }
     }
-
     ///Container type for all return fields from the `simulateGetAmountsOutUniswapV2` function with signature `simulateGetAmountsOutUniswapV2(address,address[],uint256)` and selector `0x9531d189`
     #[derive(
     Clone,
@@ -841,7 +836,6 @@ pub mod simulator_abi {
     Hash
     )]
     pub struct SimulateGetAmountsOutUniswapV2Return(pub ::ethers::core::types::U256);
-
     ///Container type for all return fields from the `simulateGetAmountsOutUniswapV3` function with signature `simulateGetAmountsOutUniswapV3(address,address,bytes,uint256)` and selector `0x2657015a`
     #[derive(
     Clone,
