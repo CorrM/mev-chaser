@@ -36,7 +36,7 @@ impl UpdateTokenCommand {
         provider: &Arc<M>,
     ) -> Result<()> {
         let amm_manager = AmmManager::new(Vec::new());
-        let simulator = EvmSimulator::new_revm(Arc::clone(provider), &amm_manager)?;
+        let mut simulator = EvmSimulator::new_revm(Arc::clone(provider), &amm_manager)?;
         let mut multicall: Multicall<M> = block_on(Multicall::new(Arc::clone(provider), None)).unwrap();
 
         for token in tokens {

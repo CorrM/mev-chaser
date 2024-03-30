@@ -54,9 +54,9 @@ where
     M: Middleware + 'static,
 {
     #[inline]
-    pub fn get_tokens_balance_slot(&self, tokens: &[Address]) -> Result<HashMap<Address, Result<Option<i32>>>> {
+    pub fn get_tokens_balance_slot(&mut self, tokens: &[Address]) -> Result<HashMap<Address, Result<Option<i32>>>> {
         match self {
-            Self::Revm(ref revm) => revm.get_tokens_balance_slot(tokens),
+            Self::Revm(ref mut revm) => revm.get_tokens_balance_slot(tokens),
         }
     }
 
