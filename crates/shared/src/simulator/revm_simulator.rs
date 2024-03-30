@@ -145,7 +145,7 @@ impl<M: Middleware + 'static> RevmSimulator<M> {
         tx.data = calldata;
 
         if commit {
-            let result = evm.transact_commit()?;
+            let result: ExecutionResult = evm.transact_commit()?;
             Ok((result, None))
         } else {
             let r: ResultAndState = evm.transact().unwrap();
