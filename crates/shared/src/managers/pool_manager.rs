@@ -112,6 +112,7 @@ impl<M: Middleware + 'static> PoolManager<M> {
 
     #[inline]
     pub fn get_optimal_input_and_output(&self, pool: &AmmPoolKind) -> (U256, U256) {
+        println!("pool: {}", to_checksum(pool.address(), None));
         println!(
             "{} -> {} => {}",
             pool.token0().symbol(),
@@ -124,9 +125,10 @@ impl<M: Middleware + 'static> PoolManager<M> {
                     .unwrap()
             )
         );
+        println!("==============================");
         (U256::from(0), U256::from(0))
     }
-    
+
     pub fn on_new_block(&mut self, _new_block: &NewBlock, logs: &[Log]) {
         /*
         - Get touched pools then updates its tuple (optimal input, output)
@@ -173,20 +175,25 @@ impl<M: Middleware + 'static> PoolManager<M> {
         }
 
         // Generate most profitable paths for touched pools
-        touched_pools.into_par_iter().for_each(|pool_container: Arc<RwLock<PoolContainer>>| {
-            // Keep in mind that's block the lock, so you can't get write lock here only read lock or change your mind
-            let pool_container: &PoolContainer = &pool_container.read().unwrap();
+        touched_pools
+            .into_par_iter()
+            .for_each(|pool_container: Arc<RwLock<PoolContainer>>| {
+                // Keep in mind that's block the lock, so you can't get write lock here only read lock or change your mind
+                let pool_container: &PoolContainer = &pool_container.read().unwrap();
 
-            //let top_profitable_paths: Vec<Arc<RwLock<PoolPath>>> = pool_container
-            //    .paths
-            //    .read()
-            //    .unwrap()
-            //    .par_iter()
-            //    .map(|path| path)
-            //    .collect();
-            //*pool_container.top_profitable_paths.write().unwrap() = top_profitable_paths;
+                //let top_profitable_paths: Vec<Arc<RwLock<PoolPath>>> = pool_container
+                //    .paths
+                //    .read()
+                //    .unwrap()
+                //    .par_iter()
+                //    .map(|path| path)
+                //    .collect();
+                //*pool_container.top_profitable_paths.write().unwrap() = top_profitable_paths;
 
-            info!("Generate most profitable paths for pool '{}'", to_checksum(pool_container.pool.address(), None));
-        });
+                info!(
+                    "Generate most profitable paths for pool '{}'",
+                    to_checksum(pool_container.pool.address(), None)
+                );
+            });
     }
 }

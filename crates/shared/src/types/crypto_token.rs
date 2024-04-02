@@ -21,7 +21,7 @@ pub struct CryptoToken {
 impl CryptoToken {
     pub fn new(
         address: impl Into<String>,
-        proxy_address: Option<String>,
+        proxy_address: Option<impl Into<String>>,
         name: impl Into<String>,
         symbol: impl Into<String>,
         decimals: u8,
@@ -32,7 +32,7 @@ impl CryptoToken {
 
         Ok(Self {
             address: Address::from_str(&address.into())?,
-            proxy_address: proxy_address.map(|a| Address::from_str(&a).unwrap()),
+            proxy_address: proxy_address.map(|a| Address::from_str(&a.into()).unwrap()),
             name: name.into(),
             symbol: symbol.into(),
             decimals,
