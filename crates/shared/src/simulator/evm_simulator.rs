@@ -230,6 +230,16 @@ where
         token: &CryptoToken,
         accounts_list_to_spoof: &[Address],
     ) {
+        /*
+        NOTES:
+            - Storage are in the token contract(proxy) and the code in the implementation contract
+            - Keep in mind the proxy contract have a slot for the implementation address
+              that's hard to get and set for every kind of proxy
+              so will just grab the implementation AccountInfo(code, code_hash, etc)
+              then assign it to the original token contract to get raid of the proxy concept/contract
+              now the token contract will be the implementation.
+              (BIG BRAIN xD)
+        */
         let token_address: Address = token.address().0.into();
 
         // Skip if already deployed
@@ -239,16 +249,17 @@ where
         }
 
         // Deploy proxy
-        if let Some(proxy_address) = token.proxy_address() {
-            self.deploy_contracts(ethers_db, &[proxy_address.0.into()]);
-        }
-
-        // Deploy token
-        let hundred_grand_eth: U256 = U256::from(100_000)
-            .checked_mul(U256::from(10).pow(U256::from(18)))
-            .unwrap();
-        let code = Bytecode::new_raw(Bytes::from(token.code().clone()));
-        let token_acc_info = AccountInfo::new(hundred_grand_eth, 0, code.hash_slow(), code);
+        let token_acc_info: AccountInfo = if let Some(proxy_address) = token.proxy_address() {
+            ethers_db
+                .read()
+                .unwrap()
+                .basic_ref(proxy_address.0.into())
+                .unwrap()
+                .unwrap()
+        } else {
+            let code = Bytecode::new_raw(Bytes::from(token.code().clone()));
+            AccountInfo::new(U256::from(0), 0, code.hash_slow(), code)
+        };
 
         // Spoof balance
         // https://ethereum.stackexchange.com/questions/147205/how-to-view-the-amount-of-storage-a-contract-uses
@@ -258,10 +269,10 @@ where
             // Inject account with token balance
             let slots_to_spoof: Vec<U256> = accounts_list_to_spoof
                 .iter()
-                .map(|address_to_spoof| {
+                .map(|address_to_spoof: &Address| {
                     U256::from_be_bytes(keccak256(abi::encode(&[
-                        abi::Token::Address(ethers::types::Address::from(address_to_spoof.0 .0)),
-                        abi::Token::Uint(ethers::types::U256::from(token.balance_contract_slot())),
+                        abi::Token::Address(eAddress::from(address_to_spoof.0 .0)),
+                        abi::Token::Uint(eU256::from(token.balance_contract_slot())),
                     ])))
                 })
                 .collect();
@@ -271,6 +282,9 @@ where
         };
 
         // Commit
+        let hundred_grand_eth: U256 = U256::from(100_000)
+            .checked_mul(U256::from(10).pow(U256::from(18)))
+            .unwrap();
         let db: &mut ThreadSafeInMemoryDB = &mut self.revm_ctx.context.evm.db;
         db.insert_account_info(token_address, token_acc_info);
 
@@ -668,6 +682,7 @@ mod tests {
     const SUSHI_ROUTER: &str = "0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506";
     const SUSHI_WMATIC_WETH_POOL: &str = "0xc4e595acDD7d12feC385E5dA5D43160e8A0bAC0E";
     const SUSHI_WMATIC_USDC_POOL: &str = "0x96c7FC08D8CDACdB95a8613b19fffe4D54307263";
+    const SUSHI_WMATIC_USDT_POOL: &str = "0x55FF76BFFC3Cdd9D5FdbBC2ece4528ECcE45047e";
     const GRAVITY_FINANCE_FACTORY: &str = "0x3ed75AfF4094d2Aaa38FaFCa64EF1C152ec1Cf20";
     const GRAVITY_FINANCE_ROUTER: &str = "0x57dE98135e8287F163c59cA4fF45f1341b680248";
     const GRAVITY_FINANCE_WMATIC_WETH_POOL: &str = "0x0Dfbf1A50bdcB570Bd0fF7Bb307313B553a02598";
@@ -747,7 +762,7 @@ mod tests {
         })
     }
 
-    fn usdc(provider: &Arc<Provider<Http>>) -> &'static CryptoToken {
+    fn usdc_token(provider: &Arc<Provider<Http>>) -> &'static CryptoToken {
         static TOKEN: OnceLock<CryptoToken> = OnceLock::new();
         TOKEN.get_or_init(|| {
             make_token(
@@ -762,7 +777,7 @@ mod tests {
         })
     }
 
-    fn usdt(provider: &Arc<Provider<Http>>) -> &'static CryptoToken {
+    fn usdt_token(provider: &Arc<Provider<Http>>) -> &'static CryptoToken {
         static TOKEN: OnceLock<CryptoToken> = OnceLock::new();
         TOKEN.get_or_init(|| {
             make_token(
@@ -848,7 +863,7 @@ mod tests {
             let result_and_state: (ExecutionResult, Option<State>) = EvmSimulator::<Provider<Http>>::send_tx(
                 simulator.revm_ctx.clone(),
                 simulator.account,
-                token.proxy_or_address().0.into(),
+                token.address().0.into(),
                 calldata.clone(),
                 false,
             )
@@ -860,6 +875,8 @@ mod tests {
 
             let balance = BalanceOfReturn::decode(data).unwrap();
             assert_ne!(balance.0, eU256::zero(), "{} balance: {:?}", token.symbol(), balance.0);
+
+            println!("{} balance: {:?}", token.symbol(), balance.0);
         }
     }
 
@@ -875,7 +892,7 @@ mod tests {
     async fn test_balance_of_proxy_tokens() {
         let provider: Arc<Provider<Http>> = get_provider();
 
-        let tokens = [usdc(&provider), usdt(&provider)];
+        let tokens = [usdc_token(&provider), usdt_token(&provider)];
         balance_of_tokens(&provider, &tokens);
     }
 
@@ -902,13 +919,13 @@ mod tests {
         let provider: Arc<Provider<Http>> = get_provider();
 
         let token0: &CryptoToken = wmatic_token(&provider);
-        let token1: &CryptoToken = usdc(&provider);
+        let token1: &CryptoToken = usdt_token(&provider);
 
         let amm_manager: AmmManager = get_uniswap_v2_amm_manager(
             SUSHI_NAME,
             SUSHI_FACTORY,
             SUSHI_ROUTER,
-            SUSHI_WMATIC_USDC_POOL,
+            SUSHI_WMATIC_USDT_POOL,
             token0,
             token1,
         );

@@ -5,6 +5,7 @@
 
 - [EVM node returns "Missing trie node"](https://support.chainstack.com/hc/en-us/articles/4440543903257-EVM-node-returns-Missing-trie-node)
 - When EVM revert with empty data("0x") mostly its abi.encode or abi.decode problem
+  - In REVM case it could mean that the contract or the function needs slot value (like fields initialized by ctor)
 
 # Notes
 
