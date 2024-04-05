@@ -249,6 +249,7 @@ where
         }
 
         // Deploy proxy
+        // TODO: Maybe add proxy_code to database
         let token_acc_info: AccountInfo = if let Some(proxy_address) = token.proxy_address() {
             ethers_db
                 .read()
@@ -325,8 +326,6 @@ where
             panic!("Pool already deployed: {}", pool_address);
         }
 
-        let pool_acc_info: AccountInfo = ethers_db.read().unwrap().basic_ref(pool_address).unwrap().unwrap();
-
         // Prepare pool
         let mut slots: HashMap<U256, U256> = HashMap::new();
         match pool {
@@ -393,6 +392,9 @@ where
             }
         };
 
+        // Get account info using ethers_db
+        let pool_acc_info: AccountInfo = ethers_db.read().unwrap().basic_ref(pool_address).unwrap().unwrap();
+
         // Commit
         let db: &mut ThreadSafeInMemoryDB = &mut self.revm_ctx.context.evm.db;
         db.insert_account_info(pool_address, pool_acc_info);
@@ -418,7 +420,7 @@ where
     }
 
     fn deploy_amm(&mut self, ethers_db: &Arc<RwLock<EthersDB<M>>>, amm: &Arc<AmmProtocolKind>) {
-        // TODO: For uniswap_v3 you need quoter and router
+        // TODO: For uniswap_v3 needs quoter and router contracts
         match &**amm {
             AmmProtocolKind::UniswapV2(uniswap2) => {
                 let router_address: Address = uniswap2.router().0.into();
@@ -582,7 +584,7 @@ where
         Ok(ret)
     }
 
-    pub fn get_token_balance(&self, token: Address) -> Result<eU256> {
+    pub fn get_token_balance(&self, token: &Address) -> Result<eU256> {
         let calldata: Bytes = AbiEncode::encode(BalanceOfCall {
             who: self.account.0 .0.into(),
         })
@@ -619,12 +621,6 @@ where
         // TODO: For uniswap_v3 `contract_address` are the quarter
         let calldata: Bytes = match pool {
             AmmPoolKind::UniswapV2(_) => {
-                //let path: ethers::types::Bytes = abi::encode(&[abi::Token::Array(vec![
-                //    abi::Token::Address(*pool.token0().address()),
-                //    abi::Token::Address(*pool.token1().address()),
-                //])])
-                //.into();
-
                 let path: Vec<eAddress> = if pool.token0().address() == input.address() {
                     vec![*pool.token0().address(), *pool.token1().address()]
                 } else {
@@ -671,10 +667,14 @@ where
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::amm::{UniswapV2Pool, UniswapV2Protocol};
+    use crate::database::Database;
+    use contracts::erc20_token::TransferCall;
     use ethers::providers::{Http, Provider};
+    use rayon::iter::IntoParallelIterator;
+    use std::path::Path;
     use std::sync::OnceLock;
 
     const SUSHI_NAME: &str = "SushiSwap V2";
@@ -686,6 +686,18 @@ mod tests {
     const GRAVITY_FINANCE_FACTORY: &str = "0x3ed75AfF4094d2Aaa38FaFCa64EF1C152ec1Cf20";
     const GRAVITY_FINANCE_ROUTER: &str = "0x57dE98135e8287F163c59cA4fF45f1341b680248";
     const GRAVITY_FINANCE_WMATIC_WETH_POOL: &str = "0x0Dfbf1A50bdcB570Bd0fF7Bb307313B553a02598";
+    const APE_SWAP_FACTORY: &str = "0xCf083Be4164828f00cAE704EC15a36D711491284";
+    const APE_SWAP_ROUTER: &str = "0xC0788A3aD43d79aa53B09c2EaCc313A787d1d607";
+    const APE_SWAP_WMATIC_USDT_POOL: &str = "0x65D43B64E3B31965Cd5EA367D4c2b94c03084797";
+    const QUICK_SWAP_NAME: &str = "QuickSwapV2";
+    const QUICK_SWAP_FACTORY: &str = "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32";
+    const QUICK_SWAP_ROUTER: &str = "0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff";
+    const QUICK_SWAP_WMATIC_USDT_POOL: &str = "0x604229c960e5CACF2aaEAc8Be68Ac07BA9dF81c3";
+    const QUICK_SWAP_WMATIC_WETH_POOL: &str = "0xadbF1854e5883eB8aa7BAf50705338739e558E5b";
+
+    fn get_db() -> Database {
+        Database::new(Path::new("./Main.db")).unwrap()
+    }
 
     fn get_provider() -> Arc<Provider<Http>> {
         Arc::new(
@@ -792,6 +804,36 @@ mod tests {
         })
     }
 
+    fn sushi_token(provider: &Arc<Provider<Http>>) -> &'static CryptoToken {
+        static TOKEN: OnceLock<CryptoToken> = OnceLock::new();
+        TOKEN.get_or_init(|| {
+            make_token(
+                provider,
+                "0x0b3F868E0BE5597D5DB7fEB59E1CADBb0fdDa50a",
+                Some("0x070E7D3151C89eD13893c84baAe0a3F7fDb1E2e6"),
+                "SushiToken (PoS)",
+                "SUSHI",
+                18,
+                0,
+            )
+        })
+    }
+
+    fn wbtc_token(provider: &Arc<Provider<Http>>) -> &'static CryptoToken {
+        static TOKEN: OnceLock<CryptoToken> = OnceLock::new();
+        TOKEN.get_or_init(|| {
+            make_token(
+                provider,
+                "0x1BFD67037B42Cf73acF2047067bd4F2C47D9BfD6",
+                Some("0x7FFB3d637014488b63fb9858E279385685AFc1e2"),
+                "Wrapped BTC",
+                "WBTC",
+                8,
+                0,
+            )
+        })
+    }
+
     /// Polygon network, SushiSwapV2, WMATIC, WETH
     fn get_uniswap_v2_amm_manager(
         amm_name: &str,
@@ -825,13 +867,19 @@ mod tests {
         AmmManager::new(amms)
     }
 
-    fn get_simulator(provider: &Arc<Provider<Http>>, amm_manager: &AmmManager) -> EvmSimulator<Provider<Http>> {
+    fn get_simulator<M: Middleware + 'static>(provider: &Arc<M>, amm_manager: &AmmManager) -> EvmSimulator<M> {
         EvmSimulator::new(Arc::clone(provider), amm_manager).unwrap()
     }
 
-    fn get_amounts_out_uniswap_v2_no_proxy_tokens(provider: &Arc<Provider<Http>>, amm_manager: AmmManager) {
+    fn get_amounts_out_uniswap_v2<M: Middleware + 'static>(simulator: &EvmSimulator<M>, amm_manager: &AmmManager) {
         let pool: &Arc<AmmPoolKind> = amm_manager.amms().first().unwrap().pools().first().unwrap();
-        let simulator: EvmSimulator<Provider<Http>> = get_simulator(provider, &amm_manager);
+
+        println!(
+            "pool: {}, {} -> {}",
+            to_checksum(pool.address(), None),
+            pool.token0().symbol(),
+            pool.token1().symbol()
+        );
 
         let result: eU256 = simulator
             .get_amounts_out(pool, pool.token0(), pool.token0().convert_to_amount(1.0_f64))
@@ -847,24 +895,43 @@ mod tests {
         );
     }
 
-    fn balance_of_tokens(provider: &Arc<Provider<Http>>, tokens: &[&CryptoToken]) {
-        let mut simulator: EvmSimulator<Provider<Http>> = get_simulator(provider, &AmmManager::new(vec![]));
+    fn balance_of_tokens<M: Middleware + 'static>(provider: &Arc<M>, tokens: &[&CryptoToken]) {
+        let mut simulator: EvmSimulator<M> = get_simulator(provider, &AmmManager::new(vec![]));
         let ethers_db = Arc::new(RwLock::new(EthersDB::new(Arc::clone(provider), None).unwrap()));
-
-        let calldata: Bytes = AbiEncode::encode(BalanceOfCall {
-            who: simulator.account.0 .0.into(),
-        })
-        .into();
 
         let accounts_to_spoof = [simulator.simulator_address, simulator.account];
         for token in tokens {
             simulator.deploy_token_and_spoof_balance(&ethers_db, token, &accounts_to_spoof);
 
+            let balance: Result<eU256> = simulator.get_token_balance(&token.address().0.into());
+            assert!(balance.is_ok(), "{} send_tx failed", token.symbol());
+
+            let balance: eU256 = balance.unwrap();
+            assert_ne!(balance, eU256::zero(), "{} balance: {:?}", token.symbol(), balance);
+
+            println!("{} balance: {:?}", token.symbol(), balance);
+        }
+    }
+
+    fn transfer_tokens(provider: &Arc<Provider<Http>>, tokens: &[&CryptoToken]) {
+        let mut simulator: EvmSimulator<Provider<Http>> = get_simulator(provider, &AmmManager::new(vec![]));
+        let ethers_db = Arc::new(RwLock::new(EthersDB::new(Arc::clone(provider), None).unwrap()));
+
+        let accounts_to_spoof = [simulator.simulator_address, simulator.account];
+        for token in tokens {
+            simulator.deploy_token_and_spoof_balance(&ethers_db, token, &accounts_to_spoof);
+
+            let calldata: Bytes = AbiEncode::encode(TransferCall {
+                to: simulator.simulator_address.0 .0.into(),
+                value: token.convert_to_amount(1.0_f64),
+            })
+            .into();
+
             let result_and_state: (ExecutionResult, Option<State>) = EvmSimulator::<Provider<Http>>::send_tx(
                 simulator.revm_ctx.clone(),
                 simulator.account,
                 token.address().0.into(),
-                calldata.clone(),
+                calldata,
                 false,
             )
             .unwrap();
@@ -873,10 +940,7 @@ mod tests {
             let data: &Bytes = result_and_state.0.output().unwrap();
             assert_ne!(data.len(), 0, "{} data: {:?}", token.symbol(), data);
 
-            let balance = BalanceOfReturn::decode(data).unwrap();
-            assert_ne!(balance.0, eU256::zero(), "{} balance: {:?}", token.symbol(), balance.0);
-
-            println!("{} balance: {:?}", token.symbol(), balance.0);
+            println!("{} data: {:?}", token.symbol(), data);
         }
     }
 
@@ -897,6 +961,22 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
+    async fn test_transfer_no_proxy_tokens() {
+        let provider: Arc<Provider<Http>> = get_provider();
+
+        let tokens = [wmatic_token(&provider), weth_token(&provider), quick_token(&provider)];
+        transfer_tokens(&provider, &tokens);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_transfer_proxy_tokens() {
+        let provider: Arc<Provider<Http>> = get_provider();
+
+        let tokens = [usdc_token(&provider), usdt_token(&provider)];
+        transfer_tokens(&provider, &tokens);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_get_amounts_out_uniswap_v2_no_proxy_tokens() {
         let provider: Arc<Provider<Http>> = get_provider();
         let token0: &CryptoToken = wmatic_token(&provider);
@@ -911,7 +991,8 @@ mod tests {
             token1,
         );
 
-        get_amounts_out_uniswap_v2_no_proxy_tokens(&provider, amm_manager);
+        let simulator: EvmSimulator<Provider<Http>> = get_simulator(&provider, &amm_manager);
+        get_amounts_out_uniswap_v2(&simulator, &amm_manager);
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -930,7 +1011,8 @@ mod tests {
             token1,
         );
 
-        get_amounts_out_uniswap_v2_no_proxy_tokens(&provider, amm_manager);
+        let simulator: EvmSimulator<Provider<Http>> = get_simulator(&provider, &amm_manager);
+        get_amounts_out_uniswap_v2(&simulator, &amm_manager);
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -949,6 +1031,67 @@ mod tests {
             token1,
         );
 
-        get_amounts_out_uniswap_v2_no_proxy_tokens(&provider, amm_manager);
+        let simulator: EvmSimulator<Provider<Http>> = get_simulator(&provider, &amm_manager);
+        get_amounts_out_uniswap_v2(&simulator, &amm_manager);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_ape_swap() {
+        let provider: Arc<Provider<Http>> = get_provider();
+
+        let token0: &CryptoToken = wmatic_token(&provider);
+        let token1: &CryptoToken = usdt_token(&provider);
+
+        let amm_manager: AmmManager = get_uniswap_v2_amm_manager(
+            "ApeSwapV2",
+            APE_SWAP_FACTORY,
+            APE_SWAP_ROUTER,
+            APE_SWAP_WMATIC_USDT_POOL,
+            token0,
+            token1,
+        );
+
+        let simulator: EvmSimulator<Provider<Http>> = get_simulator(&provider, &amm_manager);
+        get_amounts_out_uniswap_v2(&simulator, &amm_manager);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_quick_swap() {
+        let provider: Arc<Provider<Http>> = get_provider();
+
+        let token0: &CryptoToken = wmatic_token(&provider);
+        let token1: &CryptoToken = weth_token(&provider);
+
+        let amm_manager: AmmManager = get_uniswap_v2_amm_manager(
+            QUICK_SWAP_NAME,
+            QUICK_SWAP_FACTORY,
+            QUICK_SWAP_ROUTER,
+            QUICK_SWAP_WMATIC_WETH_POOL,
+            token0,
+            token1,
+        );
+
+        let simulator: EvmSimulator<Provider<Http>> = get_simulator(&provider, &amm_manager);
+        get_amounts_out_uniswap_v2(&simulator, &amm_manager);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_sushi_swap() {
+        let provider: Arc<Provider<Http>> = get_provider();
+
+        let token0: &CryptoToken = wbtc_token(&provider);
+        let token1: &CryptoToken = weth_token(&provider);
+
+        let amm_manager: AmmManager = get_uniswap_v2_amm_manager(
+            SUSHI_NAME,
+            SUSHI_FACTORY,
+            SUSHI_ROUTER,
+            "0xE62Ec2e799305E0D367b0Cc3ee2CdA135bF89816",
+            token0,
+            token1,
+        );
+
+        let simulator: EvmSimulator<Provider<Http>> = get_simulator(&provider, &amm_manager);
+        get_amounts_out_uniswap_v2(&simulator, &amm_manager);
     }
 }

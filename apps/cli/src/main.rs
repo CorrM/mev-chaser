@@ -64,20 +64,19 @@ fn create_node_provider_manager(env: &Env, target_network: &NetworkKind) -> Resu
 */
 
 fn get_node_provider(env: &Env, target_network: NetworkKind) -> Result<NodeProvider> {
-    //#[cfg(debug_assertions)]
-    //let provider: NodeProvider = NodeProvider::new(
-    //    "Alchemy",
-    //    NodeProviderNetworkInfo {
-    //        network: target_network,
-    //        http_url: Some(env.https_url.clone()),
-    //        ws_url: Some(env.wss_url.clone()),
-    //        ipc_path: None,
-    //    },
-    //)
-    //.await?;
-
     #[cfg(debug_assertions)]
-    let provider: NodeProvider = get_debug_node_provider(env, target_network)?;
+    let provider: NodeProvider = NodeProvider::new(
+        "Alchemy",
+        NodeProviderNetworkInfo {
+            network: target_network,
+            http_url: Some(env.https_url.clone()),
+            ws_url: Some(env.wss_url.clone()),
+            ipc_path: None,
+        },
+    )?;
+
+    //#[cfg(debug_assertions)]
+    //let provider: NodeProvider = get_debug_node_provider(env, target_network)?;
 
     #[cfg(not(debug_assertions))]
     let provider: NodeProvider = NodeProvider::new(

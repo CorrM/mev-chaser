@@ -163,6 +163,8 @@ impl RunCommand {
                         pools.push(pool);
                     }
 
+                    pools = pools[0..20].to_vec(); // TODO: REMOVE
+
                     unsafe {
                         let uniswap_v2 = Arc::into_raw(uniswap_v2) as *mut AmmProtocolKind;
 
@@ -175,6 +177,8 @@ impl RunCommand {
                 }
                 _ => panic!("Unsupported dex protocol"),
             }
+
+            break; // TODO: REMOVE
         }
 
         Ok(ret)
@@ -197,6 +201,11 @@ impl RunCommand {
 
         // Set up managers.
         info!("Setting up managers:");
+
+        info!("  - BlockManager .. ⏳");
+        let block_manager = Arc::new(RwLock::new(BlockManager::new()));
+        info!("  - BlockManager .. ✅");
+
         info!("  - TokenManager .. ⏳");
         let tokens: Vec<CryptoToken> = Self::get_tokens(&db, &network).expect("Failed to get tokens");
         let token_manager = TokenManager::new(tokens, &network);
@@ -209,15 +218,12 @@ impl RunCommand {
 
         info!("  - PoolManager .. ⏳");
         let simulator = Arc::new(RwLock::new(EvmSimulator::new(Arc::clone(provider), &amm_manager)?));
-        let pool_manager = PoolManager::new(Arc::clone(provider), Arc::clone(&simulator), &amm_manager);
+        let pool_manager = Arc::new(RwLock::new(PoolManager::new(
+            Arc::clone(provider),
+            Arc::clone(&simulator),
+            &amm_manager,
+        )));
         info!("  - PoolManager .. ✅");
-
-        info!("  - BlockManager .. ⏳");
-        let block_manager = BlockManager::new();
-        info!("  - BlockManager .. ✅");
-
-        let pool_manager = Arc::new(RwLock::new(pool_manager));
-        let block_manager = Arc::new(RwLock::new(block_manager));
 
         // Set up engine.
         info!("Setting up engine");

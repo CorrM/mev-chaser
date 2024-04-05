@@ -10,7 +10,7 @@ use ethers::{providers::Middleware, types::Log};
 use hashbrown::HashSet;
 use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
 
-use vidger::logger::info;
+use vidger::logger::{error, info};
 use vidger::types::NewBlock;
 
 use crate::amm::{AmmPoolKind, AmmProtocolKind};
@@ -114,17 +114,37 @@ impl<M: Middleware + 'static> PoolManager<M> {
     pub fn get_optimal_input_and_output(&self, pool: &AmmPoolKind) -> (U256, U256) {
         println!("pool: {}", to_checksum(pool.address(), None));
         println!(
-            "{} -> {} => {}",
+            "{} balance: {:?}",
             pool.token0().symbol(),
-            pool.token1().symbol(),
-            pool.token1().convert_to_decimal(
-                self.simulator
-                    .read()
-                    .unwrap()
-                    .get_amounts_out(pool, pool.token0(), pool.token0().convert_to_amount(1_f64))
-                    .unwrap()
-            )
+            self.simulator
+                .read()
+                .unwrap()
+                .get_token_balance(&pool.token0().address().0.into())
         );
+        println!(
+            "{} balance: {:?}",
+            pool.token1().symbol(),
+            self.simulator
+                .read()
+                .unwrap()
+                .get_token_balance(&pool.token1().address().0.into())
+        );
+
+        let u256: Result<U256> =
+            self.simulator
+                .read()
+                .unwrap()
+                .get_amounts_out(pool, pool.token0(), pool.token0().convert_to_amount(1_f64));
+        if let Ok(u256) = u256 {
+            info!(
+                "{} -> {} => {}",
+                pool.token0().symbol(),
+                pool.token1().symbol(),
+                pool.token1().convert_to_decimal(u256)
+            );
+        } else {
+            error!("Error get_amounts_out: {:?}", u256);
+        }
         println!("==============================");
         (U256::from(0), U256::from(0))
     }
@@ -179,7 +199,7 @@ impl<M: Middleware + 'static> PoolManager<M> {
             .into_par_iter()
             .for_each(|pool_container: Arc<RwLock<PoolContainer>>| {
                 // Keep in mind that's block the lock, so you can't get write lock here only read lock or change your mind
-                let pool_container: &PoolContainer = &pool_container.read().unwrap();
+                //let pool_container: &PoolContainer = &pool_container.read().unwrap();
 
                 //let top_profitable_paths: Vec<Arc<RwLock<PoolPath>>> = pool_container
                 //    .paths
@@ -190,10 +210,10 @@ impl<M: Middleware + 'static> PoolManager<M> {
                 //    .collect();
                 //*pool_container.top_profitable_paths.write().unwrap() = top_profitable_paths;
 
-                info!(
-                    "Generate most profitable paths for pool '{}'",
-                    to_checksum(pool_container.pool.address(), None)
-                );
+                //info!(
+                //    "Generate most profitable paths for pool '{}'",
+                //    to_checksum(pool_container.pool.address(), None)
+                //);
             });
     }
 }
