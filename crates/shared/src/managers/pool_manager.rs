@@ -1,6 +1,7 @@
 use std::sync::{Arc, RwLock};
 
 use anyhow::Result;
+use contracts::simulator::SimulatorAbiErrors;
 use dashmap::mapref::one::RefMut;
 use dashmap::DashMap;
 use ethers::prelude::H256;
@@ -130,7 +131,7 @@ impl<M: Middleware + 'static> PoolManager<M> {
                 .get_token_balance(&pool.token1().address().0.into())
         );
 
-        let u256: Result<U256> =
+        let u256: Result<U256, SimulatorAbiErrors> =
             self.simulator
                 .read()
                 .unwrap()

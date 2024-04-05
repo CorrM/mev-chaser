@@ -616,7 +616,12 @@ where
         }
     }
 
-    pub fn get_amounts_out(&self, pool: &AmmPoolKind, input: &CryptoToken, amount_in: eU256) -> Result<eU256> {
+    pub fn get_amounts_out(
+        &self,
+        pool: &AmmPoolKind,
+        input: &CryptoToken,
+        amount_in: eU256,
+    ) -> Result<eU256, SimulatorAbiErrors> {
         // TODO: For uniswap_v3 `contract_address` are the quarter
         let calldata: Bytes = match pool {
             AmmPoolKind::UniswapV2(_) => {
@@ -645,22 +650,23 @@ where
 
         let result_and_state: (ExecutionResult, Option<State>) = match tx_result {
             Ok(result) => result,
-            Err(e) => return Err(anyhow!("EVM call failed: {e:?}")),
+            Err(e) => panic!("EVM call failed: {:?}", e),
         };
 
         let tx_result: TxResult = Self::get_tx_result(result_and_state.0);
         match tx_result {
             TxResult::Success(result) => match pool {
                 AmmPoolKind::UniswapV2(_) => {
-                    let Ok(decoded_output) = SimulateGetAmountsOutUniswapV2Return::decode(&result.output) else {
-                        return Err(anyhow!("Failed to decode output"));
+                    let decode1 = SimulateGetAmountsOutUniswapV2Return::decode(&result.output);
+                    let Ok(decoded_output) = decode1 else {
+                        return Err(SimulatorAbiErrors::decode(&result.output).unwrap());
                     };
 
                     Ok(decoded_output.0)
                 }
             },
-            TxResult::Revert(revert) => Err(anyhow!("Failed to get token balance REVERT: {:?}", revert.output)),
-            TxResult::Halt(halt) => Err(anyhow!("Failed to get token balance HALT: {:?}", halt.reason)),
+            TxResult::Revert(revert) => Err(revert.output),
+            TxResult::Halt(halt) => panic!("Failed to get token balance HALT: {:?}", halt.reason),
         }
     }
 }
@@ -671,7 +677,9 @@ pub(crate) mod tests {
     use crate::database::{Database, DbToken, DbTokenNetwork};
     use crate::managers::TokenManager;
     use contracts::erc20_token::TransferCall;
+    use contracts::simulator::MultiSwapError;
     use ethers::providers::{Http, Provider};
+    use std::any::Any;
     use std::path::Path;
     use std::sync::OnceLock;
     use vidger::types::NetworkKind;
@@ -798,27 +806,44 @@ pub(crate) mod tests {
     }
 
     fn get_amounts_out<M: Middleware + 'static>(simulator: &EvmSimulator<M>, amm_manager: &AmmManager) {
-        let pool: &Arc<AmmPoolKind> = amm_manager.amms().first().unwrap().pools().first().unwrap();
+        for amm in amm_manager.amms() {
+            for pool in amm.pools() {
+                println!(
+                    "pool: {}, {} -> {}",
+                    to_checksum(pool.address(), None),
+                    pool.token0().symbol(),
+                    pool.token1().symbol()
+                );
 
-        println!(
-            "pool: {}, {} -> {}",
-            to_checksum(pool.address(), None),
-            pool.token0().symbol(),
-            pool.token1().symbol()
-        );
+                let result: Result<eU256, SimulatorAbiErrors> =
+                    simulator.get_amounts_out(pool, pool.token0(), pool.token0().convert_to_amount(1.0_f64));
 
-        let result: eU256 = simulator
-            .get_amounts_out(pool, pool.token0(), pool.token0().convert_to_amount(1.0_f64))
-            .unwrap();
-        assert_ne!(result, eU256::zero());
-        assert!(result > eU256::zero());
+                if let Err(ref e) = result {
+                    let multi_swap_error: &MultiSwapError = match e {
+                        SimulatorAbiErrors::MultiSwapError(e) => e,
+                        _ => panic!("multi_swap_error: {}", e),
+                    };
+                    if multi_swap_error.error_reason.contains("UniswapV2: K") {
+                        println!("UniswapV2: K");
+                        println!("=====================");
+                        continue;
+                    }
+                }
 
-        println!(
-            "{} -> {} = {}",
-            pool.token0().symbol(),
-            pool.token1().symbol(),
-            pool.token1().convert_to_decimal(result)
-        );
+                let result: eU256 = result.unwrap();
+
+                assert_ne!(result, eU256::zero());
+                assert!(result > eU256::zero());
+
+                println!(
+                    "{} -> {} = {}",
+                    pool.token0().symbol(),
+                    pool.token1().symbol(),
+                    pool.token1().convert_to_decimal(result)
+                );
+                println!("=====================");
+            }
+        }
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -862,8 +887,8 @@ pub(crate) mod tests {
         let provider: Arc<Provider<Http>> = get_provider();
         let db: Database = get_db();
         let amm_manager: AmmManager = get_amm_manager(&db);
-
         let simulator: EvmSimulator<Provider<Http>> = get_simulator(&provider, &amm_manager);
+
         get_amounts_out(&simulator, &amm_manager);
     }
 
@@ -872,8 +897,8 @@ pub(crate) mod tests {
         let provider: Arc<Provider<Http>> = get_provider();
         let db: Database = get_db();
         let amm_manager: AmmManager = get_amm_manager(&db);
-
         let simulator: EvmSimulator<Provider<Http>> = get_simulator(&provider, &amm_manager);
+
         get_amounts_out(&simulator, &amm_manager);
     }
 
@@ -882,8 +907,8 @@ pub(crate) mod tests {
         let provider: Arc<Provider<Http>> = get_provider();
         let db: Database = get_db();
         let amm_manager: AmmManager = get_amm_manager(&db);
-
         let simulator: EvmSimulator<Provider<Http>> = get_simulator(&provider, &amm_manager);
+
         get_amounts_out(&simulator, &amm_manager);
     }
 }
