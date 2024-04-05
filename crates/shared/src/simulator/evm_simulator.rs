@@ -17,7 +17,6 @@ use ethers::{
 };
 use hashbrown::HashMap;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
-use revm::db::CacheDB;
 use revm::primitives::{Account, Log, U256};
 use revm::{
     db::{EmptyDB, EthersDB},
@@ -669,34 +668,16 @@ where
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::amm::{UniswapV2Pool, UniswapV2Protocol};
-    use crate::database::Database;
+    use crate::database::{Database, DbToken, DbTokenNetwork};
+    use crate::managers::TokenManager;
     use contracts::erc20_token::TransferCall;
     use ethers::providers::{Http, Provider};
-    use rayon::iter::IntoParallelIterator;
     use std::path::Path;
     use std::sync::OnceLock;
-
-    const SUSHI_NAME: &str = "SushiSwap V2";
-    const SUSHI_FACTORY: &str = "0xc35DADB65012eC5796536bD9864eD8773aBc74C4";
-    const SUSHI_ROUTER: &str = "0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506";
-    const SUSHI_WMATIC_WETH_POOL: &str = "0xc4e595acDD7d12feC385E5dA5D43160e8A0bAC0E";
-    const SUSHI_WMATIC_USDC_POOL: &str = "0x96c7FC08D8CDACdB95a8613b19fffe4D54307263";
-    const SUSHI_WMATIC_USDT_POOL: &str = "0x55FF76BFFC3Cdd9D5FdbBC2ece4528ECcE45047e";
-    const GRAVITY_FINANCE_FACTORY: &str = "0x3ed75AfF4094d2Aaa38FaFCa64EF1C152ec1Cf20";
-    const GRAVITY_FINANCE_ROUTER: &str = "0x57dE98135e8287F163c59cA4fF45f1341b680248";
-    const GRAVITY_FINANCE_WMATIC_WETH_POOL: &str = "0x0Dfbf1A50bdcB570Bd0fF7Bb307313B553a02598";
-    const APE_SWAP_FACTORY: &str = "0xCf083Be4164828f00cAE704EC15a36D711491284";
-    const APE_SWAP_ROUTER: &str = "0xC0788A3aD43d79aa53B09c2EaCc313A787d1d607";
-    const APE_SWAP_WMATIC_USDT_POOL: &str = "0x65D43B64E3B31965Cd5EA367D4c2b94c03084797";
-    const QUICK_SWAP_NAME: &str = "QuickSwapV2";
-    const QUICK_SWAP_FACTORY: &str = "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32";
-    const QUICK_SWAP_ROUTER: &str = "0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff";
-    const QUICK_SWAP_WMATIC_USDT_POOL: &str = "0x604229c960e5CACF2aaEAc8Be68Ac07BA9dF81c3";
-    const QUICK_SWAP_WMATIC_WETH_POOL: &str = "0xadbF1854e5883eB8aa7BAf50705338739e558E5b";
+    use vidger::types::NetworkKind;
 
     fn get_db() -> Database {
-        Database::new(Path::new("./Main.db")).unwrap()
+        Database::new(Path::new("/home/corrm/Data/Projects/mev-chaser/Main.db")).unwrap()
     }
 
     fn get_provider() -> Arc<Provider<Http>> {
@@ -706,193 +687,65 @@ pub(crate) mod tests {
         )
     }
 
-    fn make_token(
-        provider: &Arc<Provider<Http>>,
-        address: &str,
-        proxy: Option<&str>,
-        name: &str,
-        symbol: &str,
-        decimals: u8,
-        balance_slot: i32,
-    ) -> CryptoToken {
-        CryptoToken::new(
-            address,
-            proxy,
-            name,
-            symbol,
-            decimals,
-            balance_slot,
-            block_on(provider.get_code(eAddress::from_str(address).unwrap(), None))
-                .unwrap()
-                .0,
-        )
-        .unwrap()
-    }
-
-    fn weth_token(provider: &Arc<Provider<Http>>) -> &'static CryptoToken {
-        static TOKEN: OnceLock<CryptoToken> = OnceLock::new();
-        TOKEN.get_or_init(|| {
-            make_token(
-                provider,
-                "0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619",
-                None,
-                "Wrapped Ether",
-                "WETH",
-                18,
-                0,
-            )
-        })
-    }
-
-    fn wmatic_token(provider: &Arc<Provider<Http>>) -> &'static CryptoToken {
-        static TOKEN: OnceLock<CryptoToken> = OnceLock::new();
-        TOKEN.get_or_init(|| {
-            make_token(
-                provider,
-                "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270",
-                None,
-                "Wrapped Matic",
-                "WMATIC",
-                18,
-                3,
-            )
-        })
-    }
-
-    fn quick_token(provider: &Arc<Provider<Http>>) -> &'static CryptoToken {
-        static TOKEN: OnceLock<CryptoToken> = OnceLock::new();
-        TOKEN.get_or_init(|| {
-            make_token(
-                provider,
-                "0xB5C064F955D8e7F38fE0460C556a72987494eE17",
-                None,
-                "QuickSwap",
-                "QUICK",
-                18,
-                2,
-            )
-        })
-    }
-
-    fn usdc_token(provider: &Arc<Provider<Http>>) -> &'static CryptoToken {
-        static TOKEN: OnceLock<CryptoToken> = OnceLock::new();
-        TOKEN.get_or_init(|| {
-            make_token(
-                provider,
-                "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
-                Some("0x235AE97b28466Db30469b89A9fe4cFf0659f82Cb"),
-                "USD Coin",
-                "USDC",
-                6,
-                9,
-            )
-        })
-    }
-
-    fn usdt_token(provider: &Arc<Provider<Http>>) -> &'static CryptoToken {
-        static TOKEN: OnceLock<CryptoToken> = OnceLock::new();
-        TOKEN.get_or_init(|| {
-            make_token(
-                provider,
-                "0xc2132D05D31c914a87C6611C10748AEb04B58e8F",
-                Some("0x7FFB3d637014488b63fb9858E279385685AFc1e2"),
-                "Tether USD",
-                "USDT",
-                6,
-                0,
-            )
-        })
-    }
-
-    fn sushi_token(provider: &Arc<Provider<Http>>) -> &'static CryptoToken {
-        static TOKEN: OnceLock<CryptoToken> = OnceLock::new();
-        TOKEN.get_or_init(|| {
-            make_token(
-                provider,
-                "0x0b3F868E0BE5597D5DB7fEB59E1CADBb0fdDa50a",
-                Some("0x070E7D3151C89eD13893c84baAe0a3F7fDb1E2e6"),
-                "SushiToken (PoS)",
-                "SUSHI",
-                18,
-                0,
-            )
-        })
-    }
-
-    fn wbtc_token(provider: &Arc<Provider<Http>>) -> &'static CryptoToken {
-        static TOKEN: OnceLock<CryptoToken> = OnceLock::new();
-        TOKEN.get_or_init(|| {
-            make_token(
-                provider,
-                "0x1BFD67037B42Cf73acF2047067bd4F2C47D9BfD6",
-                Some("0x7FFB3d637014488b63fb9858E279385685AFc1e2"),
-                "Wrapped BTC",
-                "WBTC",
-                8,
-                0,
-            )
-        })
-    }
-
-    /// Polygon network, SushiSwapV2, WMATIC, WETH
-    fn get_uniswap_v2_amm_manager(
-        amm_name: &str,
-        factory: &str,
-        router: &str,
-        pool_address: &str,
-        token0: &CryptoToken,
-        token1: &CryptoToken,
-    ) -> AmmManager {
-        let mut uniswap_v2 = Arc::new(AmmProtocolKind::UniswapV2(
-            UniswapV2Protocol::new(amm_name, factory, router).unwrap(),
-        ));
-
-        let pool = AmmPoolKind::UniswapV2(
-            UniswapV2Pool::new(
-                eAddress::from_str(pool_address).unwrap(),
-                Arc::clone(&uniswap_v2),
-                Arc::new(token0.clone()),
-                Arc::new(token1.clone()),
-            )
-            .unwrap(),
-        );
-
-        unsafe {
-            let _uniswap_v2 = Arc::into_raw(uniswap_v2) as *mut AmmProtocolKind;
-            (*_uniswap_v2).add_pool(pool);
-            uniswap_v2 = Arc::from_raw(_uniswap_v2);
-        }
-
-        let amms: Vec<Arc<AmmProtocolKind>> = vec![uniswap_v2];
-        AmmManager::new(amms)
+    fn get_amm_manager(db: &Database) -> AmmManager {
+        let token_manager = TokenManager::new_by_db(db, &NetworkKind::Polygon).unwrap();
+        AmmManager::new_by_db(db, &NetworkKind::Polygon, &token_manager).unwrap()
     }
 
     fn get_simulator<M: Middleware + 'static>(provider: &Arc<M>, amm_manager: &AmmManager) -> EvmSimulator<M> {
         EvmSimulator::new(Arc::clone(provider), amm_manager).unwrap()
     }
 
-    fn get_amounts_out_uniswap_v2<M: Middleware + 'static>(simulator: &EvmSimulator<M>, amm_manager: &AmmManager) {
-        let pool: &Arc<AmmPoolKind> = amm_manager.amms().first().unwrap().pools().first().unwrap();
-
-        println!(
-            "pool: {}, {} -> {}",
-            to_checksum(pool.address(), None),
-            pool.token0().symbol(),
-            pool.token1().symbol()
-        );
-
-        let result: eU256 = simulator
-            .get_amounts_out(pool, pool.token0(), pool.token0().convert_to_amount(1.0_f64))
+    fn make_token(db: &Database, address: &str) -> CryptoToken {
+        let (db_token, db_token_network): (DbToken, DbTokenNetwork) = db
+            .get_token_and_network(address, &NetworkKind::Polygon)
+            .unwrap()
             .unwrap();
-        assert_ne!(result, eU256::zero());
-        assert!(result > eU256::zero());
+        CryptoToken::new(
+            db_token_network.address,
+            db_token_network.proxy,
+            db_token.name,
+            db_token.symbol,
+            db_token.decimals as u8,
+            db_token_network.balance_contract_slot,
+            db_token_network.code,
+        )
+        .unwrap()
+    }
 
-        println!(
-            "{} -> {} = {}",
-            pool.token0().symbol(),
-            pool.token1().symbol(),
-            pool.token1().convert_to_decimal(result)
-        );
+    fn weth_token(db: &Database) -> &'static CryptoToken {
+        static TOKEN: OnceLock<CryptoToken> = OnceLock::new();
+        TOKEN.get_or_init(|| make_token(db, "0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619"))
+    }
+
+    fn wmatic_token(db: &Database) -> &'static CryptoToken {
+        static TOKEN: OnceLock<CryptoToken> = OnceLock::new();
+        TOKEN.get_or_init(|| make_token(db, "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270"))
+    }
+
+    fn quick_token(db: &Database) -> &'static CryptoToken {
+        static TOKEN: OnceLock<CryptoToken> = OnceLock::new();
+        TOKEN.get_or_init(|| make_token(db, "0xB5C064F955D8e7F38fE0460C556a72987494eE17"))
+    }
+
+    fn usdc_token(db: &Database) -> &'static CryptoToken {
+        static TOKEN: OnceLock<CryptoToken> = OnceLock::new();
+        TOKEN.get_or_init(|| make_token(db, "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359"))
+    }
+
+    fn usdt_token(db: &Database) -> &'static CryptoToken {
+        static TOKEN: OnceLock<CryptoToken> = OnceLock::new();
+        TOKEN.get_or_init(|| make_token(db, "0xc2132D05D31c914a87C6611C10748AEb04B58e8F"))
+    }
+
+    fn sushi_token(db: &Database) -> &'static CryptoToken {
+        static TOKEN: OnceLock<CryptoToken> = OnceLock::new();
+        TOKEN.get_or_init(|| make_token(db, "0x0b3F868E0BE5597D5DB7fEB59E1CADBb0fdDa50a"))
+    }
+
+    fn wbtc_token(db: &Database) -> &'static CryptoToken {
+        static TOKEN: OnceLock<CryptoToken> = OnceLock::new();
+        TOKEN.get_or_init(|| make_token(db, "0x1BFD67037B42Cf73acF2047067bd4F2C47D9BfD6"))
     }
 
     fn balance_of_tokens<M: Middleware + 'static>(provider: &Arc<M>, tokens: &[&CryptoToken]) {
@@ -944,154 +797,93 @@ pub(crate) mod tests {
         }
     }
 
-    #[tokio::test(flavor = "multi_thread")]
-    async fn test_balance_of_no_proxy_tokens() {
-        let provider: Arc<Provider<Http>> = get_provider();
+    fn get_amounts_out<M: Middleware + 'static>(simulator: &EvmSimulator<M>, amm_manager: &AmmManager) {
+        let pool: &Arc<AmmPoolKind> = amm_manager.amms().first().unwrap().pools().first().unwrap();
 
-        let tokens = [wmatic_token(&provider), weth_token(&provider), quick_token(&provider)];
+        println!(
+            "pool: {}, {} -> {}",
+            to_checksum(pool.address(), None),
+            pool.token0().symbol(),
+            pool.token1().symbol()
+        );
+
+        let result: eU256 = simulator
+            .get_amounts_out(pool, pool.token0(), pool.token0().convert_to_amount(1.0_f64))
+            .unwrap();
+        assert_ne!(result, eU256::zero());
+        assert!(result > eU256::zero());
+
+        println!(
+            "{} -> {} = {}",
+            pool.token0().symbol(),
+            pool.token1().symbol(),
+            pool.token1().convert_to_decimal(result)
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn balance_of_no_proxy_tokens() {
+        let provider: Arc<Provider<Http>> = get_provider();
+        let db: Database = get_db();
+
+        let tokens = [wmatic_token(&db), weth_token(&db), quick_token(&db)];
         balance_of_tokens(&provider, &tokens);
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_balance_of_proxy_tokens() {
+    async fn balance_of_proxy_tokens() {
         let provider: Arc<Provider<Http>> = get_provider();
+        let db: Database = get_db();
 
-        let tokens = [usdc_token(&provider), usdt_token(&provider)];
+        let tokens = [usdc_token(&db), usdt_token(&db)];
         balance_of_tokens(&provider, &tokens);
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_transfer_no_proxy_tokens() {
+    async fn transfer_no_proxy_tokens() {
         let provider: Arc<Provider<Http>> = get_provider();
+        let db: Database = get_db();
 
-        let tokens = [wmatic_token(&provider), weth_token(&provider), quick_token(&provider)];
+        let tokens = [wmatic_token(&db), weth_token(&db), quick_token(&db)];
         transfer_tokens(&provider, &tokens);
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_transfer_proxy_tokens() {
+    async fn transfer_proxy_tokens() {
         let provider: Arc<Provider<Http>> = get_provider();
+        let db: Database = get_db();
 
-        let tokens = [usdc_token(&provider), usdt_token(&provider)];
+        let tokens = [usdc_token(&db), usdt_token(&db)];
         transfer_tokens(&provider, &tokens);
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_get_amounts_out_uniswap_v2_no_proxy_tokens() {
+    async fn get_amounts_out_no_proxy_tokens() {
         let provider: Arc<Provider<Http>> = get_provider();
-        let token0: &CryptoToken = wmatic_token(&provider);
-        let token1: &CryptoToken = weth_token(&provider);
-
-        let amm_manager: AmmManager = get_uniswap_v2_amm_manager(
-            SUSHI_NAME,
-            SUSHI_FACTORY,
-            SUSHI_ROUTER,
-            SUSHI_WMATIC_WETH_POOL,
-            token0,
-            token1,
-        );
+        let db: Database = get_db();
+        let amm_manager: AmmManager = get_amm_manager(&db);
 
         let simulator: EvmSimulator<Provider<Http>> = get_simulator(&provider, &amm_manager);
-        get_amounts_out_uniswap_v2(&simulator, &amm_manager);
+        get_amounts_out(&simulator, &amm_manager);
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_get_amounts_out_uniswap_v2_proxy_tokens() {
+    async fn get_amounts_out_proxy_tokens() {
         let provider: Arc<Provider<Http>> = get_provider();
-
-        let token0: &CryptoToken = wmatic_token(&provider);
-        let token1: &CryptoToken = usdt_token(&provider);
-
-        let amm_manager: AmmManager = get_uniswap_v2_amm_manager(
-            SUSHI_NAME,
-            SUSHI_FACTORY,
-            SUSHI_ROUTER,
-            SUSHI_WMATIC_USDT_POOL,
-            token0,
-            token1,
-        );
+        let db: Database = get_db();
+        let amm_manager: AmmManager = get_amm_manager(&db);
 
         let simulator: EvmSimulator<Provider<Http>> = get_simulator(&provider, &amm_manager);
-        get_amounts_out_uniswap_v2(&simulator, &amm_manager);
+        get_amounts_out(&simulator, &amm_manager);
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_gravity_finance() {
+    async fn gravity_finance() {
         let provider: Arc<Provider<Http>> = get_provider();
-
-        let token0: &CryptoToken = wmatic_token(&provider);
-        let token1: &CryptoToken = weth_token(&provider);
-
-        let amm_manager: AmmManager = get_uniswap_v2_amm_manager(
-            "GravityFinanceV2",
-            GRAVITY_FINANCE_FACTORY,
-            GRAVITY_FINANCE_ROUTER,
-            GRAVITY_FINANCE_WMATIC_WETH_POOL,
-            token0,
-            token1,
-        );
+        let db: Database = get_db();
+        let amm_manager: AmmManager = get_amm_manager(&db);
 
         let simulator: EvmSimulator<Provider<Http>> = get_simulator(&provider, &amm_manager);
-        get_amounts_out_uniswap_v2(&simulator, &amm_manager);
-    }
-
-    #[tokio::test(flavor = "multi_thread")]
-    async fn test_ape_swap() {
-        let provider: Arc<Provider<Http>> = get_provider();
-
-        let token0: &CryptoToken = wmatic_token(&provider);
-        let token1: &CryptoToken = usdt_token(&provider);
-
-        let amm_manager: AmmManager = get_uniswap_v2_amm_manager(
-            "ApeSwapV2",
-            APE_SWAP_FACTORY,
-            APE_SWAP_ROUTER,
-            APE_SWAP_WMATIC_USDT_POOL,
-            token0,
-            token1,
-        );
-
-        let simulator: EvmSimulator<Provider<Http>> = get_simulator(&provider, &amm_manager);
-        get_amounts_out_uniswap_v2(&simulator, &amm_manager);
-    }
-
-    #[tokio::test(flavor = "multi_thread")]
-    async fn test_quick_swap() {
-        let provider: Arc<Provider<Http>> = get_provider();
-
-        let token0: &CryptoToken = wmatic_token(&provider);
-        let token1: &CryptoToken = weth_token(&provider);
-
-        let amm_manager: AmmManager = get_uniswap_v2_amm_manager(
-            QUICK_SWAP_NAME,
-            QUICK_SWAP_FACTORY,
-            QUICK_SWAP_ROUTER,
-            QUICK_SWAP_WMATIC_WETH_POOL,
-            token0,
-            token1,
-        );
-
-        let simulator: EvmSimulator<Provider<Http>> = get_simulator(&provider, &amm_manager);
-        get_amounts_out_uniswap_v2(&simulator, &amm_manager);
-    }
-
-    #[tokio::test(flavor = "multi_thread")]
-    async fn test_sushi_swap() {
-        let provider: Arc<Provider<Http>> = get_provider();
-
-        let token0: &CryptoToken = wbtc_token(&provider);
-        let token1: &CryptoToken = weth_token(&provider);
-
-        let amm_manager: AmmManager = get_uniswap_v2_amm_manager(
-            SUSHI_NAME,
-            SUSHI_FACTORY,
-            SUSHI_ROUTER,
-            "0xE62Ec2e799305E0D367b0Cc3ee2CdA135bF89816",
-            token0,
-            token1,
-        );
-
-        let simulator: EvmSimulator<Provider<Http>> = get_simulator(&provider, &amm_manager);
-        get_amounts_out_uniswap_v2(&simulator, &amm_manager);
+        get_amounts_out(&simulator, &amm_manager);
     }
 }
