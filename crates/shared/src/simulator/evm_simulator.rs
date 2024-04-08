@@ -1,5 +1,5 @@
 use std::str::FromStr;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, OnceLock, RwLock};
 
 use anyhow::{anyhow, Result};
 use ethers::utils::to_checksum;
@@ -17,7 +17,6 @@ use ethers::{
 };
 use hashbrown::HashMap;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
-use revm::interpreter::Host;
 use revm::primitives::{Account, Log, U256};
 use revm::{
     db::{EmptyDB, EthersDB},
@@ -42,10 +41,10 @@ use vidger::{
 
 use crate::amm::{AmmPoolKind, AmmProtocolKind};
 use crate::managers::AmmManager;
-use crate::simulator::ThreadSafeInMemoryDB;
+use crate::simulator::SharedInMemoryDB;
 use crate::types::CryptoToken;
 
-type RevmContext = ContextWithHandlerCfg<(), ThreadSafeInMemoryDB>;
+type RevmContext = ContextWithHandlerCfg<(), SharedInMemoryDB>;
 
 #[derive(Debug, Clone)]
 struct TxSuccessResult {
@@ -83,7 +82,7 @@ pub struct EvmSimulator<M> {
 
 impl<M: Middleware + 'static> EvmSimulator<M> {
     #[inline]
-    fn get_evm(revm_ctx: RevmContext) -> Evm<'static, (), ThreadSafeInMemoryDB> {
+    fn get_evm(revm_ctx: RevmContext) -> Evm<'static, (), SharedInMemoryDB> {
         Evm::builder().with_context_with_handler_cfg(revm_ctx).build()
     }
 
@@ -140,7 +139,7 @@ impl<M: Middleware + 'static> EvmSimulator<M> {
         calldata: Bytes,
         commit: bool,
     ) -> Result<(ExecutionResult, Option<State>)> {
-        let mut evm: Evm<(), ThreadSafeInMemoryDB> = Self::get_evm(revm_ctx);
+        let mut evm: Evm<(), SharedInMemoryDB> = Self::get_evm(revm_ctx);
 
         let tx: &mut TxEnv = evm.tx_mut();
         tx.caller = caller;
@@ -164,7 +163,7 @@ impl<M: Middleware + 'static> EvmSimulator<M> {
         let account = Address::from_str("0x9cf277A22EB4c551c6E18F7a6C0ee1893bcB034f").unwrap();
 
         // Prepare in-memory DB
-        let mut db = ThreadSafeInMemoryDB::new(EmptyDB::new());
+        let mut db = SharedInMemoryDB::new(EmptyDB::new());
         let ethers_db: Arc<RwLock<EthersDB<M>>> = Arc::new(RwLock::new(
             EthersDB::new(provider.clone(), Some(eBlockId::Number(eBlockNumber::Latest))).unwrap(),
         ));
@@ -180,7 +179,7 @@ impl<M: Middleware + 'static> EvmSimulator<M> {
         db.insert_account_info(simulator_address, simulator_acc_info);
 
         // Create EVM
-        let mut evm: Evm<'static, (), ThreadSafeInMemoryDB> = Evm::builder().with_db(db).build();
+        let mut evm: Evm<'static, (), SharedInMemoryDB> = Evm::builder().with_db(db).build();
 
         // overriding some default env values to make it more efficient for testing
         let evm_cfg: &mut CfgEnv = evm.cfg_mut();
@@ -200,9 +199,8 @@ impl<M: Middleware + 'static> EvmSimulator<M> {
         };
 
         // Deploy amm
-        let address_to_spoof: Vec<Address> = vec![simulator_address, account];
         for amm in amm_manager.amms() {
-            ret.deploy_full_amm(&ethers_db, amm, &address_to_spoof);
+            ret.deploy_full_amm(&ethers_db, amm);
         }
 
         Ok(ret)
@@ -220,50 +218,7 @@ impl<M> EvmSimulator<M>
 where
     M: Middleware + 'static,
 {
-    #[inline]
-    fn get_storage_at(&self, address: Address, slot: U256) -> U256 {
-        self.revm_ctx.context.evm.db.storage_ref(address, slot).unwrap()
-    }
-
-    fn deploy_token_and_spoof_balance(
-        &mut self,
-        ethers_db: &Arc<RwLock<EthersDB<M>>>,
-        token: &CryptoToken,
-        accounts_list_to_spoof: &[Address],
-    ) {
-        /*
-        NOTES:
-            - Storage are in the token contract(proxy) and the code in the implementation contract
-            - Keep in mind the proxy contract have a slot for the implementation address
-              that's hard to get and set for every kind of proxy
-              so will just grab the implementation AccountInfo(code, code_hash, etc)
-              then assign it to the original token contract to get raid of the proxy concept/contract
-              now the token contract will be the implementation.
-              (BIG BRAIN xD)
-        */
-        let token_address: Address = token.address().0.into();
-
-        // Skip if already deployed
-        let db: &ThreadSafeInMemoryDB = &self.revm_ctx.context.evm.db;
-        if db.0.read().unwrap().accounts.get(&token_address).is_some() {
-            return;
-        }
-
-        // Deploy proxy
-        // TODO: Maybe add proxy_code to database
-        let token_acc_info: AccountInfo = if let Some(proxy_address) = token.proxy_address() {
-            ethers_db
-                .read()
-                .unwrap()
-                .basic_ref(proxy_address.0.into())
-                .unwrap()
-                .unwrap()
-        } else {
-            let code = Bytecode::new_raw(Bytes::from(token.code().clone()));
-            AccountInfo::new(U256::from(0), 0, code.hash_slow(), code)
-        };
-
-        // Spoof balance
+    fn spoof_token_balance(&mut self, token: &CryptoToken, balance: U256, accounts_list_to_spoof: &[Address]) {
         // https://ethereum.stackexchange.com/questions/147205/how-to-view-the-amount-of-storage-a-contract-uses
         // https://ethereum.stackexchange.com/questions/47986/using-getstorageat-on-mappingaddress-uint64
         let input_balance_slots: Option<Vec<U256>> = if token.balance_contract_slot() != -1 {
@@ -283,49 +238,72 @@ where
             None
         };
 
-        // Commit
-        let hundred_grand_eth: U256 = U256::from(100_000)
-            .checked_mul(U256::from(10).pow(U256::from(18)))
-            .unwrap();
-        let db: &mut ThreadSafeInMemoryDB = &mut self.revm_ctx.context.evm.db;
-        db.insert_account_info(token_address, token_acc_info);
-
+        let db: &mut SharedInMemoryDB = &mut self.revm_ctx.context.evm.db;
         if let Some(input_balance_slots) = input_balance_slots {
             for input_balance_slot_index in input_balance_slots {
-                db.insert_account_storage(token_address, input_balance_slot_index, hundred_grand_eth)
+                db.insert_account_storage(token.address().0.into(), input_balance_slot_index, balance)
                     .expect("failed to insert token balance in DB");
             }
         }
     }
 
-    fn deploy_pool(
-        &mut self,
-        ethers_db: &Arc<RwLock<EthersDB<M>>>,
-        pool: &AmmPoolKind,
-        accounts_list_to_spoof: &[Address],
-    ) {
+    fn deploy_token(&mut self, ethers_db: &Arc<RwLock<EthersDB<M>>>, token: &CryptoToken) {
+        /*
+        NOTES:
+            - Storage are in the token contract(proxy) and the code in the implementation contract
+            - Keep in mind the proxy contract have a slot for the implementation address
+              that's hard to get and set for every kind of proxy
+              so will just grab the implementation AccountInfo(code, code_hash, etc)
+              then assign it to the original token contract to get raid of the proxy concept/contract
+              now the token contract will be the implementation.
+              (BIG BRAIN xD)
+        */
+        let token_address: Address = token.address().0.into();
+
+        // Skip if already deployed
+        let db: &SharedInMemoryDB = &self.revm_ctx.context.evm.db;
+        if db.0.read().unwrap().accounts.get(&token_address).is_some() {
+            return;
+        }
+
+        // Deploy proxy
+        // TODO: Maybe add proxy_code to database
+        let token_acc_info: AccountInfo = if let Some(proxy_address) = token.proxy_address() {
+            ethers_db
+                .read()
+                .unwrap()
+                .basic_ref(proxy_address.0.into())
+                .unwrap()
+                .unwrap()
+        } else {
+            let code = Bytecode::new_raw(Bytes::from(token.code().clone()));
+            AccountInfo::new(U256::from(0), 0, code.hash_slow(), code)
+        };
+
+        // Commit
+        let db: &mut SharedInMemoryDB = &mut self.revm_ctx.context.evm.db;
+        db.insert_account_info(token_address, token_acc_info);
+    }
+
+    fn deploy_pool(&mut self, ethers_db: &Arc<RwLock<EthersDB<M>>>, pool: &AmmPoolKind) {
         /*
         NOTE:
             We can notice that it retrieves the balance of token0, token1 making calls to the token contracts.
             This means that our newly deployed pair contract has to have real token balances to perform a real swap.
         */
+        let pool_address: Address = pool.address().0.into();
 
         // Skip if already deployed
-        let pool_address: Address = pool.address().0.into();
-        let db: &mut ThreadSafeInMemoryDB = &mut self.revm_ctx.context.evm.db;
+        let db: &SharedInMemoryDB = &self.revm_ctx.context.evm.db;
         if db.0.read().unwrap().accounts.get(&pool_address).is_some() {
             panic!("Pool already deployed: {}", pool_address);
         }
 
-        // Add pool to spoof
-        // Don't change `accounts_list_to_spoof` to mutable vector,
-        // as it will keep push all pools to spoof form the caller
-        let mut accounts_list_to_spoof: Vec<Address> = accounts_list_to_spoof.to_vec();
-        accounts_list_to_spoof.push(pool.address().0.into());
-
         // Deploy tokens
-        self.deploy_token_and_spoof_balance(ethers_db, pool.token0(), &accounts_list_to_spoof);
-        self.deploy_token_and_spoof_balance(ethers_db, pool.token1(), &accounts_list_to_spoof);
+        // I deploy tokens here because maybe later pools have diff strategy for holding tokens
+        // so I can depend on pool type to deploy tokens
+        self.deploy_token(ethers_db, pool.token0());
+        self.deploy_token(ethers_db, pool.token1());
 
         // Prepare pool
         let mut slots: HashMap<U256, U256> = HashMap::new();
@@ -393,17 +371,29 @@ where
             }
         };
 
-        // Get account info using ethers_db
+        // Get pool account info using ethers_db
         let pool_acc_info: AccountInfo = ethers_db.read().unwrap().basic_ref(pool_address).unwrap().unwrap();
 
         // Commit
-        let db: &mut ThreadSafeInMemoryDB = &mut self.revm_ctx.context.evm.db;
+        let db: &mut SharedInMemoryDB = &mut self.revm_ctx.context.evm.db;
         db.insert_account_info(pool_address, pool_acc_info);
 
         for (slot, value) in slots {
             db.insert_account_storage(pool_address, slot, value)
                 .expect("failed to insert pool reserves in DB");
         }
+
+        // Spoof tokens balances for the pool, account and simulator contract
+        static HUNDRED_GRAND_ETH: OnceLock<U256> = OnceLock::new();
+        let balance: &U256 = HUNDRED_GRAND_ETH.get_or_init(|| {
+            U256::from(100_000)
+                .checked_mul(U256::from(10).pow(U256::from(18)))
+                .unwrap()
+        });
+
+        let accounts_to_spoof = [pool_address, self.account, self.simulator_address];
+        self.spoof_token_balance(pool.token0(), *balance, &accounts_to_spoof);
+        self.spoof_token_balance(pool.token1(), *balance, &accounts_to_spoof);
     }
 
     fn deploy_contracts(&mut self, ethers_db: &Arc<RwLock<EthersDB<M>>>, contracts: &[Address]) {
@@ -414,7 +404,7 @@ where
             .collect();
 
         // Commit
-        let db: &mut ThreadSafeInMemoryDB = &mut self.revm_ctx.context.evm.db;
+        let db: &mut SharedInMemoryDB = &mut self.revm_ctx.context.evm.db;
         for (acc, info) in account_info_list {
             if db.0.read().unwrap().accounts.get(&acc).is_some() {
                 panic!("Contract already deployed: {}", acc.to_checksum(None));
@@ -436,22 +426,13 @@ where
         };
     }
 
-    fn deploy_full_amm(
-        &mut self,
-        ethers_db: &Arc<RwLock<EthersDB<M>>>,
-        amm: &Arc<AmmProtocolKind>,
-        accounts_to_spoof: &[Address],
-    ) {
+    fn deploy_full_amm(&mut self, ethers_db: &Arc<RwLock<EthersDB<M>>>, amm: &Arc<AmmProtocolKind>) {
         self.deploy_amm(ethers_db, amm);
 
         // Deploy pools
-        // TODO: REMOVE, The problem is that pools are not in the right order. WTF there a right order thing!
-        let mut gg = amm.pools().clone();
-        gg.reverse();
-
         // TODO: Parallelize
-        for pool in &gg {
-            self.deploy_pool(ethers_db, pool, accounts_to_spoof);
+        for pool in amm.pools() {
+            self.deploy_pool(ethers_db, pool);
         }
     }
 
@@ -505,7 +486,7 @@ where
         }
 
         // Update EVM db
-        let db: &mut ThreadSafeInMemoryDB = &mut self.revm_ctx.context.evm.db;
+        let db: &mut SharedInMemoryDB = &mut self.revm_ctx.context.evm.db;
         for (address, (slot, value)) in slots_values {
             db.insert_account_storage(address, slot, value)
                 .expect("failed to slot storage value");
@@ -533,7 +514,7 @@ where
             .collect();
 
         // TODO: Should make another DB for this, since we only need to get balance slot
-        let db: &mut ThreadSafeInMemoryDB = &mut self.revm_ctx.context.evm.db;
+        let db: &mut SharedInMemoryDB = &mut self.revm_ctx.context.evm.db;
         for (token_acc_info, token) in tokens_accounts {
             db.insert_account_info(token, token_acc_info);
         }
@@ -619,6 +600,7 @@ where
                     return Err(anyhow!("Failed to decode output"));
                 };
 
+                //Ok(U256::from_limbs(decoded_output.0.0))
                 Ok(decoded_output.0)
             }
             TxResult::Revert(_) => Err(anyhow!("Failed to get token balance")),
@@ -683,19 +665,22 @@ where
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use super::*;
-    use crate::database::{Database, DbToken, DbTokenNetwork};
-    use crate::managers::TokenManager;
-    use contracts::erc20_token::TransferCall;
-    use contracts::simulator::MultiSwapError;
-    use ethers::providers::{Http, Provider};
-    use std::any::Any;
     use std::path::Path;
     use std::sync::OnceLock;
+
+    use ethers::providers::{Http, Provider};
+
+    use contracts::erc20_token::TransferCall;
+    use contracts::simulator::MultiSwapError;
     use vidger::types::NetworkKind;
 
+    use crate::database::{Database, DbToken, DbTokenNetwork};
+    use crate::managers::TokenManager;
+
+    use super::*;
+
     fn get_db() -> Database {
-        Database::new(Path::new("/Data/Projects/mev-chaser/Main.db")).unwrap()
+        Database::new(Path::new("H:\\Projects\\mev-chaser\\Main.db")).unwrap()
     }
 
     fn get_provider() -> Arc<Provider<Http>> {
@@ -770,15 +755,27 @@ pub(crate) mod tests {
         let mut simulator: EvmSimulator<M> = get_simulator(provider, &AmmManager::new(vec![]));
         let ethers_db = Arc::new(RwLock::new(EthersDB::new(Arc::clone(provider), None).unwrap()));
 
+        let hundred_grand_eth: U256 = U256::from(100_000)
+            .checked_mul(U256::from(10).pow(U256::from(18)))
+            .unwrap();
+        let e_hundred_grand_eth = eU256::from(hundred_grand_eth.clone().to_be_bytes());
+
         let accounts_to_spoof = [simulator.simulator_address, simulator.account];
         for token in tokens {
-            simulator.deploy_token_and_spoof_balance(&ethers_db, token, &accounts_to_spoof);
+            simulator.deploy_token(&ethers_db, token);
+            simulator.spoof_token_balance(token, hundred_grand_eth, &accounts_to_spoof);
 
             let balance: Result<eU256> = simulator.get_token_balance(&token.address().0.into());
             assert!(balance.is_ok(), "{} send_tx failed", token.symbol());
 
             let balance: eU256 = balance.unwrap();
-            assert_ne!(balance, eU256::zero(), "{} balance: {:?}", token.symbol(), balance);
+            assert_eq!(
+                balance,
+                e_hundred_grand_eth,
+                "{} balance: {:?}",
+                token.symbol(),
+                balance
+            );
 
             println!("{} balance: {:?}", token.symbol(), balance);
         }
@@ -788,9 +785,15 @@ pub(crate) mod tests {
         let mut simulator: EvmSimulator<Provider<Http>> = get_simulator(provider, &AmmManager::new(vec![]));
         let ethers_db = Arc::new(RwLock::new(EthersDB::new(Arc::clone(provider), None).unwrap()));
 
+        let hundred_grand_eth: U256 = U256::from(100_000)
+            .checked_mul(U256::from(10).pow(U256::from(18)))
+            .unwrap();
+        //let e_hundred_grand_eth = eU256::from(hundred_grand_eth.clone().to_be_bytes());
+
         let accounts_to_spoof = [simulator.simulator_address, simulator.account];
         for token in tokens {
-            simulator.deploy_token_and_spoof_balance(&ethers_db, token, &accounts_to_spoof);
+            simulator.deploy_token(&ethers_db, token);
+            simulator.spoof_token_balance(token, hundred_grand_eth, &accounts_to_spoof);
 
             let calldata: Bytes = AbiEncode::encode(TransferCall {
                 to: simulator.simulator_address.0 .0.into(),

@@ -1,10 +1,11 @@
+use std::sync::{Arc, RwLock};
+
 use revm::db::{CacheDB, EmptyDB};
 use revm::primitives::{Account, AccountInfo, Address, Bytecode, B256, U256};
 use revm::{Database, DatabaseCommit, DatabaseRef};
-use std::sync::{Arc, RwLock};
 
 /// A [Database] implementation that stores all state changes in memory and in a thread-safe way.
-pub type ThreadSafeInMemoryDB = ThreadSafeCacheDB<EmptyDB>;
+pub type SharedInMemoryDB = ThreadSafeCacheDB<EmptyDB>;
 
 /// A [Database] implementation that stores all state changes in memory and in a thread-safe way.
 ///
