@@ -17,6 +17,7 @@ use ethers::{
 };
 use hashbrown::HashMap;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use revm::interpreter::Host;
 use revm::primitives::{Account, Log, U256};
 use revm::{
     db::{EmptyDB, EthersDB},
@@ -140,6 +141,7 @@ impl<M: Middleware + 'static> EvmSimulator<M> {
         commit: bool,
     ) -> Result<(ExecutionResult, Option<State>)> {
         let mut evm: Evm<(), ThreadSafeInMemoryDB> = Self::get_evm(revm_ctx);
+
         let tx: &mut TxEnv = evm.tx_mut();
         tx.caller = caller;
         tx.transact_to = TransactTo::Call(to);
@@ -308,6 +310,13 @@ where
             This means that our newly deployed pair contract has to have real token balances to perform a real swap.
         */
 
+        // Skip if already deployed
+        let pool_address: Address = pool.address().0.into();
+        let db: &mut ThreadSafeInMemoryDB = &mut self.revm_ctx.context.evm.db;
+        if db.0.read().unwrap().accounts.get(&pool_address).is_some() {
+            panic!("Pool already deployed: {}", pool_address);
+        }
+
         // Add pool to spoof
         // Don't change `accounts_list_to_spoof` to mutable vector,
         // as it will keep push all pools to spoof form the caller
@@ -317,13 +326,6 @@ where
         // Deploy tokens
         self.deploy_token_and_spoof_balance(ethers_db, pool.token0(), &accounts_list_to_spoof);
         self.deploy_token_and_spoof_balance(ethers_db, pool.token1(), &accounts_list_to_spoof);
-
-        // Deploy pool
-        let pool_address: Address = pool.address().0.into();
-        let db: &mut ThreadSafeInMemoryDB = &mut self.revm_ctx.context.evm.db;
-        if db.0.read().unwrap().accounts.get(&pool_address).is_some() {
-            panic!("Pool already deployed: {}", pool_address);
-        }
 
         // Prepare pool
         let mut slots: HashMap<U256, U256> = HashMap::new();
@@ -414,6 +416,10 @@ where
         // Commit
         let db: &mut ThreadSafeInMemoryDB = &mut self.revm_ctx.context.evm.db;
         for (acc, info) in account_info_list {
+            if db.0.read().unwrap().accounts.get(&acc).is_some() {
+                panic!("Contract already deployed: {}", acc.to_checksum(None));
+            }
+
             db.insert_account_info(acc, info);
         }
     }
@@ -439,8 +445,12 @@ where
         self.deploy_amm(ethers_db, amm);
 
         // Deploy pools
+        // TODO: REMOVE, The problem is that pools are not in the right order. WTF there a right order thing!
+        let mut gg = amm.pools().clone();
+        gg.reverse();
+
         // TODO: Parallelize
-        for pool in amm.pools() {
+        for pool in &gg {
             self.deploy_pool(ethers_db, pool, accounts_to_spoof);
         }
     }
@@ -685,7 +695,7 @@ pub(crate) mod tests {
     use vidger::types::NetworkKind;
 
     fn get_db() -> Database {
-        Database::new(Path::new("/home/corrm/Data/Projects/mev-chaser/Main.db")).unwrap()
+        Database::new(Path::new("/Data/Projects/mev-chaser/Main.db")).unwrap()
     }
 
     fn get_provider() -> Arc<Provider<Http>> {
@@ -815,14 +825,16 @@ pub(crate) mod tests {
                     pool.token1().symbol()
                 );
 
-                let result: Result<eU256, SimulatorAbiErrors> =
-                    simulator.get_amounts_out(pool, pool.token0(), pool.token0().convert_to_amount(1.0_f64));
+                let token: &Arc<CryptoToken> = pool.token0();
+                let amount: eU256 = pool.token0().convert_to_amount(1.0_f64);
+                let result: Result<eU256, SimulatorAbiErrors> = simulator.get_amounts_out(pool, token, amount);
 
-                if let Err(ref e) = result {
+                if let Err(e) = &result {
                     let multi_swap_error: &MultiSwapError = match e {
                         SimulatorAbiErrors::MultiSwapError(e) => e,
                         _ => panic!("multi_swap_error: {}", e),
                     };
+
                     if multi_swap_error.error_reason.contains("UniswapV2: K") {
                         println!("UniswapV2: K");
                         println!("=====================");

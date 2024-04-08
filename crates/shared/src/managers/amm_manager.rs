@@ -76,7 +76,9 @@ impl AmmManager {
                         pools.push(pool);
                     }
 
-                    pools = pools[0..50].to_vec(); // TODO: REMOVE
+                    pools = pools[0..5].to_vec(); // TODO: REMOVE
+                    pools.reverse(); // TODO: REMOVE
+                    pools = pools[1..].to_vec(); // TODO: REMOVE
 
                     unsafe {
                         let uniswap_v2 = Arc::into_raw(uniswap_v2) as *mut AmmProtocolKind;
