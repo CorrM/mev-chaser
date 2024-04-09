@@ -31,6 +31,10 @@ impl<ExtDB> ThreadSafeCacheDB<ExtDB> {
         }
     }
 
+    pub fn have_account(&self, address: &Address) -> bool {
+        self.0.read().unwrap().accounts.get(address).is_some()
+    }
+
     /// Inserts the account's code into the cache.
     ///
     /// Accounts objects and code are stored separately in the cache, this will take the code from the account and instead map it to the code hash.

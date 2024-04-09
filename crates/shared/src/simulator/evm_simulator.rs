@@ -17,6 +17,7 @@ use ethers::{
 };
 use hashbrown::HashMap;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use revm::db::CacheDB;
 use revm::primitives::{Account, Log, U256};
 use revm::{
     db::{EmptyDB, EthersDB},
@@ -263,7 +264,7 @@ where
         // Skip if already deployed
         let db: &SharedInMemoryDB = &self.revm_ctx.context.evm.db;
         if db.0.read().unwrap().accounts.get(&token_address).is_some() {
-            return;
+            panic!("Token already deployed: {}({})", token.symbol(), token_address);
         }
 
         // Deploy proxy
@@ -294,16 +295,22 @@ where
         let pool_address: Address = pool.address().0.into();
 
         // Skip if already deployed
-        let db: &SharedInMemoryDB = &self.revm_ctx.context.evm.db;
-        if db.0.read().unwrap().accounts.get(&pool_address).is_some() {
+        if self.revm_ctx.context.evm.db.have_account(&pool_address) {
             panic!("Pool already deployed: {}", pool_address);
         }
 
         // Deploy tokens
         // I deploy tokens here because maybe later pools have diff strategy for holding tokens
         // so I can depend on pool type to deploy tokens
-        self.deploy_token(ethers_db, pool.token0());
-        self.deploy_token(ethers_db, pool.token1());
+        let token_address: Address = pool.token0().address().0.into();
+        if !self.revm_ctx.context.evm.db.have_account(&token_address) {
+            self.deploy_token(ethers_db, pool.token0());
+        }
+
+        let token_address: Address = pool.token1().address().0.into();
+        if !self.revm_ctx.context.evm.db.have_account(&token_address) {
+            self.deploy_token(ethers_db, pool.token1());
+        }
 
         // Prepare pool
         let mut slots: HashMap<U256, U256> = HashMap::new();
@@ -898,27 +905,7 @@ pub(crate) mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn get_amounts_out_no_proxy_tokens() {
-        let provider: Arc<Provider<Http>> = get_provider();
-        let db: Database = get_db();
-        let amm_manager: AmmManager = get_amm_manager(&db);
-        let simulator: EvmSimulator<Provider<Http>> = get_simulator(&provider, &amm_manager);
-
-        get_amounts_out(&simulator, &amm_manager);
-    }
-
-    #[tokio::test(flavor = "multi_thread")]
-    async fn get_amounts_out_proxy_tokens() {
-        let provider: Arc<Provider<Http>> = get_provider();
-        let db: Database = get_db();
-        let amm_manager: AmmManager = get_amm_manager(&db);
-        let simulator: EvmSimulator<Provider<Http>> = get_simulator(&provider, &amm_manager);
-
-        get_amounts_out(&simulator, &amm_manager);
-    }
-
-    #[tokio::test(flavor = "multi_thread")]
-    async fn gravity_finance() {
+    async fn get_amounts_out_tokens() {
         let provider: Arc<Provider<Http>> = get_provider();
         let db: Database = get_db();
         let amm_manager: AmmManager = get_amm_manager(&db);
