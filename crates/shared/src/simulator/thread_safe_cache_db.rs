@@ -26,11 +26,10 @@ impl<ExtDB: Default> Default for ThreadSafeCacheDB<ExtDB> {
 
 impl<ExtDB> ThreadSafeCacheDB<ExtDB> {
     pub fn new(db: ExtDB) -> Self {
-        Self {
-            0: Arc::new(RwLock::new(CacheDB::new(db))),
-        }
+        Self(Arc::new(RwLock::new(CacheDB::new(db))))
     }
 
+    /// Returns `true` if the account is in the cache.
     pub fn have_account(&self, address: &Address) -> bool {
         self.0.read().unwrap().accounts.get(address).is_some()
     }

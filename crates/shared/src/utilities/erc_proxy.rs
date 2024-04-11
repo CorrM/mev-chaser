@@ -74,13 +74,8 @@ fn parse1167bytecode(code: String) -> Option<Address> {
 
 /// EIP-1167 minimal proxy
 fn is_eip_1167_minimal_proxy<M: Middleware + 'static>(provider: &Arc<M>, token: Address) -> Option<Address> {
-    let Some(code_bytes) = block_on(provider.get_code(token, None)).ok() else {
-        return None;
-    };
-
-    let Some(eip1167_address) = parse1167bytecode(code_bytes.to_string()) else {
-        return None;
-    };
+    let code_bytes: Bytes = block_on(provider.get_code(token, None)).ok()?;
+    let eip1167_address: Address = parse1167bytecode(code_bytes.to_string())?;
 
     Some(eip1167_address)
 }
@@ -92,9 +87,7 @@ fn is_eip_1967_direct_proxy<M: Middleware + 'static>(provider: &Arc<M>, token: A
         H256::from_uint(&U256::from_str("0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc").unwrap())
     });
 
-    let Some(address) = block_on(provider.get_storage_at(token, *eip_1967_logic_slot, None)).ok() else {
-        return None;
-    };
+    let address: H256 = block_on(provider.get_storage_at(token, *eip_1967_logic_slot, None)).ok()?;
 
     read_address(address)
 }

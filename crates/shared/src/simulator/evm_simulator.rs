@@ -16,9 +16,8 @@ use ethers::{
     utils::keccak256,
 };
 use hashbrown::HashMap;
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
-use revm::db::CacheDB;
-use revm::primitives::{Account, Log, U256};
+use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
+use revm::primitives::{Account, Log, Storage, U256};
 use revm::{
     db::{EmptyDB, EthersDB},
     primitives::{
@@ -37,7 +36,6 @@ use contracts::uniswap_v2_factory::{CreatePairCall, CreatePairReturn};
 use vidger::{
     logger::{error, info, warn},
     types::NewBlock,
-    utilities::block_on,
 };
 
 use crate::amm::{AmmPoolKind, AmmProtocolKind};
@@ -263,7 +261,7 @@ where
 
         // Skip if already deployed
         let db: &SharedInMemoryDB = &self.revm_ctx.context.evm.db;
-        if db.0.read().unwrap().accounts.get(&token_address).is_some() {
+        if db.have_account(&token_address) {
             panic!("Token already deployed: {}({})", token.symbol(), token_address);
         }
 
@@ -413,7 +411,7 @@ where
         // Commit
         let db: &mut SharedInMemoryDB = &mut self.revm_ctx.context.evm.db;
         for (acc, info) in account_info_list {
-            if db.0.read().unwrap().accounts.get(&acc).is_some() {
+            if db.have_account(&acc) {
                 panic!("Contract already deployed: {}", acc.to_checksum(None));
             }
 
@@ -502,28 +500,15 @@ where
         info!("Simulator updated storage values for block '{}'", new_block.number);
     }
 
-    // TODO: self should not be mutable
-    pub fn get_tokens_balance_slot(&mut self, tokens: &[eAddress]) -> Result<HashMap<eAddress, Result<Option<i32>>>> {
-        // Get token account info from ethers middleware and insert it into EVM
-        let cur_block: eBlock<eH256> =
-            block_on(self.provider.get_block(eBlockNumber::Latest))?.ok_or(anyhow!("failed to retrieve block"))?;
-        let ethers_db: EthersDB<M> =
-            EthersDB::new(Arc::clone(&self.provider), Some(cur_block.number.unwrap().into())).unwrap();
+    pub fn get_tokens_balance_slot(&self, tokens: &[eAddress]) -> Result<HashMap<eAddress, Result<Option<i32>>>> {
+        let db: &SharedInMemoryDB = &self.revm_ctx.context.evm.db;
 
-        let tokens_accounts: Vec<(AccountInfo, Address)> = tokens
-            .par_iter()
-            .map(|token: &eAddress| {
-                let token: Address = token.0.into();
-                let token_acc_info: AccountInfo = ethers_db.basic_ref(token).unwrap().unwrap();
-
-                (token_acc_info, token)
-            })
-            .collect();
-
-        // TODO: Should make another DB for this, since we only need to get balance slot
-        let db: &mut SharedInMemoryDB = &mut self.revm_ctx.context.evm.db;
-        for (token_acc_info, token) in tokens_accounts {
-            db.insert_account_info(token, token_acc_info);
+        // Check if all tokens are deployed
+        for token in tokens {
+            let token: Address = token.0.into();
+            if !db.have_account(&token) {
+                panic!("Token not deployed: {}", token.to_checksum(None));
+            }
         }
 
         // Call balanceOf
@@ -532,7 +517,7 @@ where
         })
         .into();
 
-        let ret: HashMap<eAddress, Result<Option<i32>>> = tokens
+        Ok(tokens
             .par_iter()
             .map(|token: &eAddress| {
                 let _token: Address = token.0.into();
@@ -551,34 +536,42 @@ where
                     }
                 };
 
+                println!("State: {:#?}", result_and_state.1.clone().unwrap());
+
                 // Get touched storage
                 let token_acc: &Account = result_and_state.1.as_ref().unwrap().get(&_token).unwrap();
-                let touched_storage: &revm::primitives::Storage = &token_acc.storage;
+                let touched_storage: &Storage = &token_acc.storage;
                 println!("Touched storage slots: {:?}", touched_storage);
+
+                if touched_storage.is_empty() {
+                    return (*token, Ok(None));
+                }
 
                 // Some tokens have a lot of storage slots like
                 // https://polygonscan.com/token/0x9C9e5fD8bbc25984B178FdCE6117Defa39d2db39
                 // balance slot are 51
-                for i in 0..200 {
-                    let slot: [u8; 32] = keccak256(&abi::encode(&[
+                let balance_slot: Option<i32> = (0..400).into_par_iter().find_first(|i: &i32| {
+                    let slot: [u8; 32] = keccak256(abi::encode(&[
                         abi::Token::Address(self.account.0 .0.into()),
-                        abi::Token::Uint(eU256::from(i)),
+                        abi::Token::Uint(eU256::from(*i)),
                     ]));
 
                     let slot = U256::from_be_bytes(slot);
                     if touched_storage.get(&slot).is_none() {
-                        continue;
+                        return false; // continue
                     };
 
                     println!("Balance storage slot: {:?} ({:?})", i, slot);
-                    return (*token, Ok(Some(i)));
+                    true
+                });
+
+                if balance_slot.is_some() {
+                    return (*token, Ok(balance_slot));
                 }
 
                 (*token, Ok(None))
             })
-            .collect();
-
-        Ok(ret)
+            .collect())
     }
 
     pub fn get_token_balance(&self, token: &Address) -> Result<eU256> {
@@ -681,6 +674,7 @@ pub(crate) mod tests {
     use contracts::simulator::MultiSwapError;
     use vidger::types::NetworkKind;
 
+    use crate::amm::{UniswapV2Pool, UniswapV2Protocol};
     use crate::database::{Database, DbToken, DbTokenNetwork};
     use crate::managers::TokenManager;
 
@@ -700,6 +694,38 @@ pub(crate) mod tests {
     fn get_amm_manager(db: &Database) -> AmmManager {
         let token_manager = TokenManager::new_by_db(db, &NetworkKind::Polygon).unwrap();
         AmmManager::new_by_db(db, &NetworkKind::Polygon, &token_manager).unwrap()
+    }
+
+    fn get_uniswap_v2_amm_manager(
+        amm_name: &str,
+        factory: &str,
+        router: &str,
+        pool_address: &str,
+        token0: &CryptoToken,
+        token1: &CryptoToken,
+    ) -> AmmManager {
+        let mut uniswap_v2 = Arc::new(AmmProtocolKind::UniswapV2(
+            UniswapV2Protocol::new(amm_name, factory, router).unwrap(),
+        ));
+
+        let pool = AmmPoolKind::UniswapV2(
+            UniswapV2Pool::new(
+                eAddress::from_str(pool_address).unwrap(),
+                Arc::clone(&uniswap_v2),
+                Arc::new(token0.clone()),
+                Arc::new(token1.clone()),
+            )
+            .unwrap(),
+        );
+
+        unsafe {
+            let _uniswap_v2 = Arc::into_raw(uniswap_v2) as *mut AmmProtocolKind;
+            (*_uniswap_v2).add_pool(pool);
+            uniswap_v2 = Arc::from_raw(_uniswap_v2);
+        }
+
+        let amms: Vec<Arc<AmmProtocolKind>> = vec![uniswap_v2];
+        AmmManager::new(amms)
     }
 
     fn get_simulator<M: Middleware + 'static>(provider: &Arc<M>, amm_manager: &AmmManager) -> EvmSimulator<M> {
@@ -882,7 +908,7 @@ pub(crate) mod tests {
         let provider: Arc<Provider<Http>> = get_provider();
         let db: Database = get_db();
 
-        let tokens = [usdc_token(&db), usdt_token(&db)];
+        let tokens = [usdc_token(&db), usdt_token(&db), sushi_token(&db), wbtc_token(&db)];
         balance_of_tokens(&provider, &tokens);
     }
 
@@ -912,5 +938,65 @@ pub(crate) mod tests {
         let simulator: EvmSimulator<Provider<Http>> = get_simulator(&provider, &amm_manager);
 
         get_amounts_out(&simulator, &amm_manager);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn get_tokens_balance_slot_proxy_tokens() {
+        let db: Database = get_db();
+        let token0: &CryptoToken = wmatic_token(&db);
+        let token1: CryptoToken = make_token(&db, "0x6396252377F54ad33cFF9131708Da075b21d9B88");
+
+        let amm_manager: AmmManager = get_uniswap_v2_amm_manager(
+            "QuickSwapV2",
+            "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+            "0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff",
+            "0x9646f7CFbeCE44b94825F3AAEc88D591941b8dC4",
+            token0,
+            &token1,
+        );
+
+        let provider: Arc<Provider<Http>> = get_provider();
+        let simulator: EvmSimulator<Provider<Http>> = get_simulator(&provider, &amm_manager);
+        let token_address: eAddress = *token1.address();
+
+        let slot: HashMap<eAddress, Result<Option<i32>>> = simulator.get_tokens_balance_slot(&[token_address]).unwrap();
+        let slot: &Result<Option<i32>> = slot.get(&token_address).unwrap();
+        assert!(
+            slot.is_ok() && slot.as_ref().unwrap().is_some(),
+            "Failed to get token balance slot"
+        );
+
+        let slot: i32 = slot.as_ref().unwrap().unwrap();
+        assert!(slot >= 0, "Failed to get token balance slot");
+
+        println!("Balance slot: {}", slot);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn get_tokens_balance_slot_tokens() {
+        let provider: Arc<Provider<Http>> = get_provider();
+        let db: Database = get_db();
+        let amm_manager: AmmManager = get_amm_manager(&db);
+        let simulator: EvmSimulator<Provider<Http>> = get_simulator(&provider, &amm_manager);
+
+        let result: Result<HashMap<eAddress, Result<Option<i32>>>> = simulator.get_tokens_balance_slot(&[]);
+        assert!(result.is_ok(), "Failed to get tokens balance slot");
+
+        let result: HashMap<eAddress, Result<Option<i32>>> = result.unwrap();
+        assert_ne!(result.len(), 0, "Failed to get tokens balance slot");
+
+        for (address, result) in result {
+            assert!(
+                result.is_ok() && result.as_ref().unwrap().is_some(),
+                "Failed to get token '{}' balance slot",
+                to_checksum(&address, None)
+            );
+
+            assert!(
+                result.unwrap().unwrap() >= 0,
+                "Failed to get token '{}' balance slot",
+                to_checksum(&address, None)
+            );
+        }
     }
 }

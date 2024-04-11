@@ -11,7 +11,7 @@ use utilities::env::Env;
 use vidger::logger::{LevelFilter, Logger};
 use vidger::types::NetworkKind;
 
-use crate::commands::{RunCommand, UpdateTokenCommand};
+use crate::commands::{DeleteTokenCommand, RunCommand, UpdateTokenCommand};
 
 mod commands;
 mod strategy;
@@ -170,6 +170,10 @@ async fn entry_point() -> Result<()> {
             }
             "update_tokens" => {
                 UpdateTokenCommand::process(env.ethers_api_key, &db, &target_network, &raw_provider)?;
+            }
+            "delete_token" => {
+                let token_address: &String = &args[2];
+                DeleteTokenCommand::process(&db, &target_network, token_address)?;
             }
             _ => panic!("Invalid command"),
         }

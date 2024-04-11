@@ -420,6 +420,21 @@ impl Database {
         Ok(())
     }
 
+    pub fn delete_token(&self, network: &NetworkKind, token_address: &str) -> Result<()> {
+        let db_token: Option<(DbToken, DbTokenNetwork)> = self.get_token_and_network(token_address, network)?;
+        let Some(db_token) = db_token else {
+            return Err(rusqlite::Error::QueryReturnedNoRows);
+        };
+
+        let mut stmt: Statement = self.db.prepare("DELETE FROM Tokens WHERE id = ?")?;
+        stmt.execute(params![db_token.0.id])?;
+
+        let mut stmt: Statement = self.db.prepare("DELETE FROM TokensNetworks WHERE id = ?")?;
+        stmt.execute(params![db_token.1.id])?;
+
+        Ok(())
+    }
+
     pub fn get_amm_protocol(&self, protocol: &AmmProtocolKind) -> Result<Option<DbAmmProtocol>> {
         let mut stmt: Statement = self.db.prepare("SELECT * FROM AmmProtocols WHERE name = ? LIMIT 1")?;
         stmt.query_row(params![protocol.to_string()], DbAmmProtocol::from_row)
