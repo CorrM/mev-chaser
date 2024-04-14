@@ -23,18 +23,17 @@ use ethers::{
 };
 use hashbrown::HashMap;
 use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
-use revm::primitives::bitvec::macros::internal::funty::Fundamental;
 
 use contracts::balancer_flash_loan_recipient::OneSwapInfo;
 use contracts::erc20_token::BalanceOfCall;
 use contracts::simulator::{
-    SimulateGetAmountsOutCall, SimulateGetAmountsOutReturn, SimulateMultiSwapCall, SimulateMultiSwapReturn,
+    SimulateGetAmountsOutUniswapV2Call, SimulateGetAmountsOutUniswapV2Return, SimulateMultiSwapCall, SimulateMultiSwapReturn,
     SimulatorAbi, SimulatorAbiErrors, SIMULATORABI_DEPLOYED_BYTECODE,
 };
-use vidger::types::CryptoToken;
 use vidger::utilities::block_on;
 
 use crate::amm::{AmmPoolKind, AmmProtocolKind};
+use crate::types::CryptoToken;
 
 fn extract_trace_logs(call_frame: &CallFrame, logs: &mut Vec<CallLogFrame>) {
     if let Some(ref logs_vec) = call_frame.logs {

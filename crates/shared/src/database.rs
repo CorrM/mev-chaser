@@ -426,11 +426,16 @@ impl Database {
             return Err(rusqlite::Error::QueryReturnedNoRows);
         };
 
-        let mut stmt: Statement = self.db.prepare("DELETE FROM Tokens WHERE id = ?")?;
+        let mut stmt: Statement = self.db.prepare("DELETE FROM TokenNetworks WHERE id = ?")?;
+        stmt.execute(params![db_token.1.id])?;
+
+        let mut stmt: Statement = self
+            .db
+            .prepare("DELETE FROM AmmPools WHERE token0Id = ?1 OR token1Id = ?1")?;
         stmt.execute(params![db_token.0.id])?;
 
-        let mut stmt: Statement = self.db.prepare("DELETE FROM TokensNetworks WHERE id = ?")?;
-        stmt.execute(params![db_token.1.id])?;
+        let mut stmt: Statement = self.db.prepare("DELETE FROM Tokens WHERE id = ?")?;
+        stmt.execute(params![db_token.0.id])?;
 
         Ok(())
     }

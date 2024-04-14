@@ -1,8 +1,8 @@
+use std::collections::BTreeMap;
 use std::str::FromStr;
 use std::sync::{Arc, OnceLock, RwLock};
 
 use anyhow::{anyhow, Result};
-use ethers::utils::to_checksum;
 use ethers::{
     abi,
     abi::AbiDecode,
@@ -10,10 +10,14 @@ use ethers::{
     abi::AbiError,
     providers::Middleware,
     types::{
-        Address as eAddress, Block as eBlock, BlockId as eBlockId, BlockNumber as eBlockNumber, Log as eLog,
-        H256 as eH256, U256 as eU256,
+        transaction::eip2718::TypedTransaction, AccountState as eAccountState, Address as eAddress, Block as eBlock,
+        BlockId as eBlockId, BlockNumber as eBlockNumber, CallConfig, CallFrame, GethDebugBuiltInTracerConfig,
+        GethDebugBuiltInTracerType, GethDebugTracerConfig, GethDebugTracerType, GethDebugTracingCallOptions,
+        GethDebugTracingOptions, GethTrace, GethTraceFrame, Log as eLog, PreStateFrame, PreStateMode,
+        Transaction as eTransaction, TransactionRequest, H256 as eH256, U256 as eU256, U64 as eU64,
     },
     utils::keccak256,
+    utils::to_checksum,
 };
 use hashbrown::HashMap;
 use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
@@ -27,12 +31,13 @@ use revm::{
     ContextWithHandlerCfg, DatabaseRef, Evm,
 };
 
-use contracts::erc20_token::{BalanceOfCall, BalanceOfReturn};
+use contracts::erc20_token::{BalanceOfCall, BalanceOfReturn, ERC20TokenAbi};
 use contracts::simulator::{
     SimulateGetAmountsOutUniswapV2Call, SimulateGetAmountsOutUniswapV2Return, SimulatorAbiErrors,
     SIMULATORABI_DEPLOYED_BYTECODE,
 };
 use contracts::uniswap_v2_factory::{CreatePairCall, CreatePairReturn};
+use vidger::utilities::block_on;
 use vidger::{
     logger::{error, info, warn},
     types::NewBlock,
@@ -217,6 +222,35 @@ impl<M> EvmSimulator<M>
 where
     M: Middleware + 'static,
 {
+    #[inline]
+    fn get_storage_at(&self, address: Address, slot: U256) -> U256 {
+        self.revm_ctx.context.evm.db.storage_ref(address, slot).unwrap()
+    }
+
+    #[inline]
+    fn make_simulator_tx(&self, data: Bytes, nonce: Option<eU256>) -> TypedTransaction {
+        static TX: OnceLock<TypedTransaction> = OnceLock::new();
+        let tx: &TypedTransaction = TX.get_or_init(|| {
+            let ret: TypedTransaction = TransactionRequest::default()
+                .from(Into::<eAddress>::into(self.account.0 .0))
+                .to(Into::<eAddress>::into(self.simulator_address.0 .0))
+                .value(eU256::zero())
+                .nonce(eU256::zero())
+                .into();
+
+            ret
+        });
+
+        let mut transaction: TypedTransaction = tx.clone();
+        transaction.set_data(data.0.into());
+
+        if let Some(nonce) = nonce {
+            transaction.set_nonce(nonce);
+        }
+
+        transaction
+    }
+
     fn spoof_token_balance(&mut self, token: &CryptoToken, balance: U256, accounts_list_to_spoof: &[Address]) {
         // https://ethereum.stackexchange.com/questions/147205/how-to-view-the-amount-of-storage-a-contract-uses
         // https://ethereum.stackexchange.com/questions/47986/using-getstorageat-on-mappingaddress-uint64
@@ -363,16 +397,16 @@ where
                 );
 
                 // Inject reserves
-                let slot_idx = U256::from(RESERVE_SLOT);
-                if let Ok(slot_value) = ethers_db.read().unwrap().storage_ref(pool_address, slot_idx) {
-                    slots.insert(slot_idx, slot_value);
+                let reserve_slot_idx = U256::from(RESERVE_SLOT);
+                if let Ok(slot_value) = ethers_db.read().unwrap().storage_ref(pool_address, reserve_slot_idx) {
+                    slots.insert(reserve_slot_idx, slot_value);
                 } else {
-                    warn!("Failed to get slot '{}' from pool '{}'", slot_idx, pool_address);
+                    warn!("Failed to get slot '{}' from pool '{}'", reserve_slot_idx, pool_address);
                 }
 
                 // Only reserve slot needs to be updated
                 self.accounts_slots_to_update
-                    .insert(pool_address, vec![U256::from(RESERVE_SLOT)]);
+                    .insert(pool_address, vec![reserve_slot_idx]);
             }
         };
 
@@ -439,6 +473,133 @@ where
         for pool in amm.pools() {
             self.deploy_pool(ethers_db, pool);
         }
+    }
+
+    #[inline]
+    fn node_debug_trace_call_get_state_diff(&self, tx: TypedTransaction) -> Result<GethTrace> {
+        static OPTIONS: GethDebugTracingCallOptions = GethDebugTracingCallOptions {
+            tracing_options: GethDebugTracingOptions {
+                disable_storage: None,
+                disable_stack: None,
+                enable_memory: None,
+                enable_return_data: None,
+                tracer: Some(GethDebugTracerType::BuiltInTracer(
+                    GethDebugBuiltInTracerType::PreStateTracer,
+                )),
+                tracer_config: None,
+                timeout: None,
+            },
+            state_overrides: None,
+            block_overrides: None,
+        };
+
+        let trace: GethTrace = block_on(self.provider.debug_trace_call(tx, None, OPTIONS.clone()))?;
+
+        Ok(trace)
+    }
+
+    fn node_debug_trace_call(&self, tx: &eTransaction, block_number: Option<eU64>) -> Result<Option<CallFrame>> {
+        static TRACE_OPTIONS: GethDebugTracingCallOptions = GethDebugTracingCallOptions {
+            tracing_options: GethDebugTracingOptions {
+                tracer: Some(GethDebugTracerType::BuiltInTracer(
+                    GethDebugBuiltInTracerType::CallTracer,
+                )),
+                tracer_config: Some(GethDebugTracerConfig::BuiltInTracer(
+                    GethDebugBuiltInTracerConfig::CallTracer(CallConfig {
+                        with_log: Some(true), // 👈 make sure we are getting logs
+                        only_top_call: Some(false),
+                    }),
+                )),
+                disable_storage: None,
+                disable_stack: None,
+                enable_memory: None,
+                enable_return_data: None,
+                timeout: None,
+            },
+            state_overrides: None,
+            block_overrides: None,
+        };
+
+        let trace: GethTrace = block_on(self.provider.debug_trace_call(
+            tx,
+            block_number.map(|block_id| eBlockId::Number(eBlockNumber::Number(block_id))),
+            TRACE_OPTIONS.clone(),
+        ))?;
+        let GethTrace::Known(call_tracer) = trace else {
+            return Ok(None);
+        };
+        let GethTraceFrame::CallTracer(frame) = call_tracer else {
+            return Ok(None);
+        };
+
+        Ok(Some(frame))
+    }
+
+    pub fn node_get_tokens_balance_slot(&self, tokens: &[Address]) -> Result<HashMap<Address, Result<Option<i32>>>> {
+        let calldata: Bytes = AbiEncode::encode(BalanceOfCall {
+            who: self.account.0 .0.into(),
+        })
+        .into();
+
+        let nonce_task = self
+            .provider
+            .get_transaction_count(Into::<eAddress>::into(self.account.0 .0), None);
+        let nonce: eU256 = block_on(nonce_task).expect("failed to get nonce");
+
+        let ret: HashMap<Address, Result<Option<i32>>> = tokens
+            .par_iter()
+            .map(|token: &Address| -> (Address, Result<Option<i32>>) {
+                let mut tx: TypedTransaction = self.make_simulator_tx(calldata.clone(), Some(nonce));
+                tx.set_to(Into::<eAddress>::into(token.0 .0));
+
+                let geth_trace: Result<GethTrace> = self.node_debug_trace_call_get_state_diff(tx);
+                let Ok(geth_trace) = geth_trace else {
+                    return (*token, Err(geth_trace.unwrap_err()));
+                };
+
+                let prestate: PreStateMode = match geth_trace {
+                    GethTrace::Known(GethTraceFrame::PreStateTracer(PreStateFrame::Default(prestate_mode))) => {
+                        Some(prestate_mode)
+                    }
+                    _ => None,
+                }
+                .unwrap();
+
+                println!("geth touched accounts: {:#?}", prestate.0);
+
+                let token_acc_state: Result<&eAccountState> = prestate
+                    .0
+                    .get(&Into::<eAddress>::into(token.0 .0))
+                    .ok_or(anyhow!("no token key"));
+                let Ok(token_acc_state) = token_acc_state else {
+                    return (*token, Err(token_acc_state.unwrap_err()));
+                };
+
+                let token_touched_storage: Result<&BTreeMap<eH256, eH256>> =
+                    token_acc_state.storage.as_ref().ok_or(anyhow!("no storage values"));
+
+                let Ok(token_touched_storage) = token_touched_storage else {
+                    return (*token, Err(token_touched_storage.unwrap_err()));
+                };
+
+                for i in 0..400 {
+                    let slot: [u8; 32] = keccak256(&abi::encode(&[
+                        abi::Token::Address(self.account.0 .0.into()),
+                        abi::Token::Uint(eU256::from(i)),
+                    ]));
+
+                    if token_touched_storage.get(&slot.into()).is_none() {
+                        continue;
+                    }
+
+                    return (*token, Ok(Some(i)));
+                }
+
+                (*token, Ok(None))
+            })
+            .collect();
+
+        Ok(ret)
     }
 
     pub fn sync_by_block(&mut self, new_block: &NewBlock, logs: &[eLog]) {
@@ -535,6 +696,10 @@ where
                         return (*token, Err(anyhow!("EVM call failed: {e:?}")));
                     }
                 };
+
+                if let ExecutionResult::Revert { output, .. } = result_and_state.0 {
+                    panic!("Try decode revert output: {:?}", output);
+                }
 
                 println!("State: {:#?}", result_and_state.1.clone().unwrap());
 
@@ -686,8 +851,10 @@ pub(crate) mod tests {
 
     fn get_provider() -> Arc<Provider<Http>> {
         Arc::new(
-            Provider::<Http>::try_from("https://polygon-mainnet.infura.io/v3/c230ccbf294b44bcac907f4a719d06c4")
-                .unwrap(),
+            Provider::<Http>::try_from(
+                "https://polygon.blockpi.network/v1/rpc/03d6815a3ad15c13cc9fa5e00f7649f72ee3ad4f",
+            )
+            .unwrap(),
         )
     }
 
@@ -957,10 +1124,26 @@ pub(crate) mod tests {
 
         let provider: Arc<Provider<Http>> = get_provider();
         let simulator: EvmSimulator<Provider<Http>> = get_simulator(&provider, &amm_manager);
-        let token_address: eAddress = *token1.address();
+        let token_address: Address = token0.address().0.into();
 
-        let slot: HashMap<eAddress, Result<Option<i32>>> = simulator.get_tokens_balance_slot(&[token_address]).unwrap();
-        let slot: &Result<Option<i32>> = slot.get(&token_address).unwrap();
+        //for i in 0..400 {
+        //    let slot = U256::from(i);
+        //    let uint = simulator.get_storage_at(token_address, slot);
+        //    println!("slot {}: {:?}", i, uint);
+        //}
+
+        //let t: Address = token1.address().0.into();
+        //let result = simulator.get_token_balance(&t);
+        //println!("Token balance: {:?}", result);
+
+        let x = simulator
+            .node_get_tokens_balance_slot(&[token1.address().0.into()])
+            .unwrap();
+        println!("{:?}", x);
+
+        let slot: HashMap<eAddress, Result<Option<i32>>> =
+            simulator.get_tokens_balance_slot(&[*token1.address()]).unwrap();
+        let slot: &Result<Option<i32>> = slot.get(token1.address()).unwrap();
         assert!(
             slot.is_ok() && slot.as_ref().unwrap().is_some(),
             "Failed to get token balance slot"
