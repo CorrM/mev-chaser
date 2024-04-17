@@ -1,7 +1,6 @@
 use std::sync::{Arc, RwLock};
 
 use anyhow::Result;
-use contracts::simulator::SimulatorAbiErrors;
 use dashmap::mapref::one::RefMut;
 use dashmap::DashMap;
 use ethers::prelude::H256;
@@ -11,6 +10,7 @@ use ethers::{providers::Middleware, types::Log};
 use hashbrown::HashSet;
 use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
 
+use contracts::simulator::SimulatorAbiErrors;
 use vidger::logger::{error, info};
 use vidger::types::NewBlock;
 
@@ -117,18 +117,18 @@ impl<M: Middleware + 'static> PoolManager<M> {
         println!(
             "{} balance: {:?}",
             pool.token0().symbol(),
-            self.simulator
-                .read()
-                .unwrap()
-                .get_token_balance(&pool.token0().address().0.into())
+            self.simulator.read().unwrap().get_token_balance(
+                &pool.token0().address().0.into(),
+                &self.simulator.read().unwrap().account()
+            )
         );
         println!(
             "{} balance: {:?}",
             pool.token1().symbol(),
-            self.simulator
-                .read()
-                .unwrap()
-                .get_token_balance(&pool.token1().address().0.into())
+            self.simulator.read().unwrap().get_token_balance(
+                &pool.token1().address().0.into(),
+                &self.simulator.read().unwrap().account()
+            )
         );
 
         let u256: Result<U256, SimulatorAbiErrors> =

@@ -1,6 +1,9 @@
 use std::collections::BTreeMap;
+use std::fs::{File, OpenOptions};
+use std::io;
+use std::io::BufWriter;
 use std::str::FromStr;
-use std::sync::{Arc, OnceLock, RwLock};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
 
 use anyhow::{anyhow, Result};
 use ethers::{
@@ -21,14 +24,16 @@ use ethers::{
 };
 use hashbrown::HashMap;
 use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
+use revm::inspectors::TracerEip3155;
 use revm::primitives::{Account, Log, Storage, U256};
 use revm::{
     db::{EmptyDB, EthersDB},
+    inspector_handle_register,
     primitives::{
         AccountInfo, Address, Bytecode, Bytes, CfgEnv, ExecutionResult, HaltReason, Output, ResultAndState, State,
         TransactTo, TxEnv, KECCAK_EMPTY,
     },
-    ContextWithHandlerCfg, DatabaseRef, Evm,
+    Context, ContextWithHandlerCfg, DatabaseRef, Evm, StateBuilder,
 };
 
 use contracts::erc20_token::{BalanceOfCall, BalanceOfReturn, ERC20TokenAbi};
@@ -49,6 +54,7 @@ use crate::simulator::SharedInMemoryDB;
 use crate::types::CryptoToken;
 
 type RevmContext = ContextWithHandlerCfg<(), SharedInMemoryDB>;
+type RevmEvm<'a> = Evm<'a, TracerEip3155, SharedInMemoryDB>;
 
 #[derive(Debug, Clone)]
 struct TxSuccessResult {
@@ -70,6 +76,7 @@ struct TxHaltResult {
     pub gas_used: u64,
 }
 
+#[derive(Debug)]
 enum TxResult {
     Success(TxSuccessResult),
     Revert(TxRevertResult),
@@ -86,8 +93,31 @@ pub struct EvmSimulator<M> {
 
 impl<M: Middleware + 'static> EvmSimulator<M> {
     #[inline]
-    fn get_evm(revm_ctx: RevmContext) -> Evm<'static, (), SharedInMemoryDB> {
-        Evm::builder().with_context_with_handler_cfg(revm_ctx).build()
+    fn get_evm(revm_ctx: RevmContext) -> RevmEvm<'static> {
+        std::fs::create_dir_all("C:\\Users\\CorrM\\Desktop\\traces").unwrap_or_default();
+        let file_name = format!("C:\\Users\\CorrM\\Desktop\\traces\\{}.json", 0);
+        let write = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(file_name);
+        let writer = BufWriter::new(write.expect("Failed to open file"));
+
+        let mut eip3155 = TracerEip3155::new(Box::new(io::stdout())).with_memory();
+        eip3155.set_writer(Box::new(writer));
+
+        let ctx = ContextWithHandlerCfg {
+            cfg: revm_ctx.cfg,
+            context: Context {
+                evm: revm_ctx.context.evm,
+                external: eip3155,
+            },
+        };
+
+        Evm::builder()
+            .with_context_with_handler_cfg(ctx)
+            .append_handler_register(inspector_handle_register)
+            .build()
     }
 
     #[inline]
@@ -143,7 +173,7 @@ impl<M: Middleware + 'static> EvmSimulator<M> {
         calldata: Bytes,
         commit: bool,
     ) -> Result<(ExecutionResult, Option<State>)> {
-        let mut evm: Evm<(), SharedInMemoryDB> = Self::get_evm(revm_ctx);
+        let mut evm: RevmEvm = Self::get_evm(revm_ctx);
 
         let tx: &mut TxEnv = evm.tx_mut();
         tx.caller = caller;
@@ -154,7 +184,7 @@ impl<M: Middleware + 'static> EvmSimulator<M> {
             let result: ExecutionResult = evm.transact_commit()?;
             Ok((result, None))
         } else {
-            let r: ResultAndState = evm.transact()?;
+            let r: ResultAndState = evm.transact_preverified()?;
             Ok((r.result, Some(r.state)))
         }
     }
@@ -216,6 +246,16 @@ impl<M> EvmSimulator<M> {
     pub fn provider(&self) -> &Arc<M> {
         &self.provider
     }
+
+    #[inline]
+    pub fn simulator_address(&self) -> &Address {
+        &self.simulator_address
+    }
+
+    #[inline]
+    pub fn account(&self) -> &Address {
+        &self.account
+    }
 }
 
 impl<M> EvmSimulator<M>
@@ -228,7 +268,7 @@ where
     }
 
     #[inline]
-    fn make_simulator_tx(&self, data: Bytes, nonce: Option<eU256>) -> TypedTransaction {
+    fn make_node_simulator_tx(&self, data: Bytes, nonce: Option<eU256>) -> TypedTransaction {
         static TX: OnceLock<TypedTransaction> = OnceLock::new();
         let tx: &TypedTransaction = TX.get_or_init(|| {
             let ret: TypedTransaction = TransactionRequest::default()
@@ -549,7 +589,7 @@ where
         let ret: HashMap<Address, Result<Option<i32>>> = tokens
             .par_iter()
             .map(|token: &Address| -> (Address, Result<Option<i32>>) {
-                let mut tx: TypedTransaction = self.make_simulator_tx(calldata.clone(), Some(nonce));
+                let mut tx: TypedTransaction = self.make_node_simulator_tx(calldata.clone(), Some(nonce));
                 tx.set_to(Into::<eAddress>::into(token.0 .0));
 
                 let geth_trace: Result<GethTrace> = self.node_debug_trace_call_get_state_diff(tx);
@@ -739,9 +779,9 @@ where
             .collect())
     }
 
-    pub fn get_token_balance(&self, token: &Address) -> Result<eU256> {
+    pub fn get_token_balance(&self, token: &Address, holder: &Address) -> Result<eU256> {
         let calldata: Bytes = AbiEncode::encode(BalanceOfCall {
-            who: self.account.0 .0.into(),
+            who: holder.0 .0.into(),
         })
         .into();
 
@@ -779,7 +819,6 @@ where
         input: &CryptoToken,
         amount_in: eU256,
     ) -> Result<eU256, SimulatorAbiErrors> {
-        // TODO: For uniswap_v3 `contract_address` are the quarter
         let calldata: Bytes = match pool {
             AmmPoolKind::UniswapV2(_) => {
                 let path: Vec<eAddress> = if pool.token0().address() == input.address() {
@@ -837,6 +876,7 @@ pub(crate) mod tests {
 
     use contracts::erc20_token::TransferCall;
     use contracts::simulator::MultiSwapError;
+    use contracts::uniswap_v2_pair::SwapCall;
     use vidger::types::NetworkKind;
 
     use crate::amm::{UniswapV2Pool, UniswapV2Protocol};
@@ -965,7 +1005,7 @@ pub(crate) mod tests {
             simulator.deploy_token(&ethers_db, token);
             simulator.spoof_token_balance(token, hundred_grand_eth, &accounts_to_spoof);
 
-            let balance: Result<eU256> = simulator.get_token_balance(&token.address().0.into());
+            let balance: Result<eU256> = simulator.get_token_balance(&token.address().0.into(), &simulator.account);
             assert!(balance.is_ok(), "{} send_tx failed", token.symbol());
 
             let balance: eU256 = balance.unwrap();
@@ -981,29 +1021,22 @@ pub(crate) mod tests {
         }
     }
 
-    fn transfer_tokens(provider: &Arc<Provider<Http>>, tokens: &[&CryptoToken]) {
-        let mut simulator: EvmSimulator<Provider<Http>> = get_simulator(provider, &AmmManager::new(vec![]));
-        let ethers_db = Arc::new(RwLock::new(EthersDB::new(Arc::clone(provider), None).unwrap()));
-
-        let hundred_grand_eth: U256 = U256::from(100_000)
-            .checked_mul(U256::from(10).pow(U256::from(18)))
-            .unwrap();
-        //let e_hundred_grand_eth = eU256::from(hundred_grand_eth.clone().to_be_bytes());
-
-        let accounts_to_spoof = [simulator.simulator_address, simulator.account];
+    fn transfer_tokens<M: Middleware + 'static>(
+        simulator: &EvmSimulator<M>,
+        from: Address,
+        to: &Address,
+        tokens: &[&CryptoToken],
+    ) {
         for token in tokens {
-            simulator.deploy_token(&ethers_db, token);
-            simulator.spoof_token_balance(token, hundred_grand_eth, &accounts_to_spoof);
-
             let calldata: Bytes = AbiEncode::encode(TransferCall {
-                to: simulator.simulator_address.0 .0.into(),
+                to: to.0 .0.into(),
                 value: token.convert_to_amount(1.0_f64),
             })
             .into();
 
             let result_and_state: (ExecutionResult, Option<State>) = EvmSimulator::<Provider<Http>>::send_tx(
                 simulator.revm_ctx.clone(),
-                simulator.account,
+                from,
                 token.address().0.into(),
                 calldata,
                 false,
@@ -1018,44 +1051,105 @@ pub(crate) mod tests {
         }
     }
 
+    fn swap<M: Middleware + 'static>(simulator: &EvmSimulator<M>, pool: &AmmPoolKind) {
+        let calldata: Bytes = AbiEncode::encode(SwapCall {
+            amount_0_out: eU256::from(0),
+            amount_1_out: pool.token1().convert_to_amount(1.0_f64),
+            to: Into::<eAddress>::into(simulator.account.0 .0),
+            data: Bytes::new().0.into(),
+        })
+        .into();
+
+        let result_and_state: (ExecutionResult, Option<State>) = EvmSimulator::<Provider<Http>>::send_tx(
+            simulator.revm_ctx.clone(),
+            simulator.account,
+            pool.address().0.into(),
+            calldata,
+            false,
+        )
+        .unwrap();
+
+        println!("result_and_state: {:#?}", result_and_state.0);
+
+        let calldata: Bytes = AbiEncode::encode(SwapCall {
+            amount_0_out: pool.token0().convert_to_amount(1.0_f64),
+            amount_1_out: eU256::from(0),
+            to: Into::<eAddress>::into(simulator.account.0 .0),
+            data: Bytes::new().0.into(),
+        })
+        .into();
+
+        let result_and_state: (ExecutionResult, Option<State>) = EvmSimulator::<Provider<Http>>::send_tx(
+            simulator.revm_ctx.clone(),
+            simulator.account,
+            pool.address().0.into(),
+            calldata,
+            false,
+        )
+        .unwrap();
+
+        println!("result_and_state: {:#?}", result_and_state.0);
+    }
+
     fn get_amounts_out<M: Middleware + 'static>(simulator: &EvmSimulator<M>, amm_manager: &AmmManager) {
         for amm in amm_manager.amms() {
             for pool in amm.pools() {
-                println!(
-                    "pool: {}, {} -> {}",
-                    to_checksum(pool.address(), None),
-                    pool.token0().symbol(),
-                    pool.token1().symbol()
-                );
-
-                let token: &Arc<CryptoToken> = pool.token0();
-                let amount: eU256 = pool.token0().convert_to_amount(1.0_f64);
-                let result: Result<eU256, SimulatorAbiErrors> = simulator.get_amounts_out(pool, token, amount);
-
-                if let Err(e) = &result {
-                    let multi_swap_error: &MultiSwapError = match e {
-                        SimulatorAbiErrors::MultiSwapError(e) => e,
-                        _ => panic!("multi_swap_error: {}", e),
+                for i in 0..=1 {
+                    let token: &Arc<CryptoToken> = if i == 0 {
+                        println!(
+                            "pool: {}, {} -> {}",
+                            to_checksum(pool.address(), None),
+                            pool.token0().symbol(),
+                            pool.token1().symbol(),
+                        );
+                        pool.token0()
+                    } else {
+                        println!(
+                            "pool: {}, {} -> {}",
+                            to_checksum(pool.address(), None),
+                            pool.token1().symbol(),
+                            pool.token0().symbol(),
+                        );
+                        pool.token1()
                     };
 
-                    if multi_swap_error.error_reason.contains("UniswapV2: K") {
-                        println!("UniswapV2: K");
-                        println!("=====================");
-                        continue;
+                    let amount: eU256 = token.convert_to_amount(1.0_f64);
+                    let result: Result<eU256, SimulatorAbiErrors> = simulator.get_amounts_out(pool, token, amount);
+
+                    if let Err(e) = &result {
+                        let multi_swap_error: &MultiSwapError = match e {
+                            SimulatorAbiErrors::MultiSwapError(e) => e,
+                            _ => panic!("multi_swap_error: {}", e),
+                        };
+
+                        if multi_swap_error.error_reason.contains("UniswapV2: K") {
+                            println!("UniswapV2: K");
+                            continue;
+                        }
+                    }
+
+                    let result: eU256 = result.unwrap();
+
+                    assert_ne!(result, eU256::zero());
+                    assert!(result > eU256::zero());
+
+                    if i == 0 {
+                        println!(
+                            "{} -> {} = {}",
+                            pool.token0().symbol(),
+                            pool.token1().symbol(),
+                            pool.token1().convert_to_decimal(result)
+                        );
+                    } else {
+                        println!(
+                            "{} -> {} = {}",
+                            pool.token1().symbol(),
+                            pool.token0().symbol(),
+                            pool.token0().convert_to_decimal(result)
+                        )
                     }
                 }
 
-                let result: eU256 = result.unwrap();
-
-                assert_ne!(result, eU256::zero());
-                assert!(result > eU256::zero());
-
-                println!(
-                    "{} -> {} = {}",
-                    pool.token0().symbol(),
-                    pool.token1().symbol(),
-                    pool.token1().convert_to_decimal(result)
-                );
                 println!("=====================");
             }
         }
@@ -1083,18 +1177,46 @@ pub(crate) mod tests {
     async fn transfer_no_proxy_tokens() {
         let provider: Arc<Provider<Http>> = get_provider();
         let db: Database = get_db();
+        let mut simulator: EvmSimulator<Provider<Http>> = get_simulator(&provider, &AmmManager::new(vec![]));
+        let ethers_db = Arc::new(RwLock::new(EthersDB::new(Arc::clone(&provider), None).unwrap()));
 
         let tokens = [wmatic_token(&db), weth_token(&db), quick_token(&db)];
-        transfer_tokens(&provider, &tokens);
+        let from = simulator.account;
+        let to = simulator.simulator_address;
+
+        let hundred_grand_eth: U256 = U256::from(100_000)
+            .checked_mul(U256::from(10).pow(U256::from(18)))
+            .unwrap();
+        let accounts_to_spoof = [from.0.into()];
+        for token in &tokens {
+            simulator.deploy_token(&ethers_db, token);
+            simulator.spoof_token_balance(token, hundred_grand_eth, &accounts_to_spoof);
+        }
+
+        transfer_tokens(&simulator, from, &to, &tokens);
     }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn transfer_proxy_tokens() {
         let provider: Arc<Provider<Http>> = get_provider();
         let db: Database = get_db();
+        let mut simulator: EvmSimulator<Provider<Http>> = get_simulator(&provider, &AmmManager::new(vec![]));
+        let ethers_db = Arc::new(RwLock::new(EthersDB::new(Arc::clone(&provider), None).unwrap()));
 
         let tokens = [usdc_token(&db), usdt_token(&db)];
-        transfer_tokens(&provider, &tokens);
+        let from = simulator.account;
+        let to = simulator.simulator_address;
+
+        let hundred_grand_eth: U256 = U256::from(100_000)
+            .checked_mul(U256::from(10).pow(U256::from(18)))
+            .unwrap();
+        let accounts_to_spoof = [from.0.into()];
+        for token in &tokens {
+            simulator.deploy_token(&ethers_db, token);
+            simulator.spoof_token_balance(token, hundred_grand_eth, &accounts_to_spoof);
+        }
+
+        transfer_tokens(&simulator, from, &to, &tokens);
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -1124,17 +1246,6 @@ pub(crate) mod tests {
 
         let provider: Arc<Provider<Http>> = get_provider();
         let simulator: EvmSimulator<Provider<Http>> = get_simulator(&provider, &amm_manager);
-        let token_address: Address = token0.address().0.into();
-
-        //for i in 0..400 {
-        //    let slot = U256::from(i);
-        //    let uint = simulator.get_storage_at(token_address, slot);
-        //    println!("slot {}: {:?}", i, uint);
-        //}
-
-        //let t: Address = token1.address().0.into();
-        //let result = simulator.get_token_balance(&t);
-        //println!("Token balance: {:?}", result);
 
         let x = simulator
             .node_get_tokens_balance_slot(&[token1.address().0.into()])
@@ -1153,6 +1264,47 @@ pub(crate) mod tests {
         assert!(slot >= 0, "Failed to get token balance slot");
 
         println!("Balance slot: {}", slot);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_poly_doge_token() {
+        let db: Database = get_db();
+        let token0: &CryptoToken = wmatic_token(&db);
+        let token1: &CryptoToken = &make_token(&db, "0x8A953CfE442c5E8855cc6c61b1293FA648BAE472");
+
+        let amm_manager: AmmManager = get_uniswap_v2_amm_manager(
+            "QuickSwapV2",
+            "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+            "0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff",
+            "0x264e6BC3f95633725658e4D9640f7F7D9100F6AC",
+            token0,
+            token1,
+        );
+
+        let provider: Arc<Provider<Http>> = get_provider();
+        let simulator: EvmSimulator<Provider<Http>> = get_simulator(&provider, &amm_manager);
+
+        let pool: &Arc<AmmPoolKind> = &amm_manager.amms()[0].pools()[0];
+        swap(&simulator, pool);
+
+        //println!(
+        //    "balance: {}",
+        //    simulator
+        //        .get_token_balance(&token0.address().0.into(), simulator.account())
+        //        .unwrap()
+        //);
+
+        //let from = Address::from_str("0x264e6BC3f95633725658e4D9640f7F7D9100F6AC").unwrap();
+        //let to = simulator.account;
+        //
+        //transfer_tokens(
+        //    &simulator,
+        //    from,
+        //    &to,
+        //    &[token0, token1],
+        //);
+        //balance_of_tokens(&provider, &[token0, token1]);
+        get_amounts_out(&simulator, &amm_manager);
     }
 
     #[tokio::test(flavor = "multi_thread")]
